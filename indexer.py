@@ -88,11 +88,6 @@ def index_directory(directory_path: str):
                     print(f"Error indexing {file_path}: {e}")
                     
             elif file.endswith('.mkv'):
-                # Check if there is an external subtitle already handled
-                base = os.path.splitext(file)[0]
-                if any(os.path.exists(os.path.join(root, base + ext)) for ext in ['.ass', '.srt']):
-                    continue
-                
                 try:
                     # Probe the mkv file for subtitle streams and their languages
                     probe_cmd = [

@@ -65,13 +65,10 @@ def test_mkv_embedded_extraction(test_db):
     """Ensure MKV files are probed and multiple subtitle streams are extracted with proper tags."""
     with patch('os.walk') as mock_walk, \
          patch('indexer.get_db', return_value=test_db), \
-         patch('os.path.exists') as mock_exists, \
          patch('subprocess.run') as mock_subrun, \
          patch('indexer.pysubs2.load') as mock_load:
          
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
-        # Simulate that no external subtitles exist alongside the mkv
-        mock_exists.return_value = False 
         
         # Mock the ffprobe output: two streams, Japanese and English
         probe_output = {
