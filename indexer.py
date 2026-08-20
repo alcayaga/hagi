@@ -48,27 +48,30 @@ def index_directory(directory_path: str):
                 except Exception as e:
                     print(f"Error indexing {file_path}: {e}")
                     
-            elif file.endswith('.mkv'):
-                # Check if there is an external subtitle already handled
-                base = os.path.splitext(file)[0]
-                if any(os.path.exists(os.path.join(root, base + ext)) for ext in ['.ass', '.srt']):
-                    continue
-                
-                mkv_path = os.path.join(root, file)
-                try:
-                    with tempfile.NamedTemporaryFile(suffix='.ass', delete=False) as temp_sub:
-                        temp_sub_path = temp_sub.name
-                        
-                    # Extract the first subtitle track
-                    result = subprocess.run([
-                        "ffmpeg", "-y", "-i", mkv_path, "-map", "0:s:0", temp_sub_path
-                    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     
-                    if result.returncode == 0:
-                        subs = pysubs2.load(temp_sub_path)
-                        process_subs(conn, mkv_path, subs, "mkv_embedded")
-                    
-                    if os.path.exists(temp_sub_path):
-                        os.remove(temp_sub_path)
-                except Exception as e:
-                    print(f"Error extracting from {mkv_path}: {e}")
+            # Temporarily disabled MKV extraction for faster iteration
+            # elif file.endswith('.mkv'):
+            #     # Check if there is an external subtitle already handled
+            #     base = os.path.splitext(file)[0]
+            #     if any(os.path.exists(os.path.join(root, base + ext)) for ext in ['.ass', '.srt']):
+            #         continue
+            #     
+            #     mkv_path = os.path.join(root, file)
+            #     try:
+            #         with tempfile.NamedTemporaryFile(suffix='.ass', delete=False) as temp_sub:
+            #             temp_sub_path = temp_sub.name
+            #             
+            #         # Extract the first subtitle track
+            #         result = subprocess.run([
+            #             "ffmpeg", "-y", "-i", mkv_path, "-map", "0:s:0", temp_sub_path
+            #         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            #         
+            #         if result.returncode == 0:
+            #             subs = pysubs2.load(temp_sub_path)
+            #             process_subs(conn, mkv_path, subs, "mkv_embedded")
+            #         
+            #         if os.path.exists(temp_sub_path):
+            #             os.remove(temp_sub_path)
+            #     except Exception as e:
+            #         print(f"Error extracting from {mkv_path}: {e}")
+

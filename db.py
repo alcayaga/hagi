@@ -33,7 +33,8 @@ def init_db():
             CREATE VIRTUAL TABLE IF NOT EXISTS sentences_fts USING fts5(
                 text,
                 content='sentences',
-                content_rowid='id'
+                content_rowid='id',
+                tokenize='trigram'
             )
         """)
         # Triggers to keep FTS updated
@@ -65,13 +66,38 @@ def add_sentences(conn, media_id, sentences):
         VALUES (?, ?, ?, ?, ?)
     """, [(media_id, s[0], s[1], s[2], s[3]) for s in sentences])
 
+import shlex
+
 def search_sentences(conn, query):
-    return conn.execute("""
+    try:
+        # Respect quoted exact phrases (e.g. "exact match")
+        tokens = shlex.split(query)
+    except ValueError:
+        tokens = query.split()
+        
+    conditions = []
+    params = []
+    
+    for token in tokens:
+        if token.startswith('-'):
+            term = token[1:]
+            if term:
+                conditions.append("s.text NOT LIKE ?")
+                params.append(f"%{term}%")
+        else:
+            conditions.append("s.text LIKE ?")
+            params.append(f"%{token}%")
+            
+    if not conditions:
+        return []
+        
+    where_clause = " AND ".join(conditions)
+    
+    sql = f"""
         SELECT s.id, s.text, s.language, s.start_time, m.path
-        FROM sentences_fts f
-        JOIN sentences s ON f.rowid = s.id
+        FROM sentences s
         JOIN media m ON s.media_id = m.id
-        WHERE sentences_fts MATCH ?
-        ORDER BY rank
+        WHERE {where_clause}
         LIMIT 50
-    """, (query,)).fetchall()
+    """
+    return conn.execute(sql, params).fetchall()
