@@ -32,11 +32,17 @@ def search(query: str):
         console.print("[yellow]No results found.[/yellow]")
         return
         
-    table = Table("ID", "Time", "Text", "File")
+    table = Table("ID", "Lang", "Time", "Text", "File")
     for r in results:
         time_str = f"{int(r['start_time']//60):02d}:{int(r['start_time']%60):02d}"
         file_name = r['path'].split('/')[-1]
-        table.add_row(str(r['id']), time_str, r['text'], file_name)
+        
+        # Color code the language tag for readability
+        lang = r['language']
+        lang_color = "cyan" if lang == "jpn" else "yellow" if lang == "eng" else "white"
+        lang_display = f"[{lang_color}]{lang}[/{lang_color}]"
+        
+        table.add_row(str(r['id']), lang_display, time_str, r['text'], file_name)
         
     console.print(table)
 
