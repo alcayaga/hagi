@@ -52,11 +52,36 @@ def index_directory(directory_path: str):
                     if subs is None:
                         raise Exception("Failed to decode file with standard encodings.")
                         
-                    # For external files, we could infer language from the filename (e.g. file.en.srt), but default to unknown
-                    lang_hint = "unknown"
-                    if ".en." in file.lower() or ".eng." in file.lower(): lang_hint = "eng"
-                    elif ".ja." in file.lower() or ".jpn." in file.lower(): lang_hint = "jpn"
-                    elif ".es." in file.lower() or ".spa." in file.lower(): lang_hint = "spa"
+                    # Detect language based on the actual text content
+                    def detect_language(subs_obj):
+                        jp_chars = 0
+                        sp_chars = 0
+                        total_chars = 0
+                        
+                        lines_checked = 0
+                        for line in subs_obj:
+                            text = line.plaintext.strip()
+                            if not text: continue
+                            
+                            for char in text:
+                                code = ord(char)
+                                # Hiragana, Katakana, CJK Ideographs
+                                if 0x3040 <= code <= 0x309F or 0x30A0 <= code <= 0x30FF or 0x4E00 <= code <= 0x9FAF:
+                                    jp_chars += 1
+                                elif char in 'áéíóúñÁÉÍÓÚÑ¿¡':
+                                    sp_chars += 1
+                                    
+                            total_chars += len(text)
+                            lines_checked += 1
+                            if lines_checked >= 50:
+                                break
+                                
+                        if total_chars == 0: return "unknown"
+                        if jp_chars / total_chars > 0.05: return "jpn"
+                        if sp_chars > 0: return "spa"
+                        return "eng"
+
+                    lang_hint = detect_language(subs)
                     
                     process_subs(conn, file_path, subs, "subtitle", language=lang_hint)
                 except Exception as e:

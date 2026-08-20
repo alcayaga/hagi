@@ -26,21 +26,30 @@ def test_incremental_indexing_skips(test_db):
             
             mock_load.assert_not_called()
 
-def test_language_inference_external_subs(test_db):
-    """Ensure external subtitle files infer language correctly from their filenames."""
+def test_language_detection_external_subs(test_db):
+    """Ensure external subtitle files infer language correctly from their text content."""
     with patch('os.walk') as mock_walk, patch('indexer.get_db', return_value=test_db):
-        # Mock 3 files: one english, one japanese, one unknown
-        mock_walk.return_value = [("/fake/path", [], ["ep.en.srt", "ep.ja.ass", "ep.srt"])]
+        mock_walk.return_value = [("/fake/path", [], ["ep1.srt", "ep2.srt", "ep3.srt"])]
         
         with patch('indexer.pysubs2.load') as mock_load:
-            # Create a mock subtitle line
-            mock_subs = MagicMock()
-            mock_line = MagicMock()
-            mock_line.plaintext = "Test sentence"
-            mock_line.start = 0
-            mock_line.end = 1000
-            mock_subs.__iter__.return_value = [mock_line]
-            mock_load.return_value = mock_subs
+            
+            # Setup mock returns: English, Japanese, Spanish
+            def mock_load_side_effect(path, **kwargs):
+                mock_subs = MagicMock()
+                mock_line = MagicMock()
+                mock_line.start = 0; mock_line.end = 1000
+                
+                if "ep1" in path:
+                    mock_line.plaintext = "Just a normal english sentence."
+                elif "ep2" in path:
+                    mock_line.plaintext = "私は猫です"
+                else:
+                    mock_line.plaintext = "¿Dónde está la biblioteca?"
+                    
+                mock_subs.__iter__.return_value = [mock_line]
+                return mock_subs
+                
+            mock_load.side_effect = mock_load_side_effect
             
             indexer.index_directory("/fake/path")
             
@@ -50,7 +59,7 @@ def test_language_inference_external_subs(test_db):
             
             assert "eng" in langs
             assert "jpn" in langs
-            assert "unknown" in langs
+            assert "spa" in langs
 
 def test_mkv_embedded_extraction(test_db):
     """Ensure MKV files are probed and multiple subtitle streams are extracted with proper tags."""
