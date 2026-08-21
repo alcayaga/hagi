@@ -179,7 +179,7 @@ def search_sentences(conn, query, show_title=None, episode=None):
     where_clause = " AND ".join(conditions)
 
     sql = f"""
-        SELECT s.id, s.text, s.language, s.start_time, m.path, m.show_title, m.episode
+        SELECT s.id, s.text, s.language, s.start_time, m.path, m.show_title, m.season, m.episode
         FROM sentences s
         JOIN media m ON s.media_id = m.id
         WHERE {where_clause}

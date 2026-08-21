@@ -132,7 +132,11 @@ function renderResults() {
     let sourceDisplay = r.path.split("/").pop();
     if (r.show_title) {
       sourceDisplay = `${r.show_title}`;
-      if (r.episode !== null) sourceDisplay += ` - Ep ${r.episode}`;
+      if (r.season !== null && r.episode !== null) {
+        sourceDisplay += ` - S${r.season.toString().padStart(2, '0')}E${r.episode.toString().padStart(2, '0')}`;
+      } else if (r.episode !== null) {
+        sourceDisplay += ` - Ep ${r.episode}`;
+      }
     }
 
     let langClass =
@@ -233,9 +237,9 @@ async function viewContext(id) {
     if (data.target_context.length === 0) {
       list.innerHTML = `<p class="text-gray-500">No context available.</p>`;
     } else {
-      const hasJpn = data.jpn_context && data.jpn_context.length > 0;
+      const hasSecondary = data.secondary_context && data.secondary_context.length > 0;
 
-      if (hasJpn) {
+      if (hasSecondary) {
         const grid = document.createElement("div");
         grid.className = "grid grid-cols-2 gap-4";
 
@@ -246,7 +250,7 @@ async function viewContext(id) {
 
         const colJpn = document.createElement("div");
         colJpn.className = "flex flex-col gap-2 pl-2";
-        colJpn.innerHTML = `<h4 class="font-bold text-gray-400 mb-2 uppercase text-xs">JPN Track</h4>`;
+        colJpn.innerHTML = `<h4 class="font-bold text-gray-400 mb-2 uppercase text-xs">${data.secondary_lang.toUpperCase()} Track</h4>`;
 
         const renderSentences = (sentences, container) => {
           sentences.forEach((r) => {
@@ -282,7 +286,7 @@ async function viewContext(id) {
         };
 
         renderSentences(data.target_context, colTarget);
-        renderSentences(data.jpn_context, colJpn);
+        renderSentences(data.secondary_context, colJpn);
 
         grid.appendChild(colTarget);
         grid.appendChild(colJpn);
