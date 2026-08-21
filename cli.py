@@ -77,7 +77,10 @@ def search(query: str):
 
     table = Table("ID", "Lang", "Time", "Text", "File")
     for r in results:
-        time_str = f"{int(r['start_time'] // 60):02d}:{int(r['start_time'] % 60):02d}"
+        if r['start_time'] is not None:
+            time_str = f"{int(r['start_time'] // 60):02d}:{int(r['start_time'] % 60):02d}"
+        else:
+            time_str = "??:??"
         file_name = r["path"].split("/")[-1]
 
         # Color code the language tag for readability
@@ -105,19 +108,33 @@ def context(sentence_id: int):
     media_id = target["media_id"]
     start_time = target["start_time"]
 
-    context_sentences = conn.execute(
-        """
-        SELECT id, start_time, text
-        FROM sentences
-        WHERE media_id = ? AND start_time >= ? AND start_time <= ?
-        ORDER BY start_time ASC
-    """,
-        (media_id, start_time - 15, start_time + 15),
-    ).fetchall()
+    if start_time is None:
+        context_sentences = conn.execute(
+            """
+            SELECT id, start_time, text
+            FROM sentences
+            WHERE media_id = ? AND id >= ? AND id <= ?
+            ORDER BY id ASC
+        """,
+            (media_id, sentence_id - 10, sentence_id + 10),
+        ).fetchall()
+    else:
+        context_sentences = conn.execute(
+            """
+            SELECT id, start_time, text
+            FROM sentences
+            WHERE media_id = ? AND start_time >= ? AND start_time <= ?
+            ORDER BY start_time ASC
+        """,
+            (media_id, start_time - 15, start_time + 15),
+        ).fetchall()
 
     for s in context_sentences:
         prefix = ">> " if s["id"] == sentence_id else "   "
-        time_str = f"{int(s['start_time'] // 60):02d}:{int(s['start_time'] % 60):02d}"
+        if s['start_time'] is not None:
+            time_str = f"{int(s['start_time'] // 60):02d}:{int(s['start_time'] % 60):02d}"
+        else:
+            time_str = "??:??"
         color = "green" if s["id"] == sentence_id else "white"
         console.print(f"[{color}]{prefix}[{time_str}] {s['text']}[/{color}]")
 

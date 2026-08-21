@@ -58,6 +58,44 @@ def get_context(sentence_id: int):
         raise HTTPException(status_code=404, detail="Sentence not found")
 
     def fetch_lang(lang):
+        start_time = target["start_time"]
+        if start_time is None:
+            # Fallback to ID-based context if start_time is missing
+            if target["show_title"] and target["episode"]:
+                return [dict(r) for r in conn.execute(
+                    """
+                    SELECT s.id, s.start_time, s.text, s.language
+                    FROM sentences s
+                    JOIN media m ON s.media_id = m.id
+                    WHERE m.show_title = ? AND m.season = ? AND m.episode = ? 
+                    AND s.language = ? AND s.id >= ? AND s.id <= ?
+                    ORDER BY s.id ASC
+                    """,
+                    (
+                        target["show_title"],
+                        target["season"],
+                        target["episode"],
+                        lang,
+                        sentence_id - 15,
+                        sentence_id + 15,
+                    ),
+                ).fetchall()]
+            else:
+                return [dict(r) for r in conn.execute(
+                    """
+                    SELECT id, start_time, text, language
+                    FROM sentences
+                    WHERE media_id = ? AND language = ? AND id >= ? AND id <= ?
+                    ORDER BY id ASC
+                    """,
+                    (
+                        target["media_id"],
+                        lang,
+                        sentence_id - 15,
+                        sentence_id + 15,
+                    ),
+                ).fetchall()]
+
         if target["show_title"] and target["episode"]:
             return [dict(r) for r in conn.execute(
                 """
@@ -73,8 +111,8 @@ def get_context(sentence_id: int):
                     target["season"],
                     target["episode"],
                     lang,
-                    target["start_time"] - 30.0,
-                    target["start_time"] + 30.0,
+                    start_time - 30.0,
+                    start_time + 30.0,
                 ),
             ).fetchall()]
         else:
@@ -88,8 +126,8 @@ def get_context(sentence_id: int):
                 (
                     target["media_id"],
                     lang,
-                    target["start_time"] - 30.0,
-                    target["start_time"] + 30.0,
+                    start_time - 30.0,
+                    start_time + 30.0,
                 ),
             ).fetchall()]
 
