@@ -145,6 +145,7 @@ function renderResults() {
         fullTitle += ` "${r.episode_title}"`;
         episodeTitleHtml = `<div class="mt-1 text-gray-500 italic">${r.episode_title}</div>`;
       }
+      fullTitle = fullTitle.replace(/"/g, '&quot;');
     }
 
     let langClass =

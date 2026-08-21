@@ -202,14 +202,24 @@ def search_sentences(conn, query, show_title=None, episode=None):
                 -- "no such column: s.start_time" error. By calculating the difference in the SELECT list as 'diff' 
                 -- and ordering by that, we ensure compatibility across all SQLite versions.
                 SELECT text FROM (
-                    SELECT s2.text, ABS(s2.start_time - s.start_time) as diff
+                    SELECT s2.text as text, ABS(s2.start_time - s.start_time) as diff
                     FROM sentences s2 
                     JOIN media m2 ON s2.media_id = m2.id 
-                    WHERE m2.show_title = m.show_title 
-                      AND m2.season = m.season 
-                      AND m2.episode = m.episode 
+                    WHERE (m2.id = m.id OR (
+                          m.show_title IS NOT NULL 
+                          AND m2.show_title = m.show_title 
+                          AND m2.season = m.season 
+                          AND m2.episode = m.episode
+                      ))
                       AND s2.language != s.language 
-                    ORDER BY diff ASC 
+                      AND ABS(s2.start_time - s.start_time) < 5.0
+                    ORDER BY CASE s2.language 
+                                 WHEN 'spa' THEN 1 
+                                 WHEN 'eng' THEN 2 
+                                 WHEN 'por' THEN 3 
+                                 ELSE 4 
+                             END ASC,
+                             diff ASC
                     LIMIT 1
                 )
             ) AS translation

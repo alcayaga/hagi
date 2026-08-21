@@ -140,6 +140,12 @@ def get_context(sentence_id: int):
                 FROM sentences s
                 JOIN media m ON s.media_id = m.id
                 WHERE m.show_title = ? AND m.season = ? AND m.episode = ? AND s.language != 'jpn'
+                ORDER BY CASE s.language 
+                    WHEN 'spa' THEN 1 
+                    WHEN 'eng' THEN 2 
+                    WHEN 'por' THEN 3 
+                    ELSE 4 
+                END ASC
                 LIMIT 1
                 """,
                 (target["show_title"], target["season"], target["episode"])
@@ -148,7 +154,17 @@ def get_context(sentence_id: int):
                 other_lang = row["language"]
         else:
             row = conn.execute(
-                "SELECT language FROM sentences WHERE media_id = ? AND language != 'jpn' LIMIT 1",
+                """
+                SELECT language FROM sentences 
+                WHERE media_id = ? AND language != 'jpn' 
+                ORDER BY CASE language 
+                    WHEN 'spa' THEN 1 
+                    WHEN 'eng' THEN 2 
+                    WHEN 'por' THEN 3 
+                    ELSE 4 
+                END ASC
+                LIMIT 1
+                """,
                 (target["media_id"],)
             ).fetchone()
             if row:
