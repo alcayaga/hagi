@@ -19,9 +19,15 @@ def init():
     console.print("[green]Database initialized![/green]")
 
 
+import os
+
 @app.command()
 def index(directory: str):
     """Index a directory containing subtitle files."""
+    if not os.path.isdir(directory):
+        console.print(f"[red]Error: Directory '{directory}' does not exist or is not a directory.[/red]")
+        raise typer.Exit(code=1)
+
     db.init_db()  # ensure db exists
     console.print(f"Indexing directory: [bold]{directory}[/bold]...")
     indexer.index_directory(directory)
