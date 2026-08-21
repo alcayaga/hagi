@@ -1,4 +1,5 @@
 """Test module."""
+
 import json
 from unittest.mock import MagicMock, patch
 
@@ -60,9 +61,7 @@ def test_language_detection_external_subs(test_db):
             indexer.index_directory("/fake/path")
 
             # Query the database to verify languages were applied correctly
-            sentences = test_db.execute(
-                "SELECT language FROM sentences ORDER BY id"
-            ).fetchall()
+            sentences = test_db.execute("SELECT language FROM sentences ORDER BY id").fetchall()
             langs = [s["language"] for s in sentences]
 
             assert "eng" in langs
@@ -81,9 +80,7 @@ def test_mkv_embedded_extraction(test_db):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
         # Mock the ffprobe output: two streams, Japanese and English
-        probe_output = {
-            "streams": [{"tags": {"language": "jpn"}}, {"tags": {"language": "eng"}}]
-        }
+        probe_output = {"streams": [{"tags": {"language": "jpn"}}, {"tags": {"language": "eng"}}]}
         mock_res = MagicMock()
         mock_res.stdout = json.dumps(probe_output)
         mock_res.returncode = 0

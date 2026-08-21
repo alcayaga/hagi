@@ -1,4 +1,5 @@
 """Test module."""
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -33,9 +34,7 @@ def test_extract_media(test_db):
         sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
         sid = sentence["id"]
 
-        success, msg, audio_out, image_out, text = exporter.extract_media(
-            sid, "/fake/out"
-        )
+        success, msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
 
         assert success is True
         assert audio_out.replace("\\", "/") == f"/fake/out/nadeshiko_audio_{sid}.mp3"

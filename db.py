@@ -26,24 +26,37 @@ def init_db():
     """
     conn = get_db()
     with conn:
-        conn.execute("""
+        conn.executescript(
+            """
             CREATE TABLE IF NOT EXISTS media (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 path TEXT UNIQUE,
-                type TEXT
-            )
-        """)
-        conn.execute("""
+                type TEXT,
+                show_title TEXT,
+                season INTEGER,
+                episode INTEGER
+            );
+            
             CREATE TABLE IF NOT EXISTS sentences (
-                id INTEGER PRIMARY KEY,
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 media_id INTEGER,
                 language TEXT,
                 start_time REAL,
                 end_time REAL,
                 text TEXT,
                 FOREIGN KEY(media_id) REFERENCES media(id)
-            )
-        """)
+            );
+            """
+        )
+
+        # Add columns to existing DB
+        try:
+            conn.execute("ALTER TABLE media ADD COLUMN show_title TEXT")
+            conn.execute("ALTER TABLE media ADD COLUMN season INTEGER")
+            conn.execute("ALTER TABLE media ADD COLUMN episode INTEGER")
+        except sqlite3.OperationalError:
+            pass
+
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS sentences_fts USING fts5(
                 text,
@@ -68,24 +81,33 @@ def init_db():
     return conn
 
 
-def add_media(conn, path, media_type):
+def add_media(conn, path, media_type, show_title=None, season=None, episode=None):
     """Add a media file to the database.
 
     Args:
         conn (sqlite3.Connection): Database connection.
         path (str): File path to the media.
         media_type (str): Type of the media.
+        show_title (str, optional): The name of the show from Plex.
+        season (int, optional): The season number.
+        episode (int, optional): The episode number.
 
     Returns:
         int: The ID of the inserted or existing media.
     """
-    cursor = conn.execute("SELECT id FROM media WHERE path = ?", (path,))
+    cursor = conn.execute("SELECT id, show_title FROM media WHERE path = ?", (path,))
     row = cursor.fetchone()
     if row:
-        return row[0]
+        if row["show_title"] is None and show_title is not None:
+            conn.execute(
+                "UPDATE media SET show_title=?, season=?, episode=? WHERE id=?",
+                (show_title, season, episode, row["id"]),
+            )
+        return row["id"]
 
     cursor = conn.execute(
-        "INSERT INTO media (path, type) VALUES (?, ?)", (path, media_type)
+        "INSERT INTO media (path, type, show_title, season, episode) VALUES (?, ?, ?, ?, ?)",
+        (path, media_type, show_title, season, episode),
     )
     return cursor.lastrowid
 
@@ -107,12 +129,14 @@ def add_sentences(conn, media_id, sentences):
     )
 
 
-def search_sentences(conn, query):
+def search_sentences(conn, query, show_title=None, episode=None):
     """Search for sentences using a query string.
 
     Args:
         conn (sqlite3.Connection): Database connection.
         query (str): The search query.
+        show_title (str, optional): Exact show title to filter by.
+        episode (int, optional): Exact episode number to filter by.
 
     Returns:
         list: List of matching sentence rows.
@@ -136,16 +160,24 @@ def search_sentences(conn, query):
             conditions.append("s.text LIKE ?")
             params.append(f"%{token}%")
 
+    if show_title:
+        conditions.append("m.show_title = ?")
+        params.append(show_title)
+
+    if episode is not None:
+        conditions.append("m.episode = ?")
+        params.append(episode)
+
     if not conditions:
         return []
 
     where_clause = " AND ".join(conditions)
 
     sql = f"""
-        SELECT s.id, s.text, s.language, s.start_time, m.path
+        SELECT s.id, s.text, s.language, s.start_time, m.path, m.show_title, m.episode
         FROM sentences s
         JOIN media m ON s.media_id = m.id
         WHERE {where_clause}
-        LIMIT 50
+        LIMIT 1000
     """
     return conn.execute(sql, params).fetchall()

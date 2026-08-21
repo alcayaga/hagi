@@ -7,9 +7,7 @@ import subprocess
 import db
 
 
-def extract_media(
-    sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5
-):
+def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5):
     """Extract audio and image for a given sentence.
 
     Args:
@@ -141,9 +139,7 @@ def extract_media(
         return False, str(e), None, None, None
 
 
-def export_anki(
-    sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5
-):
+def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5):
     """Export a sentence and its media for Anki.
 
     Args:

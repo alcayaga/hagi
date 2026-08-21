@@ -21,11 +21,14 @@ def init():
 
 import os
 
+
 @app.command()
 def index(directory: str):
     """Index a directory containing subtitle files."""
     if not os.path.isdir(directory):
-        console.print(f"[red]Error: Directory '{directory}' does not exist or is not a directory.[/red]")
+        console.print(
+            f"[red]Error: Directory '{directory}' does not exist or is not a directory.[/red]"
+        )
         raise typer.Exit(code=1)
 
     db.init_db()  # ensure db exists
@@ -142,9 +145,10 @@ def ui(port: int = 8000):
 
     from web import app as web_app
 
-    console.print(
-        f"[green]Starting Nadeshiko Web UI at http://localhost:{port}[/green]"
-    )
+    # Ensure database migrations are run
+    db.init_db()
+
+    console.print(f"[green]Starting Nadeshiko Web UI at http://localhost:{port}[/green]")
     console.print("Press Ctrl+C to quit.")
 
     # We use log_level warning to keep the terminal clean while using the app

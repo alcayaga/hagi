@@ -1,4 +1,5 @@
 """Test module."""
+
 import pytest
 
 import db
@@ -68,6 +69,30 @@ def test_exact_phrase_search(test_db):
 
 
 def test_no_results(test_db):
-    """Test function."""
+    """Test that searching for a non-existent word returns empty."""
     results = search_sentences(test_db, "宇宙人")
     assert len(results) == 0
+
+
+def test_plex_metadata_filters(test_db):
+    """Test searching with show_title and episode filters."""
+    # Add a mock show to filter by
+    media_id = db.add_media(
+        test_db, "/mock/Shaman.mkv", "mkv_embedded", show_title="Shaman King", season=1, episode=5
+    )
+    db.add_sentences(test_db, media_id, [("jpn", 0, 1, "ハオ様")])
+
+    # Search without filter should find it
+    assert len(search_sentences(test_db, "ハオ様")) == 1
+
+    # Search with correct show filter should find it
+    assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King")) == 1
+
+    # Search with incorrect show filter should return empty
+    assert len(search_sentences(test_db, "ハオ様", show_title="One Piece")) == 0
+
+    # Search with correct episode filter should find it
+    assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King", episode=5)) == 1
+
+    # Search with incorrect episode filter should return empty
+    assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King", episode=6)) == 0

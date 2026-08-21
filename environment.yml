@@ -11,5 +11,7 @@ dependencies:
   - uvicorn
   - jinja2
   - ruff
+  - python-dotenv
   - pip:
       - pysubs2
+      - plexapi

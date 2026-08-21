@@ -1,4 +1,5 @@
 """Test module."""
+
 from unittest.mock import patch
 
 import pytest
@@ -55,9 +56,7 @@ def test_api_extract(test_db):
         )
 
         # We assume the sentence ID is 1 since it's the first inserted in the memory DB
-        response = client.post(
-            "/api/extract/1", json={"pad_start": 0.5, "pad_end": 0.5}
-        )
+        response = client.post("/api/extract/1", json={"pad_start": 0.5, "pad_end": 0.5})
         assert response.status_code == 200
         data = response.json()
 

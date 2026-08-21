@@ -29,12 +29,13 @@ async def get_ui(request: Request):
 
 
 @app.get("/api/search")
-def search(q: str = ""):
-    """Search for sentences matching the query."""
+def search(q: str = "", show: str = None, episode: int = None):
+    """Search the database for sentences matching the query and filters."""
     if not q:
         return []
+
     conn = db.get_db()
-    results = db.search_sentences(conn, q)
+    results = db.search_sentences(conn, q, show_title=show, episode=episode)
     return [dict(r) for r in results]
 
 
@@ -43,22 +44,59 @@ def get_context(sentence_id: int):
     """Get surrounding context sentences for a given sentence ID."""
     conn = db.get_db()
     target = conn.execute(
-        "SELECT media_id, start_time FROM sentences WHERE id = ?", (sentence_id,)
+        """
+        SELECT s.media_id, s.start_time, s.language, m.show_title, m.season, m.episode
+        FROM sentences s
+        JOIN media m ON s.media_id = m.id
+        WHERE s.id = ?
+        """,
+        (sentence_id,),
     ).fetchone()
+    
     if not target:
         raise HTTPException(status_code=404, detail="Sentence not found")
 
-    context_sentences = conn.execute(
-        """
-        SELECT id, start_time, text
-        FROM sentences
-        WHERE media_id = ? AND start_time >= ? AND start_time <= ?
-        ORDER BY start_time ASC
-    """,
-        (target["media_id"], target["start_time"] - 15, target["start_time"] + 15),
-    ).fetchall()
+    def fetch_lang(lang):
+        if target["show_title"] and target["episode"]:
+            return [dict(r) for r in conn.execute(
+                """
+                SELECT s.id, s.start_time, s.text, s.language
+                FROM sentences s
+                JOIN media m ON s.media_id = m.id
+                WHERE m.show_title = ? AND m.season = ? AND m.episode = ? 
+                AND s.language = ? AND s.start_time >= ? AND s.start_time <= ?
+                ORDER BY s.start_time ASC
+                """,
+                (
+                    target["show_title"],
+                    target["season"],
+                    target["episode"],
+                    lang,
+                    target["start_time"] - 30.0,
+                    target["start_time"] + 30.0,
+                ),
+            ).fetchall()]
+        else:
+            return [dict(r) for r in conn.execute(
+                """
+                SELECT id, start_time, text, language
+                FROM sentences
+                WHERE media_id = ? AND language = ? AND start_time >= ? AND start_time <= ?
+                ORDER BY start_time ASC
+                """,
+                (
+                    target["media_id"],
+                    lang,
+                    target["start_time"] - 30.0,
+                    target["start_time"] + 30.0,
+                ),
+            ).fetchall()]
 
-    return [dict(r) for r in context_sentences]
+    return {
+        "target_lang": target["language"],
+        "target_context": fetch_lang(target["language"]),
+        "jpn_context": fetch_lang("jpn") if target["language"] != "jpn" else []
+    }
 
 
 class ExtractConfig(BaseModel):

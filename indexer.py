@@ -6,8 +6,52 @@ import subprocess
 import tempfile
 
 import pysubs2
+from dotenv import load_dotenv
 
 from db import add_media, add_sentences, get_db
+
+load_dotenv()
+
+plex = None
+plex_path_cache = {}
+
+try:
+    from plexapi.server import PlexServer
+
+    PLEX_URL = os.getenv("PLEX_URL")
+    PLEX_TOKEN = os.getenv("PLEX_TOKEN")
+    if PLEX_URL and PLEX_TOKEN:
+        plex = PlexServer(PLEX_URL, PLEX_TOKEN)
+except Exception as e:
+    print(f"Warning: Could not connect to Plex: {e}")
+
+
+def build_plex_cache():
+    if not plex:
+        return
+    print("Building Plex path mapping cache (this may take a moment)...")
+    try:
+        for section in plex.library.sections():
+            if section.type == "movie":
+                movies = section.search(libtype="movie")
+                for movie in movies:
+                    for media in movie.media:
+                        for part in media.parts:
+                            base_name = os.path.splitext(os.path.basename(part.file))[0]
+                            plex_path_cache[base_name] = (movie.title, 1, 1)
+            elif section.type == "show":
+                episodes = section.search(libtype="episode")
+                for ep in episodes:
+                    for media in ep.media:
+                        for part in media.parts:
+                            base_name = os.path.splitext(os.path.basename(part.file))[0]
+                            plex_path_cache[base_name] = (
+                                ep.grandparentTitle,
+                                ep.parentIndex,
+                                ep.index,
+                            )
+    except Exception as e:
+        print(f"Error building Plex cache: {e}")
 
 
 def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown"):
@@ -15,12 +59,14 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
 
     Args:
         conn: Database connection.
-        file_path (str): Path to the media file.
-        subs: Parsed subtitle object (e.g., from pysubs2).
+        file_path (str): Path to the subtitle file.
+        subs: Parsed subtitles object.
         media_type (str, optional): Type of the media. Defaults to "subtitle".
         language (str, optional): Language of the subtitles. Defaults to "unknown".
     """
-    media_id = add_media(conn, file_path, media_type)
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    show_title, season, episode = plex_path_cache.get(base_name, (None, None, None))
+    media_id = add_media(conn, file_path, media_type, show_title, season, episode)
     sentences = []
 
     for line in subs:
@@ -30,7 +76,6 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
 
     if sentences:
         add_sentences(conn, media_id, sentences)
-        conn.commit()
         print(f"Indexed: {file_path} [{language}] ({len(sentences)} lines)")
 
 
@@ -40,6 +85,7 @@ def index_directory(directory_path: str):
     Args:
         directory_path (str): Path to the directory to be indexed.
     """
+    build_plex_cache()
     conn = get_db()
     for root, _, files in os.walk(directory_path):
         for file in files:
@@ -47,13 +93,24 @@ def index_directory(directory_path: str):
                 continue
 
             file_path = os.path.join(root, file)
+            base_name = os.path.splitext(os.path.basename(file_path))[0]
 
             # Incremental indexing: skip if already in DB
             row = conn.execute(
-                "SELECT id FROM media WHERE path = ?", (file_path,)
+                "SELECT id, show_title FROM media WHERE path = ?", (file_path,)
             ).fetchone()
             if row:
-                print(f"Skipping (already indexed): {file_path}")
+                if row["show_title"] is None:
+                    # Try to backfill Plex metadata
+                    show_title, season, episode = plex_path_cache.get(base_name, (None, None, None))
+                    if show_title:
+                        conn.execute(
+                            "UPDATE media SET show_title=?, season=?, episode=? WHERE id=?",
+                            (show_title, season, episode, row["id"]),
+                        )
+                        print(f"Backfilled Plex metadata for: {file_path}")
+                else:
+                    print(f"Skipping (already indexed): {file_path}")
                 continue
 
             if file.endswith((".ass", ".srt")):
@@ -66,57 +123,53 @@ def index_directory(directory_path: str):
                         except UnicodeDecodeError:
                             continue
 
-                    if subs is None:
-                        raise Exception(
-                            "Failed to decode file with standard encodings."
-                        )
+                    if subs:
+                        # Detect language based on the actual text content
+                        def detect_language(subs_obj):
+                            jp_chars = 0
+                            sp_chars = 0
+                            total_chars = 0
 
-                    # Detect language based on the actual text content
-                    def detect_language(subs_obj):
-                        jp_chars = 0
-                        sp_chars = 0
-                        total_chars = 0
+                            lines_checked = 0
+                            for line in subs_obj:
+                                text = line.plaintext.strip()
+                                if not text:
+                                    continue
 
-                        lines_checked = 0
-                        for line in subs_obj:
-                            text = line.plaintext.strip()
-                            if not text:
-                                continue
+                                for char in text:
+                                    code = ord(char)
+                                    # Hiragana, Katakana, CJK Ideographs
+                                    if (
+                                        0x3040 <= code <= 0x309F
+                                        or 0x30A0 <= code <= 0x30FF
+                                        or 0x4E00 <= code <= 0x9FAF
+                                    ):
+                                        jp_chars += 1
+                                    elif char in "áéíóúñÁÉÍÓÚÑ¿¡":
+                                        sp_chars += 1
 
-                            for char in text:
-                                code = ord(char)
-                                # Hiragana, Katakana, CJK Ideographs
-                                if (
-                                    0x3040 <= code <= 0x309F
-                                    or 0x30A0 <= code <= 0x30FF
-                                    or 0x4E00 <= code <= 0x9FAF
-                                ):
-                                    jp_chars += 1
-                                elif char in "áéíóúñÁÉÍÓÚÑ¿¡":
-                                    sp_chars += 1
+                                total_chars += len(text)
+                                lines_checked += 1
+                                if lines_checked >= 50:
+                                    break
 
-                            total_chars += len(text)
-                            lines_checked += 1
-                            if lines_checked >= 50:
-                                break
+                            if total_chars == 0:
+                                return "unknown"
+                            if jp_chars / total_chars > 0.05:
+                                return "jpn"
+                            if sp_chars > 0:
+                                return "spa"
+                            return "eng"
 
-                        if total_chars == 0:
-                            return "unknown"
-                        if jp_chars / total_chars > 0.05:
-                            return "jpn"
-                        if sp_chars > 0:
-                            return "spa"
-                        return "eng"
-
-                    lang_hint = detect_language(subs)
-
-                    process_subs(conn, file_path, subs, "subtitle", language=lang_hint)
+                        lang_hint = detect_language(subs)
+                        process_subs(conn, file_path, subs, "subtitle", language=lang_hint)
+                    else:
+                        print(f"Failed to decode subtitle file: {file_path}")
                 except Exception as e:
                     print(f"Error indexing {file_path}: {e}")
 
             elif file.endswith(".mkv"):
                 try:
-                    # Probe the mkv file for subtitle streams and their languages
                     probe_cmd = [
                         "ffprobe",
                         "-v",
@@ -129,37 +182,39 @@ def index_directory(directory_path: str):
                         "json",
                         file_path,
                     ]
-                    probe_res = subprocess.run(
-                        probe_cmd, capture_output=True, text=True
-                    )
-                    data = json.loads(probe_res.stdout)
-                    streams = data.get("streams", [])
-
-                    if not streams:
+                    result = subprocess.run(probe_cmd, capture_output=True, text=True)
+                    if result.returncode != 0:
+                        print(f"ffprobe failed for {file_path}: {result.stderr}")
                         continue
 
-                    # We process the mkv, so add it to the media table once to mark it as indexed even if tracks fail
-                    add_media(conn, file_path, "mkv_embedded")
+                    streams = json.loads(result.stdout).get("streams", [])
+                    if not streams:
+                        # We process the mkv, so add it to the media table once to mark it as indexed even if tracks fail
+                        show_title, season, episode = plex_path_cache.get(base_name, (None, None, None))
+                        add_media(conn, file_path, "mkv_embedded", show_title, season, episode)
+                        continue
 
-                    for i, stream in enumerate(streams):
-                        lang = stream.get("tags", {}).get("language", "unknown")
+                    for stream in streams:
+                        i = stream.get("index")
+                        tags = stream.get("tags", {})
+                        lang = tags.get("language", "unknown")
 
-                        with tempfile.NamedTemporaryFile(
-                            suffix=".ass", delete=False
-                        ) as temp_sub:
-                            temp_sub_path = temp_sub.name
+                        fd, temp_sub_path = tempfile.mkstemp(suffix=".srt")
+                        os.close(fd)
 
-                        # Extract this specific subtitle track
+                        ext_cmd = [
+                            "ffmpeg",
+                            "-y",
+                            "-i",
+                            file_path,
+                            "-map",
+                            f"0:{i}",
+                            "-c:s",
+                            "srt",
+                            temp_sub_path,
+                        ]
                         ext_res = subprocess.run(
-                            [
-                                "ffmpeg",
-                                "-y",
-                                "-i",
-                                file_path,
-                                "-map",
-                                f"0:s:{i}",
-                                temp_sub_path,
-                            ],
+                            ext_cmd,
                             stdout=subprocess.DEVNULL,
                             stderr=subprocess.DEVNULL,
                         )
@@ -167,16 +222,14 @@ def index_directory(directory_path: str):
                         if ext_res.returncode == 0:
                             try:
                                 subs = pysubs2.load(temp_sub_path)
-                                process_subs(
-                                    conn, file_path, subs, "mkv_embedded", language=lang
-                                )
+                                process_subs(conn, file_path, subs, "mkv_embedded", language=lang)
                             except Exception as parse_e:
-                                print(
-                                    f"Error parsing track {i} in {file_path}: {parse_e}"
-                                )
+                                print(f"Error parsing track {i} in {file_path}: {parse_e}")
 
                         if os.path.exists(temp_sub_path):
                             os.remove(temp_sub_path)
 
                 except Exception as e:
                     print(f"Error extracting from {file_path}: {e}")
+
+    conn.commit()
