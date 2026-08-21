@@ -73,10 +73,15 @@ def context(sentence_id: int):
         console.print(f"[{color}]{prefix}[{time_str}] {s['text']}[/{color}]")
 
 @app.command()
-def extract(sentence_id: int, out_dir: str = "./media"):
+def extract(
+    sentence_id: int, 
+    out_dir: str = "./media",
+    pad_start: float = typer.Option(0.5, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(0.5, "--pad-end", "-pe", help="Seconds to pad after the sentence")
+):
     """Extract raw audio and image for a sentence without Anki formatting."""
     console.print(f"Extracting media for sentence {sentence_id}...")
-    success, msg, audio_out, image_out, text = exporter.extract_media(sentence_id, out_dir)
+    success, msg, audio_out, image_out, text = exporter.extract_media(sentence_id, out_dir, pad_start, pad_end)
     if success:
         console.print(f"[green]Extracted audio to: {audio_out}[/green]")
         console.print(f"[green]Extracted image to: {image_out}[/green]")
@@ -85,10 +90,15 @@ def extract(sentence_id: int, out_dir: str = "./media"):
         console.print(f"[red]Error: {msg}[/red]")
 
 @app.command()
-def export(sentence_id: int, out_dir: str = "./anki_deck"):
+def export(
+    sentence_id: int, 
+    out_dir: str = "./anki_deck",
+    pad_start: float = typer.Option(0.5, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(0.5, "--pad-end", "-pe", help="Seconds to pad after the sentence")
+):
     """Export sentence context (audio, image, text) for Anki."""
     console.print(f"Exporting sentence {sentence_id} to Anki format...")
-    success, msg = exporter.export_anki(sentence_id, out_dir)
+    success, msg = exporter.export_anki(sentence_id, out_dir, pad_start, pad_end)
     if success:
         console.print(f"[green]{msg}[/green]")
     else:

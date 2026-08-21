@@ -3,7 +3,7 @@ import subprocess
 import csv
 import db
 
-def extract_media(sentence_id: int, out_dir: str):
+def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5):
     conn = db.get_db()
     target = conn.execute("""
         SELECT s.id, s.text, s.start_time, s.end_time, m.path
@@ -13,7 +13,7 @@ def extract_media(sentence_id: int, out_dir: str):
     """, (sentence_id,)).fetchone()
     
     if not target:
-        return False, "Sentence not found", None, None
+        return False, "Sentence not found", None, None, None
         
     os.makedirs(out_dir, exist_ok=True)
     
@@ -26,11 +26,11 @@ def extract_media(sentence_id: int, out_dir: str):
         mkv_path = base_path + ".mkv"
     
     if not os.path.exists(mkv_path):
-        return False, f"Video file not found: {mkv_path}", None, None
+        return False, f"Video file not found: {mkv_path}", None, None, None
         
     # Timestamps
-    start = max(0, target['start_time'] - 0.5) # 0.5s padding
-    end = target['end_time'] + 0.5
+    start = max(0, target['start_time'] - pad_start)
+    end = target['end_time'] + pad_end
     duration = end - start
     midpoint = start + (duration / 2)
     
@@ -54,8 +54,8 @@ def extract_media(sentence_id: int, out_dir: str):
     except Exception as e:
         return False, str(e), None, None, None
 
-def export_anki(sentence_id: int, out_dir: str):
-    success, msg, audio_out, image_out, text = extract_media(sentence_id, out_dir)
+def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5):
+    success, msg, audio_out, image_out, text = extract_media(sentence_id, out_dir, pad_start, pad_end)
     if not success:
         return False, msg
         
