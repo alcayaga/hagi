@@ -193,14 +193,43 @@ def search_sentences(conn, query, show_title=None, episode=None):
 
     sql = f"""
         SELECT 
-            s.id, s.text, s.language, s.start_time, 
+            s.id AS matched_id, s.text AS matched_text, s.language AS matched_language, s.start_time, 
             m.path, m.show_title, m.season, m.episode, m.episode_title,
             (
-                -- Note: The nested 'SELECT text FROM (SELECT ...)' is a workaround for older SQLite versions
-                -- (such as those on Raspberry Pi OS / Debian stable). In older versions, referencing an outer table
-                -- alias (s.start_time) inside the ORDER BY clause of a correlated subquery throws a 
-                -- "no such column: s.start_time" error. By calculating the difference in the SELECT list as 'diff' 
-                -- and ordering by that, we ensure compatibility across all SQLite versions.
+                SELECT id FROM (
+                    SELECT s_jpn.id as id, ABS(s_jpn.start_time - s.start_time) as diff
+                    FROM sentences s_jpn
+                    JOIN media m_jpn ON s_jpn.media_id = m_jpn.id
+                    WHERE (m_jpn.id = m.id OR (
+                          m.show_title IS NOT NULL 
+                          AND m_jpn.show_title = m.show_title 
+                          AND m_jpn.season = m.season 
+                          AND m_jpn.episode = m.episode
+                      ))
+                      AND s_jpn.language = 'jpn'
+                      AND ABS(s_jpn.start_time - s.start_time) < 5.0
+                    ORDER BY diff ASC
+                    LIMIT 1
+                )
+            ) as jpn_id,
+            (
+                SELECT text FROM (
+                    SELECT s_jpn.text as text, ABS(s_jpn.start_time - s.start_time) as diff
+                    FROM sentences s_jpn
+                    JOIN media m_jpn ON s_jpn.media_id = m_jpn.id
+                    WHERE (m_jpn.id = m.id OR (
+                          m.show_title IS NOT NULL 
+                          AND m_jpn.show_title = m.show_title 
+                          AND m_jpn.season = m.season 
+                          AND m_jpn.episode = m.episode
+                      ))
+                      AND s_jpn.language = 'jpn'
+                      AND ABS(s_jpn.start_time - s.start_time) < 5.0
+                    ORDER BY diff ASC
+                    LIMIT 1
+                )
+            ) as jpn_text,
+            (
                 SELECT text FROM (
                     SELECT s2.text as text, ABS(s2.start_time - s.start_time) as diff
                     FROM sentences s2 
@@ -211,7 +240,7 @@ def search_sentences(conn, query, show_title=None, episode=None):
                           AND m2.season = m.season 
                           AND m2.episode = m.episode
                       ))
-                      AND s2.language != s.language 
+                      AND s2.language != 'jpn' 
                       AND ABS(s2.start_time - s.start_time) < 5.0
                     ORDER BY CASE s2.language 
                                  WHEN 'spa' THEN 1 
@@ -222,10 +251,77 @@ def search_sentences(conn, query, show_title=None, episode=None):
                              diff ASC
                     LIMIT 1
                 )
-            ) AS translation
+            ) AS best_translation,
+            (
+                SELECT language FROM (
+                    SELECT s2.language as language, ABS(s2.start_time - s.start_time) as diff
+                    FROM sentences s2 
+                    JOIN media m2 ON s2.media_id = m2.id 
+                    WHERE (m2.id = m.id OR (
+                          m.show_title IS NOT NULL 
+                          AND m2.show_title = m.show_title 
+                          AND m2.season = m.season 
+                          AND m2.episode = m.episode
+                      ))
+                      AND s2.language != 'jpn' 
+                      AND ABS(s2.start_time - s.start_time) < 5.0
+                    ORDER BY CASE s2.language 
+                                 WHEN 'spa' THEN 1 
+                                 WHEN 'eng' THEN 2 
+                                 WHEN 'por' THEN 3 
+                                 ELSE 4 
+                             END ASC,
+                             diff ASC
+                    LIMIT 1
+                )
+            ) AS best_translation_language
         FROM sentences s
         JOIN media m ON s.media_id = m.id
         WHERE {where_clause}
         LIMIT 1000
     """
-    return conn.execute(sql, params).fetchall()
+    rows = conn.execute(sql, params).fetchall()
+    
+    results = []
+    for row in rows:
+        row_dict = dict(row)
+        
+        if row_dict["jpn_text"]:
+            final_id = row_dict["jpn_id"]
+            final_text = row_dict["jpn_text"]
+            final_lang = "jpn"
+            final_trans = row_dict["best_translation"]
+            trans_lang = row_dict["best_translation_language"]
+        else:
+            final_id = row_dict["matched_id"]
+            final_text = row_dict["matched_text"]
+            final_lang = row_dict["matched_language"]
+            if row_dict["best_translation"] and row_dict["best_translation"] != final_text:
+                final_trans = row_dict["best_translation"]
+                trans_lang = row_dict["best_translation_language"]
+            else:
+                final_trans = None
+                trans_lang = None
+            
+        if row_dict["matched_text"] != final_text and row_dict["matched_text"] != final_trans:
+            if final_trans:
+                final_trans += f" (Matched: {row_dict['matched_text']})"
+            else:
+                final_trans = row_dict["matched_text"]
+                trans_lang = row_dict["matched_language"]
+                
+        results.append({
+            "id": final_id,
+            "text": final_text,
+            "language": final_lang,
+            "start_time": row_dict["start_time"],
+            "path": row_dict["path"],
+            "show_title": row_dict["show_title"],
+            "season": row_dict["season"],
+            "episode": row_dict["episode"],
+            "episode_title": row_dict["episode_title"],
+            "translation": final_trans,
+            "translation_language": trans_lang
+        })
+        
+    return results
