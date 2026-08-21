@@ -158,7 +158,10 @@ function renderResults() {
     row.innerHTML = `
                     <td class="px-6 py-4"><span class="px-2 py-1 rounded text-sm font-bold ${langClass}">${r.language.toUpperCase()}</span></td>
                     <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">${timeStr}</td>
-                    <td class="px-6 py-4 text-lg font-medium">${r.text}</td>
+                    <td class="px-6 py-4">
+    <div class="text-lg font-medium">${r.text}</div>
+    ${r.translation ? `<div class="text-sm text-gray-500 dark:text-gray-400 font-mono mt-1">${r.translation}</div>` : ""}
+</td>
                     <td class="px-6 py-4 text-xs text-gray-400 max-w-xs truncate" title="${sourceDisplay}">${sourceDisplay}</td>
                     <td class="px-6 py-4">
                         <div class="flex flex-col items-center space-y-2">

@@ -179,7 +179,20 @@ def search_sentences(conn, query, show_title=None, episode=None):
     where_clause = " AND ".join(conditions)
 
     sql = f"""
-        SELECT s.id, s.text, s.language, s.start_time, m.path, m.show_title, m.season, m.episode
+        SELECT 
+            s.id, s.text, s.language, s.start_time, 
+            m.path, m.show_title, m.season, m.episode,
+            (
+                SELECT s2.text 
+                FROM sentences s2 
+                JOIN media m2 ON s2.media_id = m2.id 
+                WHERE m2.show_title = m.show_title 
+                  AND m2.season = m.season 
+                  AND m2.episode = m.episode 
+                  AND s2.language != s.language 
+                ORDER BY ABS(s2.start_time - s.start_time) ASC 
+                LIMIT 1
+            ) AS translation
         FROM sentences s
         JOIN media m ON s.media_id = m.id
         WHERE {where_clause}

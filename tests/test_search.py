@@ -96,3 +96,27 @@ def test_plex_metadata_filters(test_db):
 
     # Search with incorrect episode filter should return empty
     assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King", episode=6)) == 0
+
+def test_translation_matching(test_db):
+    """Test that search results automatically fetch closest translation."""
+    # Add Japanese media
+    jp_id = db.add_media(
+        test_db, "/mock/Anime.ass", "ass", show_title="Dual Language Anime", season=1, episode=1
+    )
+    db.add_sentences(test_db, jp_id, [("jpn", 10.0, 15.0, "これはテストです")])
+
+    # Add English media for the exact same episode
+    en_id = db.add_media(
+        test_db, "/mock/Anime.mkv", "mkv", show_title="Dual Language Anime", season=1, episode=1
+    )
+    db.add_sentences(test_db, en_id, [("eng", 10.1, 14.9, "This is a test")])
+
+    results = search_sentences(test_db, "テスト")
+    assert len(results) == 1
+    
+    # Assert that the native text is the Japanese sentence
+    assert results[0]["text"] == "これはテストです"
+    
+    # Assert that the translation field was successfully populated with the English match
+    assert "translation" in results[0].keys()
+    assert results[0]["translation"] == "This is a test"
