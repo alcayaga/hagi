@@ -38,10 +38,27 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     image_out = os.path.join(out_dir, f"nadeshiko_img_{sentence_id}.jpg")
     
     try:
-        # Extract Audio
+        import json
+        # Probe for the Japanese audio track
+        probe_cmd = [
+            "ffprobe", "-v", "quiet", "-print_format", "json", "-show_streams",
+            "-select_streams", "a", mkv_path
+        ]
+        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True)
+        
+        audio_stream_idx = 0
+        if probe_res.returncode == 0:
+            streams = json.loads(probe_res.stdout).get('streams', [])
+            for i, stream in enumerate(streams):
+                lang = stream.get('tags', {}).get('language', '').lower()
+                if lang in ('jpn', 'ja', 'jp'):
+                    audio_stream_idx = i
+                    break
+        
+        # Extract Audio using the detected stream index
         subprocess.run([
             "ffmpeg", "-y", "-ss", str(start), "-i", mkv_path,
-            "-t", str(duration), "-q:a", "0", "-map", "0:a:0", audio_out
+            "-t", str(duration), "-q:a", "0", "-map", f"0:a:{audio_stream_idx}", audio_out
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
         # Extract Image

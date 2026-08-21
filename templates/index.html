@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nadeshiko Search</title>
+    <!-- Use Tailwind CSS for quick barebones styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto p-8">
+        <h1 class="text-4xl font-bold mb-8 text-center text-indigo-600">Nadeshiko Search</h1>
+        
+        <!-- Search Box -->
+        <div class="flex justify-center mb-8">
+            <input type="text" id="searchInput" placeholder="Search for a word (e.g. Asakura, -English)" class="w-2/3 p-4 rounded shadow text-lg outline-none focus:ring-2 focus:ring-indigo-500">
+            <button onclick="performSearch()" class="ml-4 bg-indigo-600 text-white px-6 py-4 rounded shadow hover:bg-indigo-700 text-lg">Search</button>
+        </div>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="text-center text-gray-500 hidden mb-4">Searching...</div>
+
+        <!-- Results Table -->
+        <div class="bg-white rounded shadow overflow-hidden">
+            <table class="min-w-full text-left" id="resultsTable">
+                <thead class="bg-indigo-50 text-indigo-600 border-b">
+                    <tr>
+                        <th class="px-6 py-4 font-semibold">Lang</th>
+                        <th class="px-6 py-4 font-semibold">Time</th>
+                        <th class="px-6 py-4 font-semibold w-1/2">Text</th>
+                        <th class="px-6 py-4 font-semibold">File</th>
+                        <th class="px-6 py-4 font-semibold text-center">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="resultsBody" class="divide-y text-gray-700">
+                    <!-- Results populated here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Modal for Extracted Media -->
+    <div id="mediaModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-white p-6 rounded max-w-lg w-full">
+            <h2 class="text-2xl font-bold mb-4">Media Extracted</h2>
+            <p id="mediaText" class="text-lg italic mb-4"></p>
+            <img id="mediaImage" src="" class="w-full mb-4 rounded shadow" />
+            <audio id="mediaAudio" controls class="w-full mb-4"></audio>
+            <div class="text-right">
+                <button onclick="closeModal()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Trigger search on Enter key
+        document.getElementById('searchInput').addEventListener('keypress', function (e) {
+            if (e.key === 'Enter') performSearch();
+        });
+
+        async function performSearch() {
+            const query = document.getElementById('searchInput').value;
+            const loading = document.getElementById('loading');
+            const tbody = document.getElementById('resultsBody');
+            
+            if (!query.trim()) return;
+
+            loading.classList.remove('hidden');
+            tbody.innerHTML = '';
+
+            try {
+                const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+                const results = await response.json();
+                
+                if (results.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No results found</td></tr>`;
+                } else {
+                    results.forEach(r => {
+                        // Format time (seconds to MM:SS)
+                        const m = Math.floor(r.start_time / 60).toString().padStart(2, '0');
+                        const s = Math.floor(r.start_time % 60).toString().padStart(2, '0');
+                        const timeStr = `${m}:${s}`;
+                        
+                        // Extract filename from path
+                        const fileName = r.path.split('/').pop();
+                        
+                        // Color code language
+                        let langClass = "bg-gray-200 text-gray-800";
+                        if (r.language === 'jpn') langClass = "bg-blue-100 text-blue-800";
+                        if (r.language === 'eng') langClass = "bg-yellow-100 text-yellow-800";
+                        if (r.language === 'spa') langClass = "bg-red-100 text-red-800";
+                        if (r.language === 'por') langClass = "bg-green-100 text-green-800";
+
+                        const row = document.createElement('tr');
+                        row.className = "hover:bg-gray-50";
+                        row.innerHTML = `
+                            <td class="px-6 py-4"><span class="px-2 py-1 rounded text-sm font-bold ${langClass}">${r.language.toUpperCase()}</span></td>
+                            <td class="px-6 py-4 text-sm text-gray-500">${timeStr}</td>
+                            <td class="px-6 py-4 text-lg font-medium">${r.text}</td>
+                            <td class="px-6 py-4 text-xs text-gray-400 max-w-xs truncate" title="${fileName}">${fileName}</td>
+                            <td class="px-6 py-4 text-center space-x-2">
+                                <button onclick="extractMedia(${r.id}, this)" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded hover:bg-indigo-200 font-semibold text-sm transition">Extract</button>
+                            </td>
+                        `;
+                        tbody.appendChild(row);
+                    });
+                }
+            } catch (error) {
+                tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error fetching results: ${error}</td></tr>`;
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        async function extractMedia(id, btnElement) {
+            const originalText = btnElement.innerText;
+            btnElement.innerText = "Extracting...";
+            btnElement.disabled = true;
+            btnElement.classList.add('opacity-50');
+
+            try {
+                const response = await fetch(`/api/extract/${id}`, { method: 'POST' });
+                const data = await response.json();
+                
+                if (data.success) {
+                    // Show modal with media
+                    document.getElementById('mediaText').innerText = data.text;
+                    // Add timestamp to bypass cache
+                    document.getElementById('mediaImage').src = data.image_url + "?t=" + new Date().getTime();
+                    document.getElementById('mediaAudio').src = data.audio_url + "?t=" + new Date().getTime();
+                    document.getElementById('mediaAudio').play();
+                    document.getElementById('mediaModal').classList.remove('hidden');
+                } else {
+                    alert("Extraction failed: " + data.detail);
+                }
+            } catch (error) {
+                alert("Error calling extraction API: " + error);
+            } finally {
+                btnElement.innerText = originalText;
+                btnElement.disabled = false;
+                btnElement.classList.remove('opacity-50');
+            }
+        }
+
+        function closeModal() {
+            document.getElementById('mediaModal').classList.add('hidden');
+            document.getElementById('mediaAudio').pause();
+        }
+    </script>
+</body>
+</html>

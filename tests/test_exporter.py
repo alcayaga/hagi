@@ -36,14 +36,19 @@ def test_extract_media(test_db):
         assert image_out.replace('\\', '/') == f"/fake/out/nadeshiko_img_{sid}.jpg"
         assert text == "This is a test sentence."
         
-        # Verify ffmpeg was called twice
-        assert mock_subrun.call_count == 2
+        # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)
+        assert mock_subrun.call_count == 3
+        
+        # Verify the ffprobe command
+        ffprobe_call_args = mock_subrun.call_args_list[0][0][0]
+        assert "ffprobe" in ffprobe_call_args
         
         # Verify the audio extraction command used the correct single-stream map parameter (-map 0:a:0)
-        audio_call_args = mock_subrun.call_args_list[0][0][0]
+        # Assuming the mock returns a failed ffprobe so it falls back to 0
+        audio_call_args = mock_subrun.call_args_list[1][0][0]
         assert "ffmpeg" in audio_call_args
         
-        # It must use '0:a:0' and absolutely not 'a' to prevent exit code 234 on multi-track files
+        # It must use '0:a:0' (or the detected index) and absolutely not 'a' to prevent exit code 234
         assert "-map" in audio_call_args
         map_index = audio_call_args.index("-map")
         assert audio_call_args[map_index + 1] == "0:a:0"
