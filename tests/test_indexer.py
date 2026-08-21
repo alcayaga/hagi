@@ -104,3 +104,11 @@ def test_mkv_embedded_extraction(test_db):
         
         assert "jpn" in langs
         assert "eng" in langs
+
+def test_add_media_lastrowid_bug(test_db):
+    """Ensure add_media doesn't return the ID of a recently inserted sentence when adding a duplicate media path."""
+    media_id_1 = db.add_media(test_db, "/path/to/video.mkv", "mkv_embedded")
+    db.add_sentences(test_db, media_id_1, [("eng", 0, 1, "Hello")])
+    media_id_2 = db.add_media(test_db, "/path/to/video.mkv", "mkv_embedded")
+    
+    assert media_id_1 == media_id_2

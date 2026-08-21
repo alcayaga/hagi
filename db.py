@@ -1,7 +1,7 @@
 import sqlite3
 import os
 
-DB_PATH = os.path.expanduser("~/.local_nadeshiko.db")
+DB_PATH = os.path.abspath("nadeshiko.db")
 
 def get_db():
     conn = sqlite3.connect(DB_PATH)
@@ -53,10 +53,12 @@ def init_db():
     return conn
 
 def add_media(conn, path, media_type):
-    cursor = conn.execute("INSERT OR IGNORE INTO media (path, type) VALUES (?, ?)", (path, media_type))
-    if cursor.lastrowid == 0:
-        cursor = conn.execute("SELECT id FROM media WHERE path = ?", (path,))
-        return cursor.fetchone()[0]
+    cursor = conn.execute("SELECT id FROM media WHERE path = ?", (path,))
+    row = cursor.fetchone()
+    if row:
+        return row[0]
+        
+    cursor = conn.execute("INSERT INTO media (path, type) VALUES (?, ?)", (path, media_type))
     return cursor.lastrowid
 
 def add_sentences(conn, media_id, sentences):
