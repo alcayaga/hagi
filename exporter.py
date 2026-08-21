@@ -41,7 +41,7 @@ def extract_media(sentence_id: int, out_dir: str):
         # Extract Audio
         subprocess.run([
             "ffmpeg", "-y", "-ss", str(start), "-i", mkv_path,
-            "-t", str(duration), "-q:a", "0", "-map", "a", audio_out
+            "-t", str(duration), "-q:a", "0", "-map", "0:a:0", audio_out
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
         # Extract Image
