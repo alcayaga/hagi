@@ -76,7 +76,8 @@
                 <button onclick="closeModal('mediaModal', 'mediaAudio')" class="text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400 font-bold text-xl">&times;</button>
             </div>
             <div class="p-6 flex flex-col items-center gap-6">
-                <img id="mediaImage" src="" alt="Snapshot" class="rounded shadow border border-gray-200 dark:border-gray-600 max-h-64 object-cover w-full">
+                <div id="mediaMetadata" class="text-sm font-bold text-gray-500 dark:text-gray-400 text-center uppercase tracking-wide"></div>
+                <img id="mediaImage" src="" alt="Snapshot" class="rounded shadow border border-gray-200 dark:border-gray-600 max-h-96 object-contain bg-black w-full">
                 <audio id="mediaAudio" controls class="w-full"></audio>
                 <p id="mediaText" class="text-xl text-center font-medium dark:text-gray-200"></p>
             </div>

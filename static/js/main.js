@@ -133,7 +133,7 @@ function renderResults() {
     if (r.show_title) {
       sourceDisplay = `${r.show_title}`;
       if (r.season !== null && r.episode !== null) {
-        sourceDisplay += ` - S${r.season.toString().padStart(2, '0')}E${r.episode.toString().padStart(2, '0')}`;
+        sourceDisplay += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
       } else if (r.episode !== null) {
         sourceDisplay += ` - Ep ${r.episode}`;
       }
@@ -183,6 +183,24 @@ async function extractMedia(id, btnElement) {
   const padEnd = parseFloat(document.getElementById("padEnd").value) || 0.5;
 
   const originalText = btnElement.innerText;
+
+  const r = allSearchResults.find((x) => x.id === id);
+  if (r) {
+    let metaStr = r.show_title || r.path.split("/").pop();
+    if (r.season !== null && r.episode !== null) {
+      metaStr += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
+    } else if (r.episode !== null) {
+      metaStr += ` - Ep ${r.episode}`;
+    }
+    const m = Math.floor(r.start_time / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = Math.floor(r.start_time % 60)
+      .toString()
+      .padStart(2, "0");
+    metaStr += ` [${m}:${s}]`;
+    document.getElementById("mediaMetadata").innerText = metaStr;
+  }
   btnElement.innerText = "Wait...";
   btnElement.disabled = true;
   btnElement.classList.add("opacity-50");
@@ -237,7 +255,8 @@ async function viewContext(id) {
     if (data.target_context.length === 0) {
       list.innerHTML = `<p class="text-gray-500">No context available.</p>`;
     } else {
-      const hasSecondary = data.secondary_context && data.secondary_context.length > 0;
+      const hasSecondary =
+        data.secondary_context && data.secondary_context.length > 0;
 
       if (hasSecondary) {
         const grid = document.createElement("div");
