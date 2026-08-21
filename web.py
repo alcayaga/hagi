@@ -20,6 +20,7 @@ templates = Jinja2Templates(directory="templates")
 # Mount media folder so UI can serve extracted images/audio
 os.makedirs("media", exist_ok=True)
 app.mount("/media", StaticFiles(directory="media"), name="media")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
