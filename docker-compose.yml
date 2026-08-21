@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  nadeshiko:
+    build: .
+    container_name: local-nadeshiko
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount the application code and database so data is persisted
+      - ./:/app
+      # Mount the NAS directory so the container can access your anime files
+      - /mnt/NAS:/mnt/NAS:ro
