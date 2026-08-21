@@ -167,7 +167,7 @@ def export(
 
 
 @app.command()
-def ui(port: int = 8000):
+def ui(port: int = 8000, host: str = "127.0.0.1"):
     """Launch the Nadeshiko local web interface."""
     import uvicorn
 
@@ -176,11 +176,11 @@ def ui(port: int = 8000):
     # Ensure database migrations are run
     db.init_db()
 
-    console.print(f"[green]Starting Nadeshiko Web UI at http://localhost:{port}[/green]")
+    console.print(f"[green]Starting Nadeshiko Web UI at http://{host}:{port}[/green]")
     console.print("Press Ctrl+C to quit.")
 
     # We use log_level warning to keep the terminal clean while using the app
-    uvicorn.run(web_app, host="127.0.0.1", port=port, log_level="warning")
+    uvicorn.run(web_app, host=host, port=port, log_level="warning")
 
 
 if __name__ == "__main__":
