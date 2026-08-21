@@ -7,8 +7,10 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     volumes:
-      # Mount the application code and database so data is persisted
-      - ./:/app
+      # Mount only the database file to persist it safely
+      - ./nadeshiko.db:/app/nadeshiko.db
       # Mount the NAS directory so the container can access your anime files
       - /mnt/NAS:/mnt/NAS:ro
