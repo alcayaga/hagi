@@ -144,3 +144,28 @@ def test_translation_language_priority(test_db):
     
     # Spanish should be chosen because it is prioritized over Portuguese
     assert results[0]["translation"] == "Spanish text"
+    assert results[0]["translation_language"] == "spa"
+
+def test_search_foreign_returns_japanese_primary(test_db):
+    """Test that searching for a foreign language word prioritizes the Japanese text as the primary result."""
+    jp_id = db.add_media(
+        test_db, "/mock/Anime_jp.mkv", "mkv", show_title="Priority Anime", season=1, episode=2
+    )
+    db.add_sentences(test_db, jp_id, [("jpn", 10.0, 15.0, "日本のテキスト")])
+
+    spa_id = db.add_media(
+        test_db, "/mock/Anime_spa.ass", "ass", show_title="Priority Anime", season=1, episode=2
+    )
+    db.add_sentences(test_db, spa_id, [("spa", 10.1, 15.1, "Palabra en español")])
+
+    # Search for the Spanish word
+    results = search_sentences(test_db, "español")
+    assert len(results) == 1
+    
+    # Primary text should be Japanese, despite the search query matching Spanish
+    assert results[0]["text"] == "日本のテキスト"
+    assert results[0]["language"] == "jpn"
+    
+    # Secondary text should be the Spanish match
+    assert results[0]["translation"] == "Palabra en español"
+    assert results[0]["translation_language"] == "spa"
