@@ -1,3 +1,5 @@
+"""Command-line interface for Nadeshiko Local."""
+
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -68,8 +70,8 @@ def context(sentence_id: int):
 
     context_sentences = conn.execute(
         """
-        SELECT id, start_time, text 
-        FROM sentences 
+        SELECT id, start_time, text
+        FROM sentences
         WHERE media_id = ? AND start_time >= ? AND start_time <= ?
         ORDER BY start_time ASC
     """,

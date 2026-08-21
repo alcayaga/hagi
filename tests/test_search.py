@@ -1,3 +1,4 @@
+"""Test module."""
 import pytest
 
 import db
@@ -7,6 +8,7 @@ from db import add_media, add_sentences, search_sentences
 @pytest.fixture
 def test_db():
     # Override the database path to use an in-memory database for testing
+    """Test function."""
     db.DB_PATH = ":memory:"
     conn = db.init_db()
 
@@ -29,6 +31,7 @@ def test_db():
 
 
 def test_basic_search(test_db):
+    """Test function."""
     results = search_sentences(test_db, "平気")
     # Should find all 4 sentences containing "平気"
     assert len(results) == 4
@@ -39,6 +42,7 @@ def test_basic_search(test_db):
 
 def test_exclusive_search(test_db):
     # Find "平気" but exclude "私"
+    """Test function."""
     results = search_sentences(test_db, "平気 -私")
 
     # Should only find 2 sentences (excluding "私 平気" and "ごめん 憂 私なら平気")
@@ -50,17 +54,20 @@ def test_exclusive_search(test_db):
 
 
 def test_multiple_terms_search(test_db):
+    """Test function."""
     results = search_sentences(test_db, "憂 ごめん")
     assert len(results) == 1
     assert results[0]["text"] == "ごめん 憂 私なら平気"
 
 
 def test_exact_phrase_search(test_db):
+    """Test function."""
     results = search_sentences(test_db, '"high school"')
     assert len(results) == 1
     assert results[0]["text"] == "I am a normal high school girl"
 
 
 def test_no_results(test_db):
+    """Test function."""
     results = search_sentences(test_db, "宇宙人")
     assert len(results) == 0

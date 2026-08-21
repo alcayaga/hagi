@@ -1,3 +1,4 @@
+"""Test module."""
 import json
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,7 @@ import indexer
 @pytest.fixture
 def test_db():
     # Use in-memory DB for tests
+    """Test function."""
     db.DB_PATH = ":memory:"
     conn = db.init_db()
     yield conn
@@ -37,6 +39,7 @@ def test_language_detection_external_subs(test_db):
         with patch("indexer.pysubs2.load") as mock_load:
             # Setup mock returns: English, Japanese, Spanish
             def mock_load_side_effect(path, **kwargs):
+                """Test function."""
                 mock_subs = MagicMock()
                 mock_line = MagicMock()
                 mock_line.start = 0

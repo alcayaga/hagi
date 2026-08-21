@@ -1,3 +1,5 @@
+"""Module for extracting media clips and exporting to Anki."""
+
 import csv
 import os
 import subprocess
@@ -8,6 +10,22 @@ import db
 def extract_media(
     sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5
 ):
+    """Extract audio and image for a given sentence.
+
+    Args:
+        sentence_id (int): ID of the sentence to extract.
+        out_dir (str): Output directory for the extracted media.
+        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.5.
+        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.5.
+
+    Returns:
+        tuple: A tuple containing:
+            - bool: Success status.
+            - str: Status message.
+            - str: Path to the extracted audio file.
+            - str: Path to the extracted image file.
+            - str: The sentence text.
+    """
     conn = db.get_db()
     target = conn.execute(
         """
@@ -126,6 +144,19 @@ def extract_media(
 def export_anki(
     sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5
 ):
+    """Export a sentence and its media for Anki.
+
+    Args:
+        sentence_id (int): ID of the sentence to export.
+        out_dir (str): Output directory for the exported media and CSV.
+        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.5.
+        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.5.
+
+    Returns:
+        tuple: A tuple containing:
+            - bool: Success status.
+            - str: Status message.
+    """
     success, msg, audio_out, image_out, text = extract_media(
         sentence_id, out_dir, pad_start, pad_end
     )

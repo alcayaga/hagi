@@ -1,3 +1,4 @@
+"""Test module."""
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -8,6 +9,7 @@ import exporter
 
 @pytest.fixture
 def test_db():
+    """Test function."""
     db.DB_PATH = ":memory:"
     conn = db.init_db()
 
@@ -62,7 +64,7 @@ def test_export_anki(test_db):
     """Test that export_anki generates the correct TSV line."""
     with (
         patch("exporter.extract_media") as mock_extract,
-        patch("builtins.open", new_callable=MagicMock) as mock_open,
+        patch("builtins.open", new_callable=MagicMock),
         patch("csv.writer") as mock_csv_writer,
     ):
         mock_extract.return_value = (

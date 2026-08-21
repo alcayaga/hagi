@@ -1,0 +1,10 @@
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Enable Pyflakes (F), pycodestyle (E, W), and pydocstyle (D)
+select = ["F", "E", "W", "D"]
+
+[tool.ruff.lint.pydocstyle]
+# Use the Google convention for docstrings
+convention = "google"

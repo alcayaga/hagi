@@ -1,3 +1,5 @@
+"""Module for indexing media files and subtitles."""
+
 import json
 import os
 import subprocess
@@ -9,6 +11,15 @@ from db import add_media, add_sentences, get_db
 
 
 def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown"):
+    """Process subtitles and add them to the database.
+
+    Args:
+        conn: Database connection.
+        file_path (str): Path to the media file.
+        subs: Parsed subtitle object (e.g., from pysubs2).
+        media_type (str, optional): Type of the media. Defaults to "subtitle".
+        language (str, optional): Language of the subtitles. Defaults to "unknown".
+    """
     media_id = add_media(conn, file_path, media_type)
     sentences = []
 
@@ -24,6 +35,11 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
 
 
 def index_directory(directory_path: str):
+    """Scan and index all subtitle and MKV files in a directory.
+
+    Args:
+        directory_path (str): Path to the directory to be indexed.
+    """
     conn = get_db()
     for root, _, files in os.walk(directory_path):
         for file in files:

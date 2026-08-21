@@ -1,16 +1,29 @@
+"""Database management module for Nadeshiko Local."""
+
 import os
+import shlex
 import sqlite3
 
 DB_PATH = os.path.abspath("nadeshiko.db")
 
 
 def get_db():
+    """Get a database connection.
+
+    Returns:
+        sqlite3.Connection: Database connection object.
+    """
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
+    """Initialize the database schema.
+
+    Returns:
+        sqlite3.Connection: Database connection object.
+    """
     conn = get_db()
     with conn:
         conn.execute("""
@@ -56,6 +69,16 @@ def init_db():
 
 
 def add_media(conn, path, media_type):
+    """Add a media file to the database.
+
+    Args:
+        conn (sqlite3.Connection): Database connection.
+        path (str): File path to the media.
+        media_type (str): Type of the media.
+
+    Returns:
+        int: The ID of the inserted or existing media.
+    """
     cursor = conn.execute("SELECT id FROM media WHERE path = ?", (path,))
     row = cursor.fetchone()
     if row:
@@ -68,7 +91,13 @@ def add_media(conn, path, media_type):
 
 
 def add_sentences(conn, media_id, sentences):
-    """sentences: list of (language, start_time, end_time, text)"""
+    """Add sentences to the database.
+
+    Args:
+        conn (sqlite3.Connection): Database connection.
+        media_id (int): The ID of the media file.
+        sentences (list): List of tuples containing (language, start_time, end_time, text).
+    """
     conn.executemany(
         """
         INSERT INTO sentences (media_id, language, start_time, end_time, text)
@@ -78,10 +107,16 @@ def add_sentences(conn, media_id, sentences):
     )
 
 
-import shlex
-
-
 def search_sentences(conn, query):
+    """Search for sentences using a query string.
+
+    Args:
+        conn (sqlite3.Connection): Database connection.
+        query (str): The search query.
+
+    Returns:
+        list: List of matching sentence rows.
+    """
     try:
         # Respect quoted exact phrases (e.g. "exact match")
         tokens = shlex.split(query)

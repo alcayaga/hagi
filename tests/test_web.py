@@ -1,3 +1,4 @@
+"""Test module."""
 from unittest.mock import patch
 
 import pytest
@@ -11,6 +12,7 @@ client = TestClient(app)
 
 @pytest.fixture
 def test_db():
+    """Test function."""
     db.DB_PATH = ":memory:"
     conn = db.init_db()
     media_id = db.add_media(conn, "/fake/video.mkv", "mkv_embedded")
@@ -20,6 +22,7 @@ def test_db():
 
 
 def test_read_main():
+    """Test function."""
     response = client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
@@ -27,6 +30,7 @@ def test_read_main():
 
 
 def test_api_search(test_db):
+    """Test function."""
     with patch("web.db.get_db", return_value=test_db):
         response = client.get("/api/search?q=web")
         assert response.status_code == 200
@@ -36,6 +40,7 @@ def test_api_search(test_db):
 
 
 def test_api_extract(test_db):
+    """Test function."""
     with (
         patch("web.db.get_db", return_value=test_db),
         patch("web.exporter.extract_media") as mock_extract,
