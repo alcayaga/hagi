@@ -1,12 +1,14 @@
-import sqlite3
 import os
+import sqlite3
 
 DB_PATH = os.path.abspath("nadeshiko.db")
 
+
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     return conn
+
 
 def init_db():
     conn = get_db()
@@ -52,23 +54,32 @@ def init_db():
         """)
     return conn
 
+
 def add_media(conn, path, media_type):
     cursor = conn.execute("SELECT id FROM media WHERE path = ?", (path,))
     row = cursor.fetchone()
     if row:
         return row[0]
-        
-    cursor = conn.execute("INSERT INTO media (path, type) VALUES (?, ?)", (path, media_type))
+
+    cursor = conn.execute(
+        "INSERT INTO media (path, type) VALUES (?, ?)", (path, media_type)
+    )
     return cursor.lastrowid
+
 
 def add_sentences(conn, media_id, sentences):
     """sentences: list of (language, start_time, end_time, text)"""
-    conn.executemany("""
+    conn.executemany(
+        """
         INSERT INTO sentences (media_id, language, start_time, end_time, text)
         VALUES (?, ?, ?, ?, ?)
-    """, [(media_id, s[0], s[1], s[2], s[3]) for s in sentences])
+    """,
+        [(media_id, s[0], s[1], s[2], s[3]) for s in sentences],
+    )
+
 
 import shlex
+
 
 def search_sentences(conn, query):
     try:
@@ -76,12 +87,12 @@ def search_sentences(conn, query):
         tokens = shlex.split(query)
     except ValueError:
         tokens = query.split()
-        
+
     conditions = []
     params = []
-    
+
     for token in tokens:
-        if token.startswith('-'):
+        if token.startswith("-"):
             term = token[1:]
             if term:
                 conditions.append("s.text NOT LIKE ?")
@@ -89,12 +100,12 @@ def search_sentences(conn, query):
         else:
             conditions.append("s.text LIKE ?")
             params.append(f"%{token}%")
-            
+
     if not conditions:
         return []
-        
+
     where_clause = " AND ".join(conditions)
-    
+
     sql = f"""
         SELECT s.id, s.text, s.language, s.start_time, m.path
         FROM sentences s

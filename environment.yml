@@ -10,5 +10,6 @@ dependencies:
   - fastapi
   - uvicorn
   - jinja2
+  - ruff
   - pip:
       - pysubs2

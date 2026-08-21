@@ -4,26 +4,38 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Nadeshiko Search</title>
-    <!-- Use Tailwind CSS for quick barebones styling -->
+    <!-- Use Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body class="bg-gray-100 min-h-screen dark:bg-gray-900 dark:text-gray-100 transition-colors">
     <div class="container mx-auto p-8">
-        <h1 class="text-4xl font-bold mb-8 text-center text-indigo-600">Nadeshiko Search</h1>
+        <h1 class="text-4xl font-bold mb-8 text-center text-indigo-600 dark:text-indigo-400">Nadeshiko Search</h1>
         
-        <!-- Search Box -->
-        <div class="flex justify-center mb-8">
-            <input type="text" id="searchInput" placeholder="Search for a word (e.g. Asakura, -English)" class="w-2/3 p-4 rounded shadow text-lg outline-none focus:ring-2 focus:ring-indigo-500">
-            <button onclick="performSearch()" class="ml-4 bg-indigo-600 text-white px-6 py-4 rounded shadow hover:bg-indigo-700 text-lg">Search</button>
+        <!-- Search & Config -->
+        <div class="flex flex-col md:flex-row justify-center items-center gap-4 mb-8">
+            <input type="text" id="searchInput" placeholder="Search for a word (e.g. Asakura, -English)" class="w-full md:w-1/2 p-4 rounded shadow text-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100">
+            
+            <div class="flex gap-2 items-center bg-white dark:bg-gray-800 p-2 rounded shadow">
+                <div class="flex flex-col px-2">
+                    <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase">Pad Start</label>
+                    <input type="number" id="padStart" value="0.5" step="0.1" class="w-16 p-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+                <div class="flex flex-col px-2 border-l dark:border-gray-700">
+                    <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase">Pad End</label>
+                    <input type="number" id="padEnd" value="0.5" step="0.1" class="w-16 p-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                </div>
+            </div>
+
+            <button onclick="performSearch()" class="bg-indigo-600 text-white px-6 py-4 rounded shadow hover:bg-indigo-700 text-lg w-full md:w-auto">Search</button>
         </div>
 
         <!-- Loading Indicator -->
-        <div id="loading" class="text-center text-gray-500 hidden mb-4">Searching...</div>
+        <div id="loading" class="text-center text-gray-500 dark:text-gray-400 hidden mb-4">Searching...</div>
 
         <!-- Results Table -->
-        <div class="bg-white rounded shadow overflow-hidden">
+        <div class="bg-white dark:bg-gray-800 rounded shadow overflow-hidden">
             <table class="min-w-full text-left" id="resultsTable">
-                <thead class="bg-indigo-50 text-indigo-600 border-b">
+                <thead class="bg-indigo-50 dark:bg-gray-700 text-indigo-600 dark:text-indigo-300 border-b dark:border-gray-600">
                     <tr>
                         <th class="px-6 py-4 font-semibold">Lang</th>
                         <th class="px-6 py-4 font-semibold">Time</th>
@@ -32,7 +44,7 @@
                         <th class="px-6 py-4 font-semibold text-center">Actions</th>
                     </tr>
                 </thead>
-                <tbody id="resultsBody" class="divide-y text-gray-700">
+                <tbody id="resultsBody" class="divide-y dark:divide-gray-700 text-gray-700 dark:text-gray-200">
                     <!-- Results populated here -->
                 </tbody>
             </table>
@@ -40,20 +52,33 @@
     </div>
 
     <!-- Modal for Extracted Media -->
-    <div id="mediaModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
-        <div class="bg-white p-6 rounded max-w-lg w-full">
+    <div id="mediaModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded max-w-lg w-full text-gray-900 dark:text-gray-100 shadow-xl border dark:border-gray-700">
             <h2 class="text-2xl font-bold mb-4">Media Extracted</h2>
             <p id="mediaText" class="text-lg italic mb-4"></p>
             <img id="mediaImage" src="" class="w-full mb-4 rounded shadow" />
             <audio id="mediaAudio" controls class="w-full mb-4"></audio>
             <div class="text-right">
-                <button onclick="closeModal()" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Close</button>
+                <button onclick="closeModal('mediaModal', 'mediaAudio')" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Context -->
+    <div id="contextModal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center hidden z-50 p-4">
+        <div class="bg-white dark:bg-gray-800 p-6 rounded max-w-2xl w-full text-gray-900 dark:text-gray-100 shadow-xl border dark:border-gray-700 flex flex-col max-h-full">
+            <h2 class="text-2xl font-bold mb-4">Context Viewer</h2>
+            <div id="contextLoading" class="text-gray-500 italic mb-4 hidden">Loading context...</div>
+            <div id="contextList" class="overflow-y-auto space-y-4 mb-4 pr-2 flex-grow">
+                <!-- Context sentences populated here -->
+            </div>
+            <div class="text-right pt-4 border-t dark:border-gray-700">
+                <button onclick="closeModal('contextModal')" class="bg-gray-500 text-white px-4 py-2 rounded hover:bg-gray-600">Close</button>
             </div>
         </div>
     </div>
 
     <script>
-        // Trigger search on Enter key
         document.getElementById('searchInput').addEventListener('keypress', function (e) {
             if (e.key === 'Enter') performSearch();
         });
@@ -73,33 +98,33 @@
                 const results = await response.json();
                 
                 if (results.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500">No results found</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No results found</td></tr>`;
                 } else {
                     results.forEach(r => {
-                        // Format time (seconds to MM:SS)
                         const m = Math.floor(r.start_time / 60).toString().padStart(2, '0');
                         const s = Math.floor(r.start_time % 60).toString().padStart(2, '0');
                         const timeStr = `${m}:${s}`;
                         
-                        // Extract filename from path
                         const fileName = r.path.split('/').pop();
                         
-                        // Color code language
-                        let langClass = "bg-gray-200 text-gray-800";
-                        if (r.language === 'jpn') langClass = "bg-blue-100 text-blue-800";
-                        if (r.language === 'eng') langClass = "bg-yellow-100 text-yellow-800";
-                        if (r.language === 'spa') langClass = "bg-red-100 text-red-800";
-                        if (r.language === 'por') langClass = "bg-green-100 text-green-800";
+                        let langClass = "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
+                        if (r.language === 'jpn') langClass = "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
+                        if (r.language === 'eng') langClass = "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+                        if (r.language === 'spa') langClass = "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+                        if (r.language === 'por') langClass = "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
 
                         const row = document.createElement('tr');
-                        row.className = "hover:bg-gray-50";
+                        row.className = "hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors";
                         row.innerHTML = `
                             <td class="px-6 py-4"><span class="px-2 py-1 rounded text-sm font-bold ${langClass}">${r.language.toUpperCase()}</span></td>
-                            <td class="px-6 py-4 text-sm text-gray-500">${timeStr}</td>
+                            <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">${timeStr}</td>
                             <td class="px-6 py-4 text-lg font-medium">${r.text}</td>
                             <td class="px-6 py-4 text-xs text-gray-400 max-w-xs truncate" title="${fileName}">${fileName}</td>
-                            <td class="px-6 py-4 text-center space-x-2">
-                                <button onclick="extractMedia(${r.id}, this)" class="bg-indigo-100 text-indigo-700 px-3 py-1 rounded hover:bg-indigo-200 font-semibold text-sm transition">Extract</button>
+                            <td class="px-6 py-4">
+                                <div class="flex flex-col items-center space-y-2">
+                                    <button onclick="viewContext(${r.id})" class="w-20 bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-200 px-3 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-500 font-semibold text-sm transition shadow-sm">Context</button>
+                                    <button onclick="extractMedia(${r.id}, this)" class="w-20 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200 px-3 py-1 rounded hover:bg-indigo-200 dark:hover:bg-indigo-800 font-semibold text-sm transition shadow-sm">Extract</button>
+                                </div>
                             </td>
                         `;
                         tbody.appendChild(row);
@@ -113,19 +138,24 @@
         }
 
         async function extractMedia(id, btnElement) {
+            const padStart = parseFloat(document.getElementById('padStart').value) || 0.5;
+            const padEnd = parseFloat(document.getElementById('padEnd').value) || 0.5;
+
             const originalText = btnElement.innerText;
-            btnElement.innerText = "Extracting...";
+            btnElement.innerText = "Wait...";
             btnElement.disabled = true;
             btnElement.classList.add('opacity-50');
 
             try {
-                const response = await fetch(`/api/extract/${id}`, { method: 'POST' });
+                const response = await fetch(`/api/extract/${id}`, { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pad_start: padStart, pad_end: padEnd })
+                });
                 const data = await response.json();
                 
                 if (data.success) {
-                    // Show modal with media
                     document.getElementById('mediaText').innerText = data.text;
-                    // Add timestamp to bypass cache
                     document.getElementById('mediaImage').src = data.image_url + "?t=" + new Date().getTime();
                     document.getElementById('mediaAudio').src = data.audio_url + "?t=" + new Date().getTime();
                     document.getElementById('mediaAudio').play();
@@ -142,9 +172,56 @@
             }
         }
 
-        function closeModal() {
-            document.getElementById('mediaModal').classList.add('hidden');
-            document.getElementById('mediaAudio').pause();
+        async function viewContext(id) {
+            document.getElementById('contextModal').classList.remove('hidden');
+            const list = document.getElementById('contextList');
+            const loading = document.getElementById('contextLoading');
+            
+            list.innerHTML = '';
+            loading.classList.remove('hidden');
+
+            try {
+                const response = await fetch(`/api/context/${id}`);
+                const data = await response.json();
+                
+                if (data.length === 0) {
+                    list.innerHTML = `<p class="text-gray-500">No context available.</p>`;
+                } else {
+                    data.forEach(r => {
+                        const m = Math.floor(r.start_time / 60).toString().padStart(2, '0');
+                        const s = Math.floor(r.start_time % 60).toString().padStart(2, '0');
+                        const timeStr = `${m}:${s}`;
+                        
+                        // Highlight the target sentence
+                        const isTarget = r.id === id;
+                        const bgClass = isTarget ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner" : "bg-gray-50 dark:bg-gray-700 border-transparent";
+                        
+                        const div = document.createElement('div');
+                        div.className = `p-3 rounded border ${bgClass}`;
+                        div.innerHTML = `
+                            <span class="text-sm text-gray-500 dark:text-gray-400 font-mono mr-2">[${timeStr}]</span>
+                            <span class="${isTarget ? 'font-bold text-indigo-700 dark:text-indigo-300' : ''}">${r.text}</span>
+                        `;
+                        list.appendChild(div);
+
+                        if (isTarget) {
+                            // Scroll the target sentence into view
+                            setTimeout(() => div.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+                        }
+                    });
+                }
+            } catch (error) {
+                list.innerHTML = `<p class="text-red-500">Error fetching context: ${error}</p>`;
+            } finally {
+                loading.classList.add('hidden');
+            }
+        }
+
+        function closeModal(modalId, audioId = null) {
+            document.getElementById(modalId).classList.add('hidden');
+            if (audioId) {
+                document.getElementById(audioId).pause();
+            }
         }
     </script>
 </body>

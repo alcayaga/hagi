@@ -185,3 +185,4 @@ media/
 anki_deck/
 
 .DS_Store
+nadeshiko.db-journal

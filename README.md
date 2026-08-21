@@ -1,14 +1,14 @@
 # Local Nadeshiko
 
-A barebones, command-line version of [Nadeshiko](https://github.com/BrigadaSOS/Nadeshiko) designed to index, search, and extract Japanese sentences from your local anime collection.
+A barebones version of [Nadeshiko](https://github.com/BrigadaSOS/Nadeshiko) designed to index, search, and extract Japanese sentences from your local anime collection.
 
 ## Features
 
 - **Local Indexing:** Scans directories for `.mkv` video files and `.ass`/`.srt` subtitle files.
-- **Embedded Subtitle Support:** Automatically extracts embedded subtitle tracks from `.mkv` files if external subtitles are not found.
-- **Lightning Fast Search:** Uses SQLite FTS5 for instantaneous multi-lingual sentence searching.
-- **Context Viewer:** View the surrounding sentences for any search result to understand the full context.
-- **Anki Export:** Automatically slices exact audio clips and screenshots using `ffmpeg` and formats them into a TSV file ready for Anki import.
+- **Advanced Subtitle Parsing:** Automatically extracts *all* embedded subtitle tracks from `.mkv` files, dynamically detects the language based on content (not just filenames), and perfectly handles Dual-Audio (AO) releases by extracting the correct Japanese audio track via `ffprobe`.
+- **Lightning Fast Search:** Uses dynamic SQLite queries for instantaneous multi-lingual sentence searching (with support for exact phrase matching).
+- **Web UI & Context Viewer:** Spin up a beautiful local web interface to search visually, view surrounding sentence context, and play extracted audio clips instantly right in your browser.
+- **Media Extraction & Anki Export:** Automatically slices exact audio clips and screenshots using `ffmpeg`.
 
 ## Prerequisites
 
@@ -23,15 +23,10 @@ conda env create -f environment.yml
 conda activate local-nadeshiko
 ```
 
-Using standard pip (Make sure you install `ffmpeg` separately):
-```bash
-python3 -m pip install -r requirements.txt
-```
-
 ## Usage
 
 **1. Initialize the Database**
-Creates the local SQLite database at `~/.local_nadeshiko.db`.
+Creates a local SQLite database at `./nadeshiko.db` in your project folder.
 ```bash
 ./nadeshiko init
 ```
@@ -39,22 +34,32 @@ Creates the local SQLite database at `~/.local_nadeshiko.db`.
 **2. Index your Anime**
 Scans your directory and builds the search index.
 ```bash
-./nadeshiko index /Volumes/NAS/Anime
+./nadeshiko index "/Volumes/NAS/Anime/Shaman King"
 ```
 
-**3. Search for Sentences**
+**3. Launch the Web UI (Recommended)**
+Start the local FastAPI web server to search visually and extract media with the click of a button!
+```bash
+./nadeshiko ui
+```
+Open **[http://localhost:8000](http://localhost:8000)** in your browser.
+
+**4. CLI Search**
+If you prefer the terminal, you can search directly:
 ```bash
 ./nadeshiko search "彼女"
 ```
 
-**4. View Context**
-Get the sentences before and after a specific result ID.
-```bash
-./nadeshiko context <id>
-```
-
-**5. Export to Anki**
+**5. CLI Export to Anki**
 Extracts the exact audio snippet, a screenshot, and text into `./anki_deck` formatted for easy importing.
 ```bash
 ./nadeshiko export <id> --out ./anki_deck
+```
+
+## Code Maintenance
+This project uses `ruff` to ensure lightning-fast linting and formatting. 
+To format the code, simply run:
+```bash
+ruff format .
+ruff check --fix .
 ```
