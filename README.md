@@ -32,9 +32,21 @@ Creates a local SQLite database at `./nadeshiko.db` in your project folder.
 ```
 
 **2. Index your Anime**
-Scans your directory and builds the search index.
+Scans your directory and builds the search index. You can pass a specific directory directly:
 ```bash
 ./nadeshiko index "/Volumes/NAS/Anime/Shaman King"
+```
+Alternatively, if you create a `config.json` file in the root folder containing a list of directories, you can simply run the command with no arguments to index all of them automatically:
+```json
+{
+  "directories": [
+    "/Volumes/NAS/Anime/Show 1",
+    "/Volumes/NAS/Anime/Show 2"
+  ]
+}
+```
+```bash
+./nadeshiko index
 ```
 
 **3. Launch the Web UI (Recommended)**

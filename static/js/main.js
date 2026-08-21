@@ -130,12 +130,20 @@ function renderResults() {
     const timeStr = `${m}:${s}`;
 
     let sourceDisplay = r.path.split("/").pop();
+    let fullTitle = sourceDisplay;
+    let episodeTitleHtml = "";
+    
     if (r.show_title) {
       sourceDisplay = `${r.show_title}`;
       if (r.season !== null && r.episode !== null) {
         sourceDisplay += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
       } else if (r.episode !== null) {
         sourceDisplay += ` - Ep ${r.episode}`;
+      }
+      fullTitle = sourceDisplay;
+      if (r.episode_title) {
+        fullTitle += ` "${r.episode_title}"`;
+        episodeTitleHtml = `<div class="mt-1 text-gray-500 italic">${r.episode_title}</div>`;
       }
     }
 
@@ -162,7 +170,10 @@ function renderResults() {
     <div class="text-lg font-medium">${r.text}</div>
     ${r.translation ? `<div class="text-sm text-gray-500 dark:text-gray-400 font-mono mt-1">${r.translation}</div>` : ""}
 </td>
-                    <td class="px-6 py-4 text-xs text-gray-400 max-w-xs truncate" title="${sourceDisplay}">${sourceDisplay}</td>
+                    <td class="px-6 py-4 text-xs text-gray-400 max-w-xs whitespace-normal break-words" title="${fullTitle}">
+                        <div class="font-medium">${sourceDisplay}</div>
+                        ${episodeTitleHtml}
+                    </td>
                     <td class="px-6 py-4">
                         <div class="flex flex-col items-center space-y-2">
                             <button onclick="viewContext(${r.id})" class="w-20 bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-200 px-3 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-500 font-semibold text-sm transition shadow-sm">Context</button>
@@ -194,6 +205,9 @@ async function extractMedia(id, btnElement) {
       metaStr += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
     } else if (r.episode !== null) {
       metaStr += ` - Ep ${r.episode}`;
+    }
+    if (r.episode_title) {
+      metaStr += ` "${r.episode_title}"`;
     }
     const m = Math.floor(r.start_time / 60)
       .toString()

@@ -117,3 +117,26 @@ def test_add_media_lastrowid_bug(test_db):
     media_id_2 = db.add_media(test_db, "/path/to/video.mkv", "mkv_embedded")
 
     assert media_id_1 == media_id_2
+
+def test_plex_cache_unpacking(test_db):
+    """Ensure process_subs correctly unpacks 4 values from the plex_path_cache including episode_title."""
+    # Seed the cache with a 4-tuple representing (show_title, season, episode, episode_title)
+    indexer.plex_path_cache["episode1"] = ("My Show", 1, 5, "The Best Episode")
+    
+    with patch("indexer.get_db", return_value=test_db):
+        with patch("indexer.pysubs2.load") as mock_load:
+            mock_subs = MagicMock()
+            mock_line = MagicMock()
+            mock_line.start = 0
+            mock_line.end = 1000
+            mock_line.plaintext = "Testing tuple unpacking"
+            mock_subs.__iter__.return_value = [mock_line]
+            mock_load.return_value = mock_subs
+            
+            # This should not raise a ValueError
+            indexer.process_subs(test_db, "/fake/path/episode1.srt", mock_subs, "subtitle", "eng")
+            
+            row = test_db.execute("SELECT show_title, episode_title FROM media WHERE path = '/fake/path/episode1.srt'").fetchone()
+            assert row is not None
+            assert row["show_title"] == "My Show"
+            assert row["episode_title"] == "The Best Episode"

@@ -39,7 +39,8 @@ def init_db():
                 type TEXT,
                 show_title TEXT,
                 season INTEGER,
-                episode INTEGER
+                episode INTEGER,
+                episode_title TEXT
             );
             
             CREATE TABLE IF NOT EXISTS sentences (
@@ -59,6 +60,7 @@ def init_db():
             conn.execute("ALTER TABLE media ADD COLUMN show_title TEXT")
             conn.execute("ALTER TABLE media ADD COLUMN season INTEGER")
             conn.execute("ALTER TABLE media ADD COLUMN episode INTEGER")
+            conn.execute("ALTER TABLE media ADD COLUMN episode_title TEXT")
         except sqlite3.OperationalError:
             pass
 
@@ -86,7 +88,7 @@ def init_db():
     return conn
 
 
-def add_media(conn, path, media_type, show_title=None, season=None, episode=None):
+def add_media(conn, path, media_type, show_title=None, season=None, episode=None, episode_title=None):
     """Add a media file to the database.
 
     Args:
@@ -100,7 +102,7 @@ def add_media(conn, path, media_type, show_title=None, season=None, episode=None
     Returns:
         int: The ID of the inserted or existing media.
     """
-    cursor = conn.execute("SELECT id, show_title FROM media WHERE path = ?", (path,))
+    cursor = conn.execute("SELECT id, show_title, episode_title FROM media WHERE path = ?", (path,))
     row = cursor.fetchone()
     if row:
         if row["show_title"] is None and show_title is not None:
@@ -108,11 +110,16 @@ def add_media(conn, path, media_type, show_title=None, season=None, episode=None
                 "UPDATE media SET show_title=?, season=?, episode=? WHERE id=?",
                 (show_title, season, episode, row["id"]),
             )
+        if episode_title and ("episode_title" not in row.keys() or not row["episode_title"]):
+            conn.execute(
+                "UPDATE media SET episode_title=? WHERE id=?",
+                (episode_title, row["id"]),
+            )
         return row["id"]
 
     cursor = conn.execute(
-        "INSERT INTO media (path, type, show_title, season, episode) VALUES (?, ?, ?, ?, ?)",
-        (path, media_type, show_title, season, episode),
+        "INSERT INTO media (path, type, show_title, season, episode, episode_title) VALUES (?, ?, ?, ?, ?, ?)",
+        (path, media_type, show_title, season, episode, episode_title),
     )
     return cursor.lastrowid
 
@@ -181,7 +188,7 @@ def search_sentences(conn, query, show_title=None, episode=None):
     sql = f"""
         SELECT 
             s.id, s.text, s.language, s.start_time, 
-            m.path, m.show_title, m.season, m.episode,
+            m.path, m.show_title, m.season, m.episode, m.episode_title,
             (
                 SELECT s2.text 
                 FROM sentences s2 

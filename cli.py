@@ -22,18 +22,46 @@ def init():
 import os
 
 
-@app.command()
-def index(directory: str):
-    """Index a directory containing subtitle files."""
-    if not os.path.isdir(directory):
-        console.print(
-            f"[red]Error: Directory '{directory}' does not exist or is not a directory.[/red]"
-        )
-        raise typer.Exit(code=1)
+import json
+from typing import Optional
 
+@app.command()
+def index(directory: Optional[str] = typer.Argument(None)):
+    """Index a directory or multiple directories from config.json."""
     db.init_db()  # ensure db exists
-    console.print(f"Indexing directory: [bold]{directory}[/bold]...")
-    indexer.index_directory(directory)
+    
+    directories_to_index = []
+    
+    if directory:
+        directories_to_index.append(directory)
+    else:
+        # Try to load config.json
+        if os.path.exists("config.json"):
+            with open("config.json", "r") as f:
+                try:
+                    config = json.load(f)
+                    if "directories" in config and isinstance(config["directories"], list):
+                        directories_to_index.extend(config["directories"])
+                except Exception as e:
+                    console.print(f"[red]Error parsing config.json: {e}[/red]")
+                    raise typer.Exit(code=1)
+        
+        if not directories_to_index:
+            console.print("[red]Error: Please provide a directory argument or specify 'directories' in config.json.[/red]")
+            raise typer.Exit(code=1)
+
+    for dir_path in directories_to_index:
+        if not os.path.isdir(dir_path):
+            if directory:
+                console.print(f"[red]Error: Directory '{dir_path}' does not exist or is not a directory.[/red]")
+                raise typer.Exit(code=1)
+            else:
+                console.print(f"[yellow]Warning: Directory '{dir_path}' does not exist or is not a directory. Skipping.[/yellow]")
+                continue
+        
+        console.print(f"Indexing directory: [bold]{dir_path}[/bold]...")
+        indexer.index_directory(dir_path)
+        
     console.print("[green]Indexing complete![/green]")
 
 

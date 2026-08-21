@@ -26,8 +26,11 @@ except Exception as e:
     print(f"Warning: Could not connect to Plex: {e}")
 
 
+_plex_cache_built = False
+
 def build_plex_cache():
-    if not plex:
+    global _plex_cache_built
+    if not plex or _plex_cache_built:
         return
     print("Building Plex path mapping cache (this may take a moment)...")
     try:
@@ -38,7 +41,7 @@ def build_plex_cache():
                     for media in movie.media:
                         for part in media.parts:
                             base_name = os.path.splitext(os.path.basename(part.file))[0]
-                            plex_path_cache[base_name] = (movie.title, 1, 1)
+                            plex_path_cache[base_name] = (movie.title, 1, 1, movie.title)
             elif section.type == "show":
                 episodes = section.search(libtype="episode")
                 for ep in episodes:
@@ -49,7 +52,9 @@ def build_plex_cache():
                                 ep.grandparentTitle,
                                 ep.parentIndex,
                                 ep.index,
+                                ep.title,
                             )
+        _plex_cache_built = True
     except Exception as e:
         print(f"Error building Plex cache: {e}")
 
@@ -65,8 +70,8 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
         language (str, optional): Language of the subtitles. Defaults to "unknown".
     """
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    show_title, season, episode = plex_path_cache.get(base_name, (None, None, None))
-    media_id = add_media(conn, file_path, media_type, show_title, season, episode)
+    show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
+    media_id = add_media(conn, file_path, media_type, show_title, season, episode, episode_title)
     sentences = []
 
     for line in subs:
@@ -97,18 +102,27 @@ def index_directory(directory_path: str):
 
             # Incremental indexing: skip if already in DB
             row = conn.execute(
-                "SELECT id, show_title FROM media WHERE path = ?", (file_path,)
+                "SELECT id, show_title, episode_title FROM media WHERE path = ?", (file_path,)
             ).fetchone()
             if row:
-                if row["show_title"] is None:
-                    # Try to backfill Plex metadata
-                    show_title, season, episode = plex_path_cache.get(base_name, (None, None, None))
-                    if show_title:
-                        conn.execute(
-                            "UPDATE media SET show_title=?, season=?, episode=? WHERE id=?",
-                            (show_title, season, episode, row["id"]),
-                        )
-                        print(f"Backfilled Plex metadata for: {file_path}")
+                show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
+                updated = False
+                if row["show_title"] is None and show_title:
+                    conn.execute(
+                        "UPDATE media SET show_title=?, season=?, episode=? WHERE id=?",
+                        (show_title, season, episode, row["id"]),
+                    )
+                    updated = True
+                
+                if ("episode_title" not in row.keys() or not row["episode_title"]) and episode_title:
+                    conn.execute(
+                        "UPDATE media SET episode_title=? WHERE id=?",
+                        (episode_title, row["id"]),
+                    )
+                    updated = True
+                    
+                if updated:
+                    print(f"Backfilled Plex metadata for: {file_path}")
                 else:
                     print(f"Skipping (already indexed): {file_path}")
                 continue
@@ -190,8 +204,8 @@ def index_directory(directory_path: str):
                     streams = json.loads(result.stdout).get("streams", [])
                     if not streams:
                         # We process the mkv, so add it to the media table once to mark it as indexed even if tracks fail
-                        show_title, season, episode = plex_path_cache.get(base_name, (None, None, None))
-                        add_media(conn, file_path, "mkv_embedded", show_title, season, episode)
+                        show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
+                        add_media(conn, file_path, "mkv_embedded", show_title, season, episode, episode_title)
                         continue
 
                     for stream in streams:

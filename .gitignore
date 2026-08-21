@@ -186,3 +186,4 @@ anki_deck/
 
 .DS_Store
 nadeshiko.db-journal
+config.json
