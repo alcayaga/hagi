@@ -1,3 +1,8 @@
-typer
-rich
+fastapi
+jinja2
+plexapi
 pysubs2
+python-dotenv
+rich
+typer
+uvicorn
