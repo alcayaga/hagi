@@ -196,6 +196,11 @@ def search_sentences(conn, query, show_title=None, episode=None):
             s.id, s.text, s.language, s.start_time, 
             m.path, m.show_title, m.season, m.episode, m.episode_title,
             (
+                -- Note: The nested 'SELECT text FROM (SELECT ...)' is a workaround for older SQLite versions
+                -- (such as those on Raspberry Pi OS / Debian stable). In older versions, referencing an outer table
+                -- alias (s.start_time) inside the ORDER BY clause of a correlated subquery throws a 
+                -- "no such column: s.start_time" error. By calculating the difference in the SELECT list as 'diff' 
+                -- and ordering by that, we ensure compatibility across all SQLite versions.
                 SELECT text FROM (
                     SELECT s2.text, ABS(s2.start_time - s.start_time) as diff
                     FROM sentences s2 
