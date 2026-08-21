@@ -3,7 +3,7 @@ import subprocess
 import csv
 import db
 
-def export_anki(sentence_id: int, out_dir: str):
+def extract_media(sentence_id: int, out_dir: str):
     conn = db.get_db()
     target = conn.execute("""
         SELECT s.id, s.text, s.start_time, s.end_time, m.path
@@ -13,7 +13,7 @@ def export_anki(sentence_id: int, out_dir: str):
     """, (sentence_id,)).fetchone()
     
     if not target:
-        return False, "Sentence not found"
+        return False, "Sentence not found", None, None
         
     os.makedirs(out_dir, exist_ok=True)
     
@@ -26,7 +26,7 @@ def export_anki(sentence_id: int, out_dir: str):
         mkv_path = base_path + ".mkv"
     
     if not os.path.exists(mkv_path):
-        return False, f"Video file not found: {mkv_path}"
+        return False, f"Video file not found: {mkv_path}", None, None
         
     # Timestamps
     start = max(0, target['start_time'] - 0.5) # 0.5s padding
@@ -50,16 +50,24 @@ def export_anki(sentence_id: int, out_dir: str):
             "-vframes", "1", "-q:v", "2", image_out
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         
+        return True, "Media extracted successfully", audio_out, image_out, target['text']
+    except Exception as e:
+        return False, str(e), None, None, None
+
+def export_anki(sentence_id: int, out_dir: str):
+    success, msg, audio_out, image_out, text = extract_media(sentence_id, out_dir)
+    if not success:
+        return False, msg
+        
+    try:
         # Write to CSV
         csv_path = os.path.join(out_dir, "anki_import.tsv")
-        file_exists = os.path.exists(csv_path)
         
         with open(csv_path, 'a', newline='', encoding='utf-8') as f:
             writer = csv.writer(f, delimiter='\t')
-            # Format: Text, Audio, Image
-            audio_tag = f"[sound:nadeshiko_audio_{sentence_id}.mp3]"
-            img_tag = f"<img src='nadeshiko_img_{sentence_id}.jpg'>"
-            writer.writerow([target['text'], audio_tag, img_tag])
+            audio_tag = f"[sound:{os.path.basename(audio_out)}]"
+            img_tag = f"<img src='{os.path.basename(image_out)}'>"
+            writer.writerow([text, audio_tag, img_tag])
             
         return True, f"Exported to {out_dir}"
     except Exception as e:

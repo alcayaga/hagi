@@ -73,9 +73,21 @@ def context(sentence_id: int):
         console.print(f"[{color}]{prefix}[{time_str}] {s['text']}[/{color}]")
 
 @app.command()
+def extract(sentence_id: int, out_dir: str = "./media"):
+    """Extract raw audio and image for a sentence without Anki formatting."""
+    console.print(f"Extracting media for sentence {sentence_id}...")
+    success, msg, audio_out, image_out, text = exporter.extract_media(sentence_id, out_dir)
+    if success:
+        console.print(f"[green]Extracted audio to: {audio_out}[/green]")
+        console.print(f"[green]Extracted image to: {image_out}[/green]")
+        console.print(f"[cyan]Text: {text}[/cyan]")
+    else:
+        console.print(f"[red]Error: {msg}[/red]")
+
+@app.command()
 def export(sentence_id: int, out_dir: str = "./anki_deck"):
     """Export sentence context (audio, image, text) for Anki."""
-    console.print(f"Exporting sentence {sentence_id}...")
+    console.print(f"Exporting sentence {sentence_id} to Anki format...")
     success, msg = exporter.export_anki(sentence_id, out_dir)
     if success:
         console.print(f"[green]{msg}[/green]")
