@@ -13,8 +13,13 @@ def get_db():
     Returns:
         sqlite3.Connection: Database connection object.
     """
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+    conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA journal_mode=WAL;")
+        conn.execute("PRAGMA synchronous=NORMAL;")
+    except sqlite3.OperationalError:
+        pass  # If DB is heavily locked, WAL might fail to set, but timeout will still help
     return conn
 
 

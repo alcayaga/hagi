@@ -93,10 +93,39 @@ def get_context(sentence_id: int):
                 ),
             ).fetchall()]
 
+    other_lang = None
+    if target["language"] == "jpn":
+        if target["show_title"] and target["episode"]:
+            row = conn.execute(
+                """
+                SELECT s.language
+                FROM sentences s
+                JOIN media m ON s.media_id = m.id
+                WHERE m.show_title = ? AND m.season = ? AND m.episode = ? AND s.language != 'jpn'
+                LIMIT 1
+                """,
+                (target["show_title"], target["season"], target["episode"])
+            ).fetchone()
+            if row:
+                other_lang = row["language"]
+        else:
+            row = conn.execute(
+                "SELECT language FROM sentences WHERE media_id = ? AND language != 'jpn' LIMIT 1",
+                (target["media_id"],)
+            ).fetchone()
+            if row:
+                other_lang = row["language"]
+
+    secondary_lang = "jpn" if target["language"] != "jpn" else other_lang
+    secondary_context = []
+    if secondary_lang:
+        secondary_context = fetch_lang(secondary_lang)
+
     return {
         "target_lang": target["language"],
         "target_context": fetch_lang(target["language"]),
-        "jpn_context": fetch_lang("jpn") if target["language"] != "jpn" else []
+        "secondary_lang": secondary_lang,
+        "secondary_context": secondary_context
     }
 
 
