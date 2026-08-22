@@ -158,6 +158,7 @@ def test_mkv_subtitle_filtering(test_db):
             {"index": 3, "tags": {"language": "spa", "title": "Castilian"}}, # Skipped because Latin American exists
             {"index": 4, "tags": {"language": "spa", "title": "Latin American"}}, # Picked (Latin priority)
             {"index": 5, "tags": {"language": "jpn", "title": "Full Subtitles"}}, # Picked, but we will mock it to be English text!
+            {"index": 6, "tags": {"language": "unknown"}}, # Picked, will be detected as English text!
         ]}
         mock_res = MagicMock()
         mock_res.stdout = json.dumps(probe_output)
@@ -174,16 +175,16 @@ def test_mkv_subtitle_filtering(test_db):
 
         indexer.index_directory("/fake/path")
 
-        # Verify subprocess was called 4 times total:
-        # 1x ffprobe, 3x ffmpeg (eng, spa, jpn)
-        assert mock_subrun.call_count == 4
+        # Verify subprocess was called 5 times total:
+        # 1x ffprobe, 4x ffmpeg (eng, spa, jpn, unknown)
+        assert mock_subrun.call_count == 5
 
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
-        # English, Spanish, and the mistagged Japanese track which should become English
-        assert len(sentences) == 3
+        # English, Spanish, mistagged Japanese track, and untagged track
+        assert len(sentences) == 4
         langs = [s["language"] for s in sentences]
         
-        assert langs.count("eng") == 2
+        assert langs.count("eng") == 3
         assert langs.count("spa") == 1
         assert langs.count("jpn") == 0
 
