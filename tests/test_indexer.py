@@ -89,7 +89,7 @@ def test_mkv_embedded_extraction(test_db):
         # Mock the pysubs2 parser
         mock_subs = MagicMock()
         mock_line = MagicMock()
-        mock_line.plaintext = "Embedded text"
+        mock_line.plaintext = "こんにちは Embedded text"
         mock_line.start = 0
         mock_line.end = 1000
         mock_subs.__iter__.return_value = [mock_line]
@@ -140,3 +140,82 @@ def test_plex_cache_unpacking(test_db):
             assert row is not None
             assert row["show_title"] == "My Show"
             assert row["episode_title"] == "The Best Episode"
+
+def test_mkv_subtitle_filtering(test_db):
+    """Ensure we filter unwanted tracks, skip SDH, and catch Japanese mistagging."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("indexer.pysubs2.load") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {"streams": [
+            {"index": 0, "tags": {"language": "fre"}}, # Skipped
+            {"index": 1, "tags": {"language": "eng", "title": "Forced"}}, # Skipped because clean exists
+            {"index": 2, "tags": {"language": "eng", "title": "Dialogue"}}, # Picked (clean)
+            {"index": 3, "tags": {"language": "spa", "title": "Castilian"}}, # Skipped because Latin American exists
+            {"index": 4, "tags": {"language": "spa", "title": "Latin American"}}, # Picked (Latin priority)
+            {"index": 5, "tags": {"language": "jpn", "title": "Full Subtitles"}}, # Picked, but we will mock it to be English text!
+        ]}
+        mock_res = MagicMock()
+        mock_res.stdout = json.dumps(probe_output)
+        mock_res.returncode = 0
+        mock_subrun.return_value = mock_res
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock()
+        mock_line.plaintext = "English text without Japanese chars"
+        mock_line.start = 0
+        mock_line.end = 1000
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path")
+
+        # Verify subprocess was called 4 times total:
+        # 1x ffprobe, 3x ffmpeg (eng, spa, jpn)
+        assert mock_subrun.call_count == 4
+
+        sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
+        # English, Spanish, and the mistagged Japanese track which should become English
+        assert len(sentences) == 3
+        langs = [s["language"] for s in sentences]
+        
+        assert langs.count("eng") == 2
+        assert langs.count("spa") == 1
+        assert langs.count("jpn") == 0
+
+
+def test_mkv_skip_all_subtitles(test_db):
+    """Ensure media is still added even if no subtitle tracks match."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {"streams": [
+            {"index": 0, "tags": {"language": "fre"}},
+            {"index": 1, "tags": {"language": "ger"}},
+        ]}
+        mock_res = MagicMock()
+        mock_res.stdout = json.dumps(probe_output)
+        mock_res.returncode = 0
+        mock_subrun.return_value = mock_res
+
+        indexer.index_directory("/fake/path")
+
+        # Verify subprocess was called exactly 1 time (only ffprobe, no ffmpeg)
+        assert mock_subrun.call_count == 1
+
+        # Sentences should be empty
+        sentences = test_db.execute("SELECT * FROM sentences").fetchall()
+        assert len(sentences) == 0
+
+        # But media should STILL be added!
+        media = test_db.execute("SELECT * FROM media").fetchall()
+        assert len(media) == 1
+        assert media[0]["path"] == "/fake/path/episode1.mkv"

@@ -84,6 +84,43 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
         print(f"Indexed: {file_path} [{language}] ({len(sentences)} lines)")
 
 
+def detect_language(subs_obj):
+    jp_chars = 0
+    sp_chars = 0
+    total_chars = 0
+
+    lines_checked = 0
+    for line in subs_obj:
+        text = line.plaintext.strip()
+        if not text:
+            continue
+
+        for char in text:
+            code = ord(char)
+            # Hiragana, Katakana, CJK Ideographs
+            if (
+                0x3040 <= code <= 0x309F
+                or 0x30A0 <= code <= 0x30FF
+                or 0x4E00 <= code <= 0x9FAF
+            ):
+                jp_chars += 1
+            elif char in "áéíóúñÁÉÍÓÚÑ¿¡":
+                sp_chars += 1
+
+        total_chars += len(text)
+        lines_checked += 1
+        if lines_checked >= 50:
+            break
+
+    if total_chars == 0:
+        return "unknown"
+    if jp_chars / total_chars > 0.05:
+        return "jpn"
+    if sp_chars > 0:
+        return "spa"
+    return "eng"
+
+
 def index_directory(directory_path: str):
     """Scan and index all subtitle and MKV files in a directory.
 
@@ -138,43 +175,6 @@ def index_directory(directory_path: str):
                             continue
 
                     if subs:
-                        # Detect language based on the actual text content
-                        def detect_language(subs_obj):
-                            jp_chars = 0
-                            sp_chars = 0
-                            total_chars = 0
-
-                            lines_checked = 0
-                            for line in subs_obj:
-                                text = line.plaintext.strip()
-                                if not text:
-                                    continue
-
-                                for char in text:
-                                    code = ord(char)
-                                    # Hiragana, Katakana, CJK Ideographs
-                                    if (
-                                        0x3040 <= code <= 0x309F
-                                        or 0x30A0 <= code <= 0x30FF
-                                        or 0x4E00 <= code <= 0x9FAF
-                                    ):
-                                        jp_chars += 1
-                                    elif char in "áéíóúñÁÉÍÓÚÑ¿¡":
-                                        sp_chars += 1
-
-                                total_chars += len(text)
-                                lines_checked += 1
-                                if lines_checked >= 50:
-                                    break
-
-                            if total_chars == 0:
-                                return "unknown"
-                            if jp_chars / total_chars > 0.05:
-                                return "jpn"
-                            if sp_chars > 0:
-                                return "spa"
-                            return "eng"
-
                         lang_hint = detect_language(subs)
                         process_subs(conn, file_path, subs, "subtitle", language=lang_hint)
                     else:
@@ -191,7 +191,7 @@ def index_directory(directory_path: str):
                         "-select_streams",
                         "s",
                         "-show_entries",
-                        "stream=index:stream_tags=language",
+                        "stream=index:stream_tags=language,title",
                         "-of",
                         "json",
                         file_path,
@@ -208,10 +208,39 @@ def index_directory(directory_path: str):
                         add_media(conn, file_path, "mkv_embedded", show_title, season, episode, episode_title)
                         continue
 
+                    eng_streams, spa_streams, jpn_streams, unk_streams = [], [], [], []
                     for stream in streams:
+                        lang = stream.get("tags", {}).get("language", "unknown").lower()
+                        if lang == "eng": eng_streams.append(stream)
+                        elif lang == "spa": spa_streams.append(stream)
+                        elif lang == "jpn": jpn_streams.append(stream)
+                        elif lang in ["unknown", "und", ""]: unk_streams.append(stream)
+
+                    def select_best_stream(stream_list, is_spanish=False):
+                        if not stream_list: return None
+                        clean = [s for s in stream_list if not any(x in s.get("tags", {}).get("title", "").lower() for x in ["forced", "sdh", "dubtitle", "signs"])]
+                        pool = clean if clean else stream_list
+                        if is_spanish:
+                            for s in pool:
+                                if any(x in s.get("tags", {}).get("title", "").lower() for x in ["latin", "latam"]):
+                                    return s
+                        return pool[0]
+
+                    selected_streams = []
+                    best_eng = select_best_stream(eng_streams, is_spanish=False)
+                    best_spa = select_best_stream(spa_streams, is_spanish=True)
+                    best_jpn = select_best_stream(jpn_streams, is_spanish=False)
+
+                    if best_eng: selected_streams.append(best_eng)
+                    if best_spa: selected_streams.append(best_spa)
+                    if best_jpn: selected_streams.append(best_jpn)
+                    selected_streams.extend(unk_streams)
+
+                    processed_any = False
+                    for stream in selected_streams:
                         i = stream.get("index")
                         tags = stream.get("tags", {})
-                        lang = tags.get("language", "unknown")
+                        lang = tags.get("language", "unknown").lower()
 
                         fd, temp_sub_path = tempfile.mkstemp(suffix=".srt")
                         os.close(fd)
@@ -236,12 +265,30 @@ def index_directory(directory_path: str):
                         if ext_res.returncode == 0:
                             try:
                                 subs = pysubs2.load(temp_sub_path)
-                                process_subs(conn, file_path, subs, "mkv_embedded", language=lang)
+                                final_lang = lang
+                                
+                                # Verify Japanese tracks actually contain Japanese text (Anime dual-audio mistagging)
+                                if final_lang == "jpn" and detect_language(subs) == "eng":
+                                    final_lang = "eng"
+                                    
+                                if final_lang in {"unknown", "und", ""}:
+                                    final_lang = detect_language(subs)
+                                    
+                                if final_lang not in ["eng", "spa", "jpn"]:
+                                    continue # Skip if the heuristic found it to be an unwanted language
+
+                                process_subs(conn, file_path, subs, "mkv_embedded", language=final_lang)
+                                processed_any = True
                             except Exception as parse_e:
                                 print(f"Error parsing track {i} in {file_path}: {parse_e}")
 
                         if os.path.exists(temp_sub_path):
                             os.remove(temp_sub_path)
+                            
+                    if not processed_any:
+                        # Ensure the media is still added even if all subtitles were skipped
+                        show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
+                        add_media(conn, file_path, "mkv_embedded", show_title, season, episode, episode_title)
 
                 except Exception as e:
                     print(f"Error extracting from {file_path}: {e}")
