@@ -118,7 +118,8 @@ def test_translation_matching(test_db):
     assert results[0]["text"] == "これはテストです"
     
     # Assert that the translation field was successfully populated with the English match
-    assert results[0]["translation"] == "This is a test"
+    assert results[0]["eng_translation"] == "This is a test"
+    assert results[0]["spa_translation"] is None
 
 def test_translation_language_priority(test_db):
     """Test that search results prioritize Spanish > English > Portuguese."""
@@ -143,8 +144,7 @@ def test_translation_language_priority(test_db):
     assert len(results) == 1
     
     # Spanish should be chosen because it is prioritized over Portuguese
-    assert results[0]["translation"] == "Spanish text"
-    assert results[0]["translation_language"] == "spa"
+    assert results[0]["spa_translation"] == "Spanish text"
 
 def test_search_foreign_returns_japanese_primary(test_db):
     """Test that searching for a foreign language word prioritizes the Japanese text as the primary result."""
@@ -167,5 +167,4 @@ def test_search_foreign_returns_japanese_primary(test_db):
     assert results[0]["language"] == "jpn"
     
     # Secondary text should be the Spanish match
-    assert results[0]["translation"] == "Palabra en español"
-    assert results[0]["translation_language"] == "spa"
+    assert results[0]["spa_translation"] == "Palabra en español"

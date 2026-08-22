@@ -174,17 +174,9 @@ function renderResults() {
       fullTitle = fullTitle.replace(/"/g, '&quot;');
     }
 
-    const transLang = r.translation_language || "";
-    let langClass = "bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200";
-    if (transLang === "jpn") langClass = "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200";
-    else if (transLang === "eng") langClass = "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
-    else if (transLang === "spa") langClass = "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
-    else if (transLang === "por") langClass = "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
-
-    const langBadgeHtml = transLang ? `<span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${langClass} mr-2 align-middle">${transLang.toUpperCase()}</span>` : "";
-
     const cleanText = r.text ? r.text.replace(/\n/g, ' ') : '';
-    const cleanTranslation = r.translation ? r.translation.replace(/\n/g, ' ') : '';
+    const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, ' ') : '';
+    const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, ' ') : '';
 
     const row = document.createElement("tr");
     row.className = "hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors";
@@ -192,7 +184,8 @@ function renderResults() {
                     <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">${timeStr}</td>
                     <td class="px-6 py-4">
                         <div class="text-lg font-medium">${highlightText(cleanText)}</div>
-                        ${cleanTranslation ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug">${langBadgeHtml}<span>${highlightText(cleanTranslation)}</span></div>` : ""}
+                        ${cleanSpa ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 mr-2 align-middle">SPA</span> <span>${highlightText(cleanSpa)}</span></div>` : ""}
+                        ${cleanEng ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 mr-2 align-middle">ENG</span> <span>${highlightText(cleanEng)}</span></div>` : ""}
                     </td>
                     <td class="px-6 py-4 text-xs text-gray-400 max-w-xs whitespace-normal break-words" title="${fullTitle}">
                         <div class="font-medium">${sourceDisplay}</div>
