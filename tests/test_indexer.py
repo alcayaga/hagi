@@ -220,3 +220,66 @@ def test_mkv_skip_all_subtitles(test_db):
         media = test_db.execute("SELECT * FROM media").fetchall()
         assert len(media) == 1
         assert media[0]["path"] == "/fake/path/episode1.mkv"
+
+def test_build_plex_cache_filtering():
+    """Ensure build_plex_cache respects plex_libraries from config.json."""
+    from unittest.mock import mock_open
+    
+    # Create the mock setup inside
+    with patch("indexer.plex") as mock_plex, patch("os.path.exists") as mock_exists:
+        # Mock indexer.plex
+        mock_section_anime = MagicMock()
+        mock_section_anime.title = "Anime"
+        mock_section_anime.key = "4"
+        mock_section_anime.type = "show"
+        mock_episode_anime = MagicMock()
+        mock_episode_anime.grandparentTitle = "Anime Show"
+        mock_episode_anime.parentIndex = 1
+        mock_episode_anime.index = 1
+        mock_episode_anime.title = "Ep 1"
+        mock_part_anime = MagicMock()
+        mock_part_anime.file = "/path/anime_ep1.mkv"
+        mock_media_anime = MagicMock()
+        mock_media_anime.parts = [mock_part_anime]
+        mock_episode_anime.media = [mock_media_anime]
+        mock_section_anime.search.return_value = [mock_episode_anime]
+
+        mock_section_movies = MagicMock()
+        mock_section_movies.title = "Movies"
+        mock_section_movies.key = "5"
+        mock_section_movies.type = "movie"
+        mock_movie = MagicMock()
+        mock_movie.title = "A Movie"
+        mock_part_movie = MagicMock()
+        mock_part_movie.file = "/path/movie1.mkv"
+        mock_media_movie = MagicMock()
+        mock_media_movie.parts = [mock_part_movie]
+        mock_movie.media = [mock_media_movie]
+        mock_section_movies.search.return_value = [mock_movie]
+        
+        mock_plex.library.sections.return_value = [mock_section_anime, mock_section_movies]
+        mock_exists.return_value = True
+
+        # 1. Test filtering by title "Anime"
+        indexer._plex_cache_built = False
+        indexer.plex_path_cache = {}
+        with patch("builtins.open", mock_open(read_data='{"plex_libraries": ["Anime"]}')):
+            indexer.build_plex_cache()
+        assert "anime_ep1" in indexer.plex_path_cache
+        assert "movie1" not in indexer.plex_path_cache
+
+        # 2. Test filtering by ID "5"
+        indexer._plex_cache_built = False
+        indexer.plex_path_cache = {}
+        with patch("builtins.open", mock_open(read_data='{"plex_libraries": ["5"]}')):
+            indexer.build_plex_cache()
+        assert "anime_ep1" not in indexer.plex_path_cache
+        assert "movie1" in indexer.plex_path_cache
+        
+        # 3. Test no filter (empty config)
+        indexer._plex_cache_built = False
+        indexer.plex_path_cache = {}
+        with patch("builtins.open", mock_open(read_data='{}')):
+            indexer.build_plex_cache()
+        assert "anime_ep1" in indexer.plex_path_cache
+        assert "movie1" in indexer.plex_path_cache

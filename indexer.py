@@ -34,7 +34,22 @@ def build_plex_cache():
         return
     print("Building Plex path mapping cache (this may take a moment)...")
     try:
+        allowed_libraries = None
+        if os.path.exists("config.json"):
+            with open("config.json", "r") as f:
+                try:
+                    config = json.load(f)
+                    allowed_libraries = config.get("plex_libraries")
+                except Exception as e:
+                    print(f"Error reading config.json for Plex libraries: {e}")
+
         for section in plex.library.sections():
+            if allowed_libraries is not None:
+                allowed_str = [str(x) for x in allowed_libraries]
+                # section.key is typically an int/string ID (e.g. 4), section.title is string
+                if str(section.title) not in allowed_str and str(section.key) not in allowed_str:
+                    continue
+
             if section.type == "movie":
                 movies = section.search(libtype="movie")
                 for movie in movies:
