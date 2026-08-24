@@ -11,6 +11,9 @@ dependencies:
   - uvicorn
   - jinja2
   - python-dotenv
+  - pytest
   - pip:
       - pysubs2
       - plexapi
+      - pytest-ruff
+      - ruff
