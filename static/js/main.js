@@ -329,57 +329,143 @@ async function viewContext(id) {
         data.secondary_context && data.secondary_context.length > 0;
 
       if (hasSecondary) {
-        const grid = document.createElement("div");
-        grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-4";
+        // Find target match
+        const targetMatchIndex = data.target_context.findIndex(
+          (r) => r.id === id,
+        );
+        const targetMatch =
+          targetMatchIndex !== -1
+            ? data.target_context[targetMatchIndex]
+            : data.target_context[0];
 
-        const colTarget = document.createElement("div");
-        colTarget.className =
-          "flex flex-col gap-2 md:border-r dark:border-gray-700 md:pr-4";
-        colTarget.innerHTML = `<h4 class="font-bold text-gray-400 mb-2 uppercase text-xs">${data.target_lang} Track</h4>`;
+        const targetBefore =
+          targetMatchIndex !== -1
+            ? data.target_context.slice(0, targetMatchIndex)
+            : [];
+        const targetAfter =
+          targetMatchIndex !== -1
+            ? data.target_context.slice(targetMatchIndex + 1)
+            : [];
 
-        const colJpn = document.createElement("div");
-        colJpn.className = "flex flex-col gap-2 md:pl-2";
-        colJpn.innerHTML = `<h4 class="font-bold text-gray-400 mb-2 uppercase text-xs">${data.secondary_lang.toUpperCase()} Track</h4>`;
-
-        const renderSentences = (sentences, container) => {
-          sentences.forEach((r) => {
-            const m = Math.floor(r.start_time / 60)
-              .toString()
-              .padStart(2, "0");
-            const s = Math.floor(r.start_time % 60)
-              .toString()
-              .padStart(2, "0");
-            const timeStr = `${m}:${s}`;
-
-            const isTarget = r.id === id;
-            const bgClass = isTarget
-              ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner"
-              : "bg-gray-50 dark:bg-gray-700 border-transparent";
-
-            const div = document.createElement("div");
-            div.className = `p-2 rounded border ${bgClass}`;
-            div.innerHTML = `
-                                    <span class="text-xs text-gray-500 dark:text-gray-400 font-mono block mb-1">[${timeStr}]</span>
-                                    <span class="text-sm ${isTarget ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${r.text}</span>
-                                `;
-            container.appendChild(div);
-
-            if (isTarget) {
-              setTimeout(
-                () =>
-                  div.scrollIntoView({ behavior: "smooth", block: "center" }),
-                100,
-              );
+        // Find secondary match (closest start_time within 5 seconds to match search behavior)
+        let secondaryMatchIndex = -1;
+        let minDiff = 5.0;
+        if (targetMatch) {
+          data.secondary_context.forEach((r, idx) => {
+            const diff = Math.abs(r.start_time - targetMatch.start_time);
+            if (diff < minDiff) {
+              minDiff = diff;
+              secondaryMatchIndex = idx;
             }
           });
+        }
+
+        let secondaryBefore = [];
+        let secondaryMatchObj = null;
+        let secondaryAfter = [];
+        if (secondaryMatchIndex !== -1) {
+          secondaryMatchObj = data.secondary_context[secondaryMatchIndex];
+          secondaryBefore = data.secondary_context.slice(
+            0,
+            secondaryMatchIndex,
+          );
+          secondaryAfter = data.secondary_context.slice(
+            secondaryMatchIndex + 1,
+          );
+        } else {
+          secondaryBefore = data.secondary_context;
+        }
+
+        const createSentenceDiv = (r, isHighlight) => {
+          if (!r) return document.createElement("div");
+          const m = Math.floor(r.start_time / 60)
+            .toString()
+            .padStart(2, "0");
+          const s = Math.floor(r.start_time % 60)
+            .toString()
+            .padStart(2, "0");
+          const timeStr = `${m}:${s}`;
+
+          const bgClass = isHighlight
+            ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner"
+            : "bg-gray-50 dark:bg-gray-700 border-transparent";
+
+          const div = document.createElement("div");
+          div.className = `p-2 rounded border ${bgClass}`;
+          div.innerHTML = `
+                <span class="text-xs text-gray-500 dark:text-gray-400 font-mono block mb-1">[${timeStr}]</span>
+                <span class="text-sm ${isHighlight ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${r.text}</span>
+            `;
+          return div;
         };
 
-        renderSentences(data.target_context, colTarget);
-        renderSentences(data.secondary_context, colJpn);
+        const renderBlock = (targets, secondaries, justifyClass) => {
+          if (targets.length === 0 && secondaries.length === 0) return;
+          const row = document.createElement("div");
+          row.className = "grid grid-cols-2 gap-2 md:gap-4 mb-2";
 
-        grid.appendChild(colTarget);
-        grid.appendChild(colJpn);
-        list.appendChild(grid);
+          const colTarget = document.createElement("div");
+          colTarget.className = `flex flex-col gap-2 border-r dark:border-gray-700 pr-2 md:pr-4 ${justifyClass}`;
+          targets.forEach((r) =>
+            colTarget.appendChild(createSentenceDiv(r, false)),
+          );
+
+          const colJpn = document.createElement("div");
+          colJpn.className = `flex flex-col gap-2 pl-2 ${justifyClass}`;
+          secondaries.forEach((r) =>
+            colJpn.appendChild(createSentenceDiv(r, false)),
+          );
+
+          row.appendChild(colTarget);
+          row.appendChild(colJpn);
+          list.appendChild(row);
+        };
+
+        // Header
+        const headerRow = document.createElement("div");
+        headerRow.className = "grid grid-cols-2 gap-2 md:gap-4 mb-2";
+        headerRow.innerHTML = `
+            <div class="border-r dark:border-gray-700 pr-2 md:pr-4">
+                <h4 class="font-bold text-gray-400 uppercase text-xs">${data.target_lang} Track</h4>
+            </div>
+            <div class="pl-2">
+                <h4 class="font-bold text-gray-400 uppercase text-xs">${data.secondary_lang.toUpperCase()} Track</h4>
+            </div>
+        `;
+        list.appendChild(headerRow);
+
+        // Before
+        renderBlock(targetBefore, secondaryBefore, "justify-end");
+
+        // Match
+        const matchRow = document.createElement("div");
+        matchRow.className = "grid grid-cols-2 gap-2 md:gap-4 mb-2";
+
+        const colMatchTarget = document.createElement("div");
+        colMatchTarget.className =
+          "flex flex-col gap-2 border-r dark:border-gray-700 pr-2 md:pr-4";
+        if (targetMatch) {
+          const div = createSentenceDiv(targetMatch, true);
+          colMatchTarget.appendChild(div);
+          setTimeout(
+            () => div.scrollIntoView({ behavior: "smooth", block: "center" }),
+            100,
+          );
+        }
+
+        const colMatchSecondary = document.createElement("div");
+        colMatchSecondary.className = "flex flex-col gap-2 pl-2";
+        if (secondaryMatchObj) {
+          const div = createSentenceDiv(secondaryMatchObj, true);
+          colMatchSecondary.appendChild(div);
+        }
+
+        matchRow.appendChild(colMatchTarget);
+        matchRow.appendChild(colMatchSecondary);
+        list.appendChild(matchRow);
+
+        // After
+        renderBlock(targetAfter, secondaryAfter, "justify-start");
       } else {
         data.target_context.forEach((r) => {
           const m = Math.floor(r.start_time / 60)
