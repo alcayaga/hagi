@@ -86,6 +86,9 @@ async function performSearch() {
 
     // Update episodes dropdown and render the table
     updateEpisodesAndRender();
+    
+    // Show filters now that we have results
+    document.getElementById("filterContainer").classList.remove("hidden");
   } catch (error) {
     tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error fetching results: ${error}</td></tr>`;
   } finally {
@@ -179,22 +182,25 @@ function renderResults() {
     const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, ' ') : '';
 
     const row = document.createElement("tr");
-    row.className = "hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors";
+    row.className = "flex flex-col md:table-row border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors p-2 md:p-0";
     row.innerHTML = `
-                    <td class="px-6 py-4 text-sm text-gray-500 dark:text-gray-400">${timeStr}</td>
-                    <td class="px-6 py-4">
+                    <td class="block md:table-cell px-2 py-2 md:px-6 md:py-4">
                         <div class="text-lg font-medium">${highlightText(cleanText)}</div>
                         ${cleanSpa ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 mr-2 align-middle">SPA</span> <span>${highlightText(cleanSpa)}</span></div>` : ""}
                         ${cleanEng ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 mr-2 align-middle">ENG</span> <span>${highlightText(cleanEng)}</span></div>` : ""}
                     </td>
-                    <td class="px-6 py-4 text-xs text-gray-400 max-w-xs whitespace-normal break-words" title="${fullTitle}">
-                        <div class="font-medium">${sourceDisplay}</div>
-                        ${episodeTitleHtml}
+                    <td class="block md:table-cell px-2 py-1 md:px-6 md:py-4 text-xs text-gray-400 md:max-w-xs whitespace-normal break-words" title="${fullTitle}">
+                        <span class="inline-block md:hidden font-bold mr-1 text-gray-500">Source:</span>
+                        <span class="font-medium text-gray-600 dark:text-gray-300">${sourceDisplay}</span>
+                        ${episodeTitleHtml ? `<span class="block md:mt-1 text-gray-500 italic">${r.episode_title}</span>` : ""}
                     </td>
-                    <td class="px-6 py-4">
-                        <div class="flex flex-col items-center space-y-2">
-                            <button onclick="viewContext(${r.id})" class="w-20 bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-200 px-3 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-500 font-semibold text-sm transition shadow-sm">Context</button>
-                            <button onclick="extractMedia(${r.id}, this)" class="w-20 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200 px-3 py-1 rounded hover:bg-indigo-200 dark:hover:bg-indigo-800 font-semibold text-sm transition shadow-sm">Extract</button>
+                    <td class="block md:table-cell px-2 py-1 md:px-6 md:py-4 text-sm text-gray-500 dark:text-gray-400">
+                        <span class="inline-block md:hidden font-bold mr-1">Time:</span>${timeStr}
+                    </td>
+                    <td class="block md:table-cell px-2 py-3 md:px-6 md:py-4">
+                        <div class="flex flex-row md:flex-col items-center justify-start md:justify-center space-x-2 md:space-x-0 md:space-y-2">
+                            <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none w-full md:w-20 bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-200 px-3 py-2 md:py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-500 font-semibold text-sm transition shadow-sm">Context</button>
+                            <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none w-full md:w-20 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200 px-3 py-2 md:py-1 rounded hover:bg-indigo-200 dark:hover:bg-indigo-800 font-semibold text-sm transition shadow-sm">Extract</button>
                         </div>
                     </td>
                 `;
@@ -217,23 +223,22 @@ async function extractMedia(id, btnElement) {
 
   const r = allSearchResults.find((x) => x.id === id);
   if (r) {
-    let metaStr = r.show_title || r.path.split("/").pop();
+    let line1 = (r.show_title || r.path.split("/").pop()).toUpperCase();
     if (r.season !== null && r.episode !== null) {
-      metaStr += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
+      line1 += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
     } else if (r.episode !== null) {
-      metaStr += ` - Ep ${r.episode}`;
+      line1 += ` - EP ${r.episode}`;
     }
+    
+    let line2 = "";
     if (r.episode_title) {
-      metaStr += ` "${r.episode_title}"`;
+      line2 += `"${r.episode_title.toUpperCase()}" `;
     }
-    const m = Math.floor(r.start_time / 60)
-      .toString()
-      .padStart(2, "0");
-    const s = Math.floor(r.start_time % 60)
-      .toString()
-      .padStart(2, "0");
-    metaStr += ` [${m}:${s}]`;
-    document.getElementById("mediaMetadata").innerText = metaStr;
+    const m = Math.floor(r.start_time / 60).toString().padStart(2, "0");
+    const s = Math.floor(r.start_time % 60).toString().padStart(2, "0");
+    line2 += `[${m}:${s}]`;
+    
+    document.getElementById("mediaMetadata").innerHTML = `<div>${line1}</div><div class="text-xs mt-1 text-gray-500 dark:text-gray-400 font-normal">${line2}</div>`;
   }
   btnElement.innerText = "Wait...";
   btnElement.disabled = true;
@@ -249,6 +254,14 @@ async function extractMedia(id, btnElement) {
 
     if (data.success) {
       document.getElementById("mediaText").innerText = data.text;
+      
+      const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, ' ') : '';
+      const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, ' ') : '';
+      let transHtml = "";
+      if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 mr-2 align-middle">SPA</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanSpa}</span></div>`;
+      if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 mr-2 align-middle">ENG</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanEng}</span></div>`;
+      document.getElementById("mediaTranslations").innerHTML = transHtml;
+
       document.getElementById("mediaImage").src =
         data.image_url + "?t=" + new Date().getTime();
       document.getElementById("mediaAudio").src =
@@ -294,15 +307,15 @@ async function viewContext(id) {
 
       if (hasSecondary) {
         const grid = document.createElement("div");
-        grid.className = "grid grid-cols-2 gap-4";
+        grid.className = "grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-4";
 
         const colTarget = document.createElement("div");
         colTarget.className =
-          "flex flex-col gap-2 border-r dark:border-gray-700 pr-4";
+          "flex flex-col gap-2 md:border-r dark:border-gray-700 md:pr-4";
         colTarget.innerHTML = `<h4 class="font-bold text-gray-400 mb-2 uppercase text-xs">${data.target_lang} Track</h4>`;
 
         const colJpn = document.createElement("div");
-        colJpn.className = "flex flex-col gap-2 pl-2";
+        colJpn.className = "flex flex-col gap-2 md:pl-2";
         colJpn.innerHTML = `<h4 class="font-bold text-gray-400 mb-2 uppercase text-xs">${data.secondary_lang.toUpperCase()} Track</h4>`;
 
         const renderSentences = (sentences, container) => {

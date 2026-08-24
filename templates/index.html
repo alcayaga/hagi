@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen dark:bg-gray-900 dark:text-gray-100 transition-colors">
-    <div class="container mx-auto p-8">
+    <div class="container mx-auto p-4 md:p-8">
         <h1 class="text-4xl font-bold mb-8 text-center text-indigo-600 dark:text-indigo-400">Nadeshiko Search</h1>
         
         <!-- Search & Config -->
@@ -19,7 +19,7 @@
             </div>
             
             <div class="flex flex-wrap justify-center items-center gap-4 w-full">
-                <div class="flex gap-2">
+                <div id="filterContainer" class="flex gap-2 hidden">
                     <select id="filterShow" onchange="updateEpisodesAndRender()" class="p-2 bg-white text-gray-700 border rounded shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white w-48 md:w-64 focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <option value="">All Shows</option>
                     </select>
@@ -28,14 +28,14 @@
                     </select>
                 </div>
                 
-                <div class="flex gap-2 items-center bg-white dark:bg-gray-800 p-2 rounded shadow-sm border dark:border-gray-700">
-                    <div class="flex flex-col px-2">
-                        <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase">Pad Start</label>
-                        <input type="number" id="padStart" value="0.5" step="0.1" class="w-16 p-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                <div class="flex gap-4 items-center">
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Pad Start</label>
+                        <input type="number" id="padStart" value="0.5" step="0.1" class="w-16 p-2 text-center bg-white dark:bg-gray-800 text-gray-700 dark:text-white border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     </div>
-                    <div class="flex flex-col px-2 border-l dark:border-gray-700">
-                        <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase">Pad End</label>
-                        <input type="number" id="padEnd" value="0.5" step="0.1" class="w-16 p-1 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                    <div class="flex items-center gap-2">
+                        <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Pad End</label>
+                        <input type="number" id="padEnd" value="0.5" step="0.1" class="w-16 p-2 text-center bg-white dark:bg-gray-800 text-gray-700 dark:text-white border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
                     </div>
                 </div>
             </div>
@@ -49,18 +49,18 @@
 
         <!-- Results Table -->
         <div class="bg-white dark:bg-gray-800 rounded shadow overflow-hidden border dark:border-gray-700">
-            <table class="w-full text-left border-collapse" id="resultsTable">
-                <thead>
+            <table class="w-full text-left border-collapse block md:table" id="resultsTable">
+                <thead class="hidden md:table-header-group">
                     <tr class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 uppercase text-sm font-bold">
-                        <th class="px-6 py-4">Time</th>
                         <th class="px-6 py-4 w-1/2">Text</th>
                         <th class="px-6 py-4">Source</th>
+                        <th class="px-6 py-4">Time</th>
                         <th class="px-6 py-4 text-center">Actions</th>
                     </tr>
                 </thead>
-                <tbody id="resultsBody" class="divide-y divide-gray-200 dark:divide-gray-700 text-gray-800 dark:text-gray-200">
-                    <tr>
-                        <td colspan="4" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">Enter a keyword to start searching</td>
+                <tbody id="resultsBody" class="block md:table-row-group divide-y divide-gray-200 dark:divide-gray-700 text-gray-800 dark:text-gray-200">
+                    <tr class="block md:table-row">
+                        <td colspan="4" class="block md:table-cell px-6 py-4 text-center text-gray-500 dark:text-gray-400">Enter a keyword to start searching</td>
                     </tr>
                 </tbody>
             </table>
@@ -68,29 +68,32 @@
     </div>
 
     <!-- Extraction Modal -->
-    <div id="mediaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-4 z-50">
+    <div id="mediaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
         <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full overflow-hidden border dark:border-gray-700">
             <div class="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
                 <h3 class="font-bold text-lg dark:text-white">Extracted Media</h3>
                 <button onclick="closeModal('mediaModal', 'mediaAudio')" class="text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400 font-bold text-xl">&times;</button>
             </div>
-            <div class="p-6 flex flex-col items-center gap-6">
+            <div class="p-4 md:p-6 flex flex-col items-center gap-4 md:gap-6">
                 <div id="mediaMetadata" class="text-sm font-bold text-gray-500 dark:text-gray-400 text-center uppercase tracking-wide"></div>
                 <img id="mediaImage" src="" alt="Snapshot" class="rounded shadow border border-gray-200 dark:border-gray-600 max-h-96 object-contain bg-black w-full">
                 <audio id="mediaAudio" controls class="w-full"></audio>
-                <p id="mediaText" class="text-xl text-center font-medium dark:text-gray-200"></p>
+                <div class="w-full text-center">
+                    <p id="mediaText" class="text-xl font-medium dark:text-gray-200"></p>
+                    <div id="mediaTranslations" class="mt-4 text-left inline-block"></div>
+                </div>
             </div>
         </div>
     </div>
 
     <!-- Context Modal -->
-    <div id="contextModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-4 z-50">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full overflow-hidden border dark:border-gray-700 flex flex-col max-h-[80vh]">
+    <div id="contextModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full overflow-hidden border dark:border-gray-700 flex flex-col max-h-[80vh] md:max-h-[90vh]">
             <div class="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
                 <h3 class="font-bold text-lg dark:text-white">Conversation Context</h3>
                 <button onclick="closeModal('contextModal')" class="text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400 font-bold text-xl">&times;</button>
             </div>
-            <div class="p-6 overflow-y-auto flex-grow bg-white dark:bg-gray-800">
+            <div class="p-4 md:p-6 overflow-y-auto flex-grow bg-white dark:bg-gray-800">
                 <div id="contextLoading" class="flex justify-center items-center py-8 hidden">
                     <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
                 </div>
