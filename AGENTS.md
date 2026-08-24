@@ -31,7 +31,10 @@ When a user searches for a term, the engine doesn't just return the matching sen
   PYTHONPATH=. conda run -n local-nadeshiko pytest
   ```
 - **Test Database:** Tests use an in-memory database (`:memory:`) to avoid touching the user's actual `nadeshiko.db`.
-
+- **JS Formatting:** The project does not use a heavy `node_modules` toolchain or a custom JS linting config. When modifying frontend JavaScript (e.g., `static/js/main.js`), you must format the file using Prettier via `npx` before committing:
+  ```bash
+  npx prettier --write static/js/main.js
+  ```
 ## 🛠️ General Guidelines
 - Do not run commands using `python3` globally; always use the `local-nadeshiko` conda environment.
 - When generating SQL, prefer subqueries or joins on `sentences_fts` for text searching rather than raw `LIKE` on the `sentences` table.
