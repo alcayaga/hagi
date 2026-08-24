@@ -23,7 +23,7 @@ def test_incremental_indexing_skips(test_db):
     """Ensure files already present in the media table are not parsed again."""
     db.add_media(test_db, "/fake/path/episode1.srt", "subtitle")
 
-    with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db):
+    with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db), patch("os.path.exists", return_value=True):
         mock_walk.return_value = [("/fake/path", [], ["episode1.srt"])]
 
         with patch("indexer.pysubs2.load") as mock_load:

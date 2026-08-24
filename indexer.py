@@ -151,6 +151,19 @@ def index_directory(directory_path: str):
     """
     build_plex_cache()
     conn = get_db()
+    
+    # Clean up missing files that fall under the directory being indexed
+    abs_dir = os.path.abspath(directory_path)
+    like_pattern = abs_dir if abs_dir.endswith(os.sep) else f"{abs_dir}{os.sep}"
+    like_pattern += "%"
+    
+    cursor = conn.execute("SELECT id, path FROM media WHERE path LIKE ?", (like_pattern,))
+    for row in cursor.fetchall():
+        if not os.path.exists(row["path"]):
+            print(f"Removing deleted file from database: {row['path']}")
+            conn.execute("DELETE FROM media WHERE id = ?", (row["id"],))
+    conn.commit()
+
     for root, _, files in os.walk(directory_path):
         for file in files:
             if file.startswith("._"):

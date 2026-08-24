@@ -18,6 +18,7 @@ def get_db():
     try:
         conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA synchronous=NORMAL;")
+        conn.execute("PRAGMA foreign_keys = ON;")
     except sqlite3.OperationalError:
         pass  # If DB is heavily locked, WAL might fail to set, but timeout will still help
     return conn
