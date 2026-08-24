@@ -408,3 +408,47 @@ function closeModal(modalId, audioId = null) {
     document.getElementById(audioId).pause();
   }
 }
+
+/**
+ * Copies the requested item to the clipboard.
+ * Matches Nadeshiko upstream behavior: copies the absolute URL for media, and plain text for phrases.
+ * @param {string} type - 'image', 'audio', or 'text'
+ * @param {HTMLElement} btn - The button element that was clicked
+ */
+async function copyExtractItem(type, btn) {
+  let content = "";
+  if (type === 'image') {
+    const imgElement = document.getElementById("mediaImage");
+    if (imgElement && imgElement.src) {
+        // imgElement.src returns the absolute URL, but it has a ?t= timestamp query parameter
+        // We strip the query parameter so Anki add-ons can fetch it cleanly
+        const url = new URL(imgElement.src);
+        content = url.origin + url.pathname;
+    }
+  } else if (type === 'audio') {
+    const audioElement = document.getElementById("mediaAudio");
+    if (audioElement && audioElement.src) {
+        const url = new URL(audioElement.src);
+        content = url.origin + url.pathname;
+    }
+  } else if (type === 'text') {
+    const textElement = document.getElementById("mediaText");
+    if (textElement) {
+        content = textElement.innerText;
+    }
+  }
+
+  if (!content) return;
+
+  const span = btn.querySelector('span');
+  const originalText = span.innerText;
+  
+  try {
+    await navigator.clipboard.writeText(content);
+    span.innerText = "Copied!";
+  } catch (err) {
+    console.error("Failed to copy: ", err);
+    span.innerText = "Failed";
+  }
+  setTimeout(() => span.innerText = originalText, 2000);
+}
