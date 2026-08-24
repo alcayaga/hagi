@@ -102,6 +102,7 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
 def detect_language(subs_obj):
     jp_chars = 0
     sp_chars = 0
+    por_chars = 0
     total_chars = 0
 
     lines_checked = 0
@@ -119,8 +120,12 @@ def detect_language(subs_obj):
                 or 0x4E00 <= code <= 0x9FAF
             ):
                 jp_chars += 1
-            elif char in "áéíóúñÁÉÍÓÚÑ¿¡":
+            elif char in "ñÑ¿¡":
+                sp_chars += 2
+            elif char in "áéíóúÁÉÍÓÚ":
                 sp_chars += 1
+            elif char in "ãõçêâôÃÕÇÊÂÔàèìòùÀÈÌÒÙ":
+                por_chars += 2
 
         total_chars += len(text)
         lines_checked += 1
@@ -131,6 +136,8 @@ def detect_language(subs_obj):
         return "unknown"
     if jp_chars / total_chars > 0.05:
         return "jpn"
+    if por_chars > sp_chars:
+        return "por"
     if sp_chars > 0:
         return "spa"
     return "eng"
@@ -282,12 +289,15 @@ def index_directory(directory_path: str):
                                 subs = pysubs2.load(temp_sub_path)
                                 final_lang = lang
                                 
+                                detected_lang = detect_language(subs)
                                 # Verify Japanese tracks actually contain Japanese text (Anime dual-audio mistagging)
-                                if final_lang == "jpn" and detect_language(subs) == "eng":
+                                if final_lang == "jpn" and detected_lang == "eng":
                                     final_lang = "eng"
+                                elif final_lang == "spa" and detected_lang == "por":
+                                    final_lang = "por"
                                     
                                 if final_lang in {"unknown", "und", ""}:
-                                    final_lang = detect_language(subs)
+                                    final_lang = detected_lang
                                     
                                 if final_lang not in ["eng", "spa", "jpn"]:
                                     continue # Skip if the heuristic found it to be an unwanted language
