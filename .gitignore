@@ -187,3 +187,8 @@ anki_deck/
 .DS_Store
 nadeshiko.db-journal
 config.json
+
+nadeshiko.db-shm
+nadeshiko.db-wal
+.vscode/
+
