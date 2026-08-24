@@ -186,10 +186,10 @@ def search_sentences(conn, query, show_title=None, episode=None):
         if token.startswith("-"):
             term = token[1:]
             if term:
-                conditions.append("fts.text NOT LIKE ?")
+                conditions.append("s.text NOT LIKE ?")
                 params.append(f"%{term}%")
         else:
-            conditions.append("fts.text LIKE ?")
+            conditions.append("s.text LIKE ?")
             params.append(f"%{token}%")
 
     if show_title:
@@ -279,7 +279,6 @@ def search_sentences(conn, query, show_title=None, episode=None):
                     )
                 ) as eng_text
             FROM sentences s
-            JOIN sentences_fts fts ON s.id = fts.rowid
             JOIN media m ON s.media_id = m.id
             WHERE {where_clause} AND s.language != 'por'
         )
