@@ -86,7 +86,7 @@ async function performSearch() {
 
     // Update episodes dropdown and render the table
     updateEpisodesAndRender();
-    
+
     // Show filters now that we have results
     document.getElementById("filterContainer").classList.remove("hidden");
   } catch (error) {
@@ -124,27 +124,34 @@ function renderResults() {
   }
 
   const rawQuery = document.getElementById("searchInput").value;
-  const searchTermsTokens = rawQuery.match(/(".*?"|[^"\s]+)+(?=\s*|\s*$)/g) || [];
+  const searchTermsTokens =
+    rawQuery.match(/(".*?"|[^"\s]+)+(?=\s*|\s*$)/g) || [];
   const validTerms = searchTermsTokens
-    .filter(t => !t.startsWith("-"))
-    .map(t => t.replace(/(^"|"$)/g, ''))
-    .filter(t => t.trim().length > 0)
+    .filter((t) => !t.startsWith("-"))
+    .map((t) => t.replace(/(^"|"$)/g, ""))
+    .filter((t) => t.trim().length > 0)
     .sort((a, b) => b.length - a.length);
-    
+
   let highlightRegex = null;
   if (validTerms.length > 0) {
-      highlightRegex = new RegExp(`(${validTerms.map(t => t.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, '\\\\$&')).join('|')})`, "gi");
+    highlightRegex = new RegExp(
+      `(${validTerms.map((t) => t.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, "\\\\$&")).join("|")})`,
+      "gi",
+    );
   }
 
   function highlightText(text) {
     if (!text) return "";
     // Sanitize text first to prevent HTML injection from search results
-    const div = document.createElement('div');
+    const div = document.createElement("div");
     div.innerText = text;
     let sanitized = div.innerHTML;
-    
+
     if (highlightRegex) {
-        sanitized = sanitized.replace(highlightRegex, `<mark class="bg-yellow-200 dark:bg-yellow-900 text-inherit rounded px-0.5">$1</mark>`);
+      sanitized = sanitized.replace(
+        highlightRegex,
+        `<mark class="bg-yellow-200 dark:bg-yellow-900 text-inherit rounded px-0.5">$1</mark>`,
+      );
     }
     return sanitized;
   }
@@ -161,7 +168,7 @@ function renderResults() {
     let sourceDisplay = r.path.split("/").pop();
     let fullTitle = sourceDisplay;
     let episodeTitleHtml = "";
-    
+
     if (r.show_title) {
       sourceDisplay = `${r.show_title}`;
       if (r.season !== null && r.episode !== null) {
@@ -174,15 +181,20 @@ function renderResults() {
         fullTitle += ` "${r.episode_title}"`;
         episodeTitleHtml = `<div class="mt-1 text-gray-500 italic">${r.episode_title}</div>`;
       }
-      fullTitle = fullTitle.replace(/"/g, '&quot;');
+      fullTitle = fullTitle.replace(/"/g, "&quot;");
     }
 
-    const cleanText = r.text ? r.text.replace(/\n/g, ' ') : '';
-    const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, ' ') : '';
-    const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, ' ') : '';
+    const cleanText = r.text ? r.text.replace(/\n/g, " ") : "";
+    const cleanSpa = r.spa_translation
+      ? r.spa_translation.replace(/\n/g, " ")
+      : "";
+    const cleanEng = r.eng_translation
+      ? r.eng_translation.replace(/\n/g, " ")
+      : "";
 
     const row = document.createElement("tr");
-    row.className = "flex flex-col md:table-row border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors p-2 md:p-0";
+    row.className =
+      "flex flex-col md:table-row border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors p-2 md:p-0";
     row.innerHTML = `
                     <td class="block md:table-cell px-2 py-2 md:px-6 md:py-4">
                         <div class="text-lg font-medium">${highlightText(cleanText)}</div>
@@ -229,16 +241,21 @@ async function extractMedia(id, btnElement) {
     } else if (r.episode !== null) {
       line1 += ` - EP ${r.episode}`;
     }
-    
+
     let line2 = "";
     if (r.episode_title) {
       line2 += `"${r.episode_title.toUpperCase()}" `;
     }
-    const m = Math.floor(r.start_time / 60).toString().padStart(2, "0");
-    const s = Math.floor(r.start_time % 60).toString().padStart(2, "0");
+    const m = Math.floor(r.start_time / 60)
+      .toString()
+      .padStart(2, "0");
+    const s = Math.floor(r.start_time % 60)
+      .toString()
+      .padStart(2, "0");
     line2 += `[${m}:${s}]`;
-    
-    document.getElementById("mediaMetadata").innerHTML = `<div>${line1}</div><div class="text-xs mt-1 text-gray-500 dark:text-gray-400 font-normal">${line2}</div>`;
+
+    document.getElementById("mediaMetadata").innerHTML =
+      `<div>${line1}</div><div class="text-xs mt-1 text-gray-500 dark:text-gray-400 font-normal">${line2}</div>`;
   }
   btnElement.innerText = "Wait...";
   btnElement.disabled = true;
@@ -254,12 +271,18 @@ async function extractMedia(id, btnElement) {
 
     if (data.success) {
       document.getElementById("mediaText").innerText = data.text;
-      
-      const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, ' ') : '';
-      const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, ' ') : '';
+
+      const cleanSpa = r.spa_translation
+        ? r.spa_translation.replace(/\n/g, " ")
+        : "";
+      const cleanEng = r.eng_translation
+        ? r.eng_translation.replace(/\n/g, " ")
+        : "";
       let transHtml = "";
-      if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 mr-2 align-middle">SPA</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanSpa}</span></div>`;
-      if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 mr-2 align-middle">ENG</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanEng}</span></div>`;
+      if (cleanSpa)
+        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 mr-2 align-middle">SPA</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanSpa}</span></div>`;
+      if (cleanEng)
+        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 mr-2 align-middle">ENG</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanEng}</span></div>`;
       document.getElementById("mediaTranslations").innerHTML = transHtml;
 
       document.getElementById("mediaImage").src =
@@ -417,32 +440,32 @@ function closeModal(modalId, audioId = null) {
  */
 async function copyExtractItem(type, btn) {
   let content = "";
-  if (type === 'image') {
+  if (type === "image") {
     const imgElement = document.getElementById("mediaImage");
     if (imgElement && imgElement.src) {
-        // imgElement.src returns the absolute URL, but it has a ?t= timestamp query parameter
-        // We strip the query parameter so Anki add-ons can fetch it cleanly
-        const url = new URL(imgElement.src);
-        content = url.origin + url.pathname;
+      // imgElement.src returns the absolute URL, but it has a ?t= timestamp query parameter
+      // We strip the query parameter so Anki add-ons can fetch it cleanly
+      const url = new URL(imgElement.src);
+      content = url.origin + url.pathname;
     }
-  } else if (type === 'audio') {
+  } else if (type === "audio") {
     const audioElement = document.getElementById("mediaAudio");
     if (audioElement && audioElement.src) {
-        const url = new URL(audioElement.src);
-        content = url.origin + url.pathname;
+      const url = new URL(audioElement.src);
+      content = url.origin + url.pathname;
     }
-  } else if (type === 'text') {
+  } else if (type === "text") {
     const textElement = document.getElementById("mediaText");
     if (textElement) {
-        content = textElement.innerText;
+      content = textElement.innerText;
     }
   }
 
   if (!content) return;
 
-  const span = btn.querySelector('span');
+  const span = btn.querySelector("span");
   const originalText = span.innerText;
-  
+
   try {
     await navigator.clipboard.writeText(content);
     span.innerText = "Copied!";
@@ -450,5 +473,5 @@ async function copyExtractItem(type, btn) {
     console.error("Failed to copy: ", err);
     span.innerText = "Failed";
   }
-  setTimeout(() => span.innerText = originalText, 2000);
+  setTimeout(() => (span.innerText = originalText), 2000);
 }
