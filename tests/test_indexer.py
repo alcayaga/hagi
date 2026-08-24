@@ -283,3 +283,51 @@ def test_build_plex_cache_filtering():
             indexer.build_plex_cache()
         assert "anime_ep1" in indexer.plex_path_cache
         assert "movie1" in indexer.plex_path_cache
+
+def test_language_detection_por_spa():
+    """Ensure Portuguese is distinguished from Spanish."""
+    mock_subs_por = MagicMock()
+    mock_line_por = MagicMock()
+    mock_line_por.plaintext = "Sim, o caso está encerrado. Tudo graças ao detetive Mouri."
+    mock_subs_por.__iter__.return_value = [mock_line_por]
+    
+    mock_subs_spa = MagicMock()
+    mock_line_spa = MagicMock()
+    mock_line_spa.plaintext = "Estación de la ciudad de Beika. ¿Qué pasa?"
+    mock_subs_spa.__iter__.return_value = [mock_line_spa]
+    
+    assert indexer.detect_language(mock_subs_por) == "por"
+    assert indexer.detect_language(mock_subs_spa) == "spa"
+
+def test_incremental_indexing_removes_missing_files(test_db):
+    """Ensure files that are in the database but no longer on disk are removed during indexing."""
+    # Add a file that will be simulated as deleted
+    deleted_media_id = db.add_media(test_db, "/fake/path/deleted_episode.srt", "subtitle")
+    db.add_sentences(test_db, deleted_media_id, [("eng", 0, 1, "Deleted sentence")])
+    
+    # Add a file in a DIFFERENT directory that is also "deleted" but shouldn't be touched by the indexer
+    other_media_id = db.add_media(test_db, "/other/path/other_episode.srt", "subtitle")
+    db.add_sentences(test_db, other_media_id, [("eng", 0, 1, "Other sentence")])
+
+    def mock_exists(path):
+        if path == "/fake/path/deleted_episode.srt":
+            return False
+        if path == "/other/path/other_episode.srt":
+            return False
+        return True
+
+    with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db), patch("os.path.exists", side_effect=mock_exists):
+        mock_walk.return_value = []
+        indexer.index_directory("/fake/path")
+
+    # The deleted file in /fake/path should be removed
+    assert test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (deleted_media_id,)).fetchone()[0] == 0
+    # Its sentences should be cascaded
+    assert test_db.execute("SELECT COUNT(*) FROM sentences WHERE media_id = ?", (deleted_media_id,)).fetchone()[0] == 0
+    # Its FTS should be cascaded (trigger)
+    assert test_db.execute("SELECT COUNT(*) FROM sentences_fts WHERE text = 'Deleted sentence'").fetchone()[0] == 0
+
+    # The file in /other/path should still exist because we only indexed /fake/path
+    assert test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (other_media_id,)).fetchone()[0] == 1
+    assert test_db.execute("SELECT COUNT(*) FROM sentences WHERE media_id = ?", (other_media_id,)).fetchone()[0] == 1
+

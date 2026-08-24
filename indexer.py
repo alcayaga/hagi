@@ -161,6 +161,7 @@ def index_directory(directory_path: str):
     for row in cursor.fetchall():
         if not os.path.exists(row["path"]):
             print(f"Removing deleted file from database: {row['path']}")
+            conn.execute("DELETE FROM sentences WHERE media_id = ?", (row["id"],))
             conn.execute("DELETE FROM media WHERE id = ?", (row["id"],))
     conn.commit()
 
