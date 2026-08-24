@@ -28,7 +28,9 @@ except Exception as e:
 
 _plex_cache_built = False
 
+
 def build_plex_cache():
+    """Build the cache of Plex paths and metadata."""
     global _plex_cache_built
     if not plex or _plex_cache_built:
         return
@@ -85,7 +87,9 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
         language (str, optional): Language of the subtitles. Defaults to "unknown".
     """
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
+    show_title, season, episode, episode_title = plex_path_cache.get(
+        base_name, (None, None, None, None)
+    )
     media_id = add_media(conn, file_path, media_type, show_title, season, episode, episode_title)
     sentences = []
 
@@ -100,6 +104,7 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
 
 
 def detect_language(subs_obj):
+    """Heuristically detect the language of a subtitle object."""
     jp_chars = 0
     sp_chars = 0
     por_chars = 0
@@ -114,11 +119,7 @@ def detect_language(subs_obj):
         for char in text:
             code = ord(char)
             # Hiragana, Katakana, CJK Ideographs
-            if (
-                0x3040 <= code <= 0x309F
-                or 0x30A0 <= code <= 0x30FF
-                or 0x4E00 <= code <= 0x9FAF
-            ):
+            if 0x3040 <= code <= 0x309F or 0x30A0 <= code <= 0x30FF or 0x4E00 <= code <= 0x9FAF:
                 jp_chars += 1
             elif char in "ñÑ¿¡":
                 sp_chars += 2
@@ -151,12 +152,12 @@ def index_directory(directory_path: str):
     """
     build_plex_cache()
     conn = get_db()
-    
+
     # Clean up missing files that fall under the directory being indexed
     abs_dir = os.path.abspath(directory_path)
     like_pattern = abs_dir if abs_dir.endswith(os.sep) else f"{abs_dir}{os.sep}"
     like_pattern += "%"
-    
+
     cursor = conn.execute("SELECT id, path FROM media WHERE path LIKE ?", (like_pattern,))
     for row in cursor.fetchall():
         if not os.path.exists(row["path"]):
@@ -178,7 +179,9 @@ def index_directory(directory_path: str):
                 "SELECT id, show_title, episode_title FROM media WHERE path = ?", (file_path,)
             ).fetchone()
             if row:
-                show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
+                show_title, season, episode, episode_title = plex_path_cache.get(
+                    base_name, (None, None, None, None)
+                )
                 updated = False
                 if row["show_title"] is None and show_title:
                     conn.execute(
@@ -186,14 +189,16 @@ def index_directory(directory_path: str):
                         (show_title, season, episode, row["id"]),
                     )
                     updated = True
-                
-                if ("episode_title" not in row.keys() or not row["episode_title"]) and episode_title:
+
+                if (
+                    "episode_title" not in row.keys() or not row["episode_title"]
+                ) and episode_title:
                     conn.execute(
                         "UPDATE media SET episode_title=? WHERE id=?",
                         (episode_title, row["id"]),
                     )
                     updated = True
-                    
+
                 if updated:
                     print(f"Backfilled Plex metadata for: {file_path}")
                 else:
@@ -240,25 +245,50 @@ def index_directory(directory_path: str):
                     streams = json.loads(result.stdout).get("streams", [])
                     if not streams:
                         # We process the mkv, so add it to the media table once to mark it as indexed even if tracks fail
-                        show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
-                        add_media(conn, file_path, "mkv_embedded", show_title, season, episode, episode_title)
+                        show_title, season, episode, episode_title = plex_path_cache.get(
+                            base_name, (None, None, None, None)
+                        )
+                        add_media(
+                            conn,
+                            file_path,
+                            "mkv_embedded",
+                            show_title,
+                            season,
+                            episode,
+                            episode_title,
+                        )
                         continue
 
                     eng_streams, spa_streams, jpn_streams, unk_streams = [], [], [], []
                     for stream in streams:
                         lang = stream.get("tags", {}).get("language", "unknown").lower()
-                        if lang == "eng": eng_streams.append(stream)
-                        elif lang == "spa": spa_streams.append(stream)
-                        elif lang == "jpn": jpn_streams.append(stream)
-                        elif lang in ["unknown", "und", ""]: unk_streams.append(stream)
+                        if lang == "eng":
+                            eng_streams.append(stream)
+                        elif lang == "spa":
+                            spa_streams.append(stream)
+                        elif lang == "jpn":
+                            jpn_streams.append(stream)
+                        elif lang in ["unknown", "und", ""]:
+                            unk_streams.append(stream)
 
                     def select_best_stream(stream_list, is_spanish=False):
-                        if not stream_list: return None
-                        clean = [s for s in stream_list if not any(x in s.get("tags", {}).get("title", "").lower() for x in ["forced", "sdh", "dubtitle", "signs"])]
+                        if not stream_list:
+                            return None
+                        clean = [
+                            s
+                            for s in stream_list
+                            if not any(
+                                x in s.get("tags", {}).get("title", "").lower()
+                                for x in ["forced", "sdh", "dubtitle", "signs"]
+                            )
+                        ]
                         pool = clean if clean else stream_list
                         if is_spanish:
                             for s in pool:
-                                if any(x in s.get("tags", {}).get("title", "").lower() for x in ["latin", "latam"]):
+                                if any(
+                                    x in s.get("tags", {}).get("title", "").lower()
+                                    for x in ["latin", "latam"]
+                                ):
                                     return s
                         return pool[0]
 
@@ -267,9 +297,12 @@ def index_directory(directory_path: str):
                     best_spa = select_best_stream(spa_streams, is_spanish=True)
                     best_jpn = select_best_stream(jpn_streams, is_spanish=False)
 
-                    if best_eng: selected_streams.append(best_eng)
-                    if best_spa: selected_streams.append(best_spa)
-                    if best_jpn: selected_streams.append(best_jpn)
+                    if best_eng:
+                        selected_streams.append(best_eng)
+                    if best_spa:
+                        selected_streams.append(best_spa)
+                    if best_jpn:
+                        selected_streams.append(best_jpn)
                     selected_streams.extend(unk_streams)
 
                     processed_any = False
@@ -302,32 +335,44 @@ def index_directory(directory_path: str):
                             try:
                                 subs = pysubs2.load(temp_sub_path)
                                 final_lang = lang
-                                
+
                                 detected_lang = detect_language(subs)
                                 # Verify Japanese tracks actually contain Japanese text (Anime dual-audio mistagging)
                                 if final_lang == "jpn" and detected_lang == "eng":
                                     final_lang = "eng"
                                 elif final_lang == "spa" and detected_lang == "por":
                                     final_lang = "por"
-                                    
+
                                 if final_lang in {"unknown", "und", ""}:
                                     final_lang = detected_lang
-                                    
-                                if final_lang not in ["eng", "spa", "jpn"]:
-                                    continue # Skip if the heuristic found it to be an unwanted language
 
-                                process_subs(conn, file_path, subs, "mkv_embedded", language=final_lang)
+                                if final_lang not in ["eng", "spa", "jpn"]:
+                                    continue  # Skip if the heuristic found it to be an unwanted language
+
+                                process_subs(
+                                    conn, file_path, subs, "mkv_embedded", language=final_lang
+                                )
                                 processed_any = True
                             except Exception as parse_e:
                                 print(f"Error parsing track {i} in {file_path}: {parse_e}")
 
                         if os.path.exists(temp_sub_path):
                             os.remove(temp_sub_path)
-                            
+
                     if not processed_any:
                         # Ensure the media is still added even if all subtitles were skipped
-                        show_title, season, episode, episode_title = plex_path_cache.get(base_name, (None, None, None, None))
-                        add_media(conn, file_path, "mkv_embedded", show_title, season, episode, episode_title)
+                        show_title, season, episode, episode_title = plex_path_cache.get(
+                            base_name, (None, None, None, None)
+                        )
+                        add_media(
+                            conn,
+                            file_path,
+                            "mkv_embedded",
+                            show_title,
+                            season,
+                            episode,
+                            episode_title,
+                        )
 
                 except Exception as e:
                     print(f"Error extracting from {file_path}: {e}")

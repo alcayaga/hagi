@@ -1,5 +1,8 @@
 """Command-line interface for Nadeshiko Local."""
 
+import os
+import json
+from typing import Optional
 import typer
 from rich.console import Console
 from rich.table import Table
@@ -19,19 +22,13 @@ def init():
     console.print("[green]Database initialized![/green]")
 
 
-import os
-
-
-import json
-from typing import Optional
-
 @app.command()
 def index(directory: Optional[str] = typer.Argument(None)):
     """Index a directory or multiple directories from config.json."""
     db.init_db()  # ensure db exists
-    
+
     directories_to_index = []
-    
+
     if directory:
         directories_to_index.append(directory)
     else:
@@ -45,23 +42,29 @@ def index(directory: Optional[str] = typer.Argument(None)):
                 except Exception as e:
                     console.print(f"[red]Error parsing config.json: {e}[/red]")
                     raise typer.Exit(code=1)
-        
+
         if not directories_to_index:
-            console.print("[red]Error: Please provide a directory argument or specify 'directories' in config.json.[/red]")
+            console.print(
+                "[red]Error: Please provide a directory argument or specify 'directories' in config.json.[/red]"
+            )
             raise typer.Exit(code=1)
 
     for dir_path in directories_to_index:
         if not os.path.isdir(dir_path):
             if directory:
-                console.print(f"[red]Error: Directory '{dir_path}' does not exist or is not a directory.[/red]")
+                console.print(
+                    f"[red]Error: Directory '{dir_path}' does not exist or is not a directory.[/red]"
+                )
                 raise typer.Exit(code=1)
             else:
-                console.print(f"[yellow]Warning: Directory '{dir_path}' does not exist or is not a directory. Skipping.[/yellow]")
+                console.print(
+                    f"[yellow]Warning: Directory '{dir_path}' does not exist or is not a directory. Skipping.[/yellow]"
+                )
                 continue
-        
+
         console.print(f"Indexing directory: [bold]{dir_path}[/bold]...")
         indexer.index_directory(dir_path)
-        
+
     console.print("[green]Indexing complete![/green]")
 
 
@@ -77,7 +80,7 @@ def search(query: str):
 
     table = Table("ID", "Lang", "Time", "Text", "File")
     for r in results:
-        if r['start_time'] is not None:
+        if r["start_time"] is not None:
             time_str = f"{int(r['start_time'] // 60):02d}:{int(r['start_time'] % 60):02d}"
         else:
             time_str = "??:??"
@@ -131,7 +134,7 @@ def context(sentence_id: int):
 
     for s in context_sentences:
         prefix = ">> " if s["id"] == sentence_id else "   "
-        if s['start_time'] is not None:
+        if s["start_time"] is not None:
             time_str = f"{int(s['start_time'] // 60):02d}:{int(s['start_time'] % 60):02d}"
         else:
             time_str = "??:??"

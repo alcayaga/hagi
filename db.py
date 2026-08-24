@@ -43,7 +43,7 @@ def init_db():
                 episode INTEGER,
                 episode_title TEXT
             );
-            
+
             CREATE TABLE IF NOT EXISTS sentences (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 media_id INTEGER,
@@ -66,8 +66,12 @@ def init_db():
             pass
 
         try:
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sentences_lookup ON sentences(media_id, language, start_time)")
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_media_lookup ON media(show_title, season, episode)")
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_sentences_lookup ON sentences(media_id, language, start_time)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_media_lookup ON media(show_title, season, episode)"
+            )
         except sqlite3.OperationalError:
             pass
 
@@ -101,7 +105,9 @@ def init_db():
     return conn
 
 
-def add_media(conn, path, media_type, show_title=None, season=None, episode=None, episode_title=None):
+def add_media(
+    conn, path, media_type, show_title=None, season=None, episode=None, episode_title=None
+):
     """Add a media file to the database.
 
     Args:
@@ -111,6 +117,7 @@ def add_media(conn, path, media_type, show_title=None, season=None, episode=None
         show_title (str, optional): The name of the show from Plex.
         season (int, optional): The season number.
         episode (int, optional): The episode number.
+        episode_title (str, optional): The title of the episode.
 
     Returns:
         int: The ID of the inserted or existing media.
@@ -200,8 +207,8 @@ def search_sentences(conn, query, show_title=None, episode=None):
 
     sql = f"""
         SELECT * FROM (
-            SELECT 
-                s.id AS matched_id, s.text AS matched_text, s.language AS matched_language, s.start_time, 
+            SELECT
+                s.id AS matched_id, s.text AS matched_text, s.language AS matched_language, s.start_time,
                 m.path, m.show_title, m.season, m.episode, m.episode_title,
                 (
                     SELECT id FROM (
@@ -209,9 +216,9 @@ def search_sentences(conn, query, show_title=None, episode=None):
                         FROM sentences s_jpn
                         JOIN media m_jpn ON s_jpn.media_id = m_jpn.id
                         WHERE (m_jpn.id = m.id OR (
-                              m.show_title IS NOT NULL 
-                              AND m_jpn.show_title = m.show_title 
-                              AND m_jpn.season = m.season 
+                              m.show_title IS NOT NULL
+                              AND m_jpn.show_title = m.show_title
+                              AND m_jpn.season = m.season
                               AND m_jpn.episode = m.episode
                           ))
                           AND s_jpn.language = 'jpn'
@@ -226,9 +233,9 @@ def search_sentences(conn, query, show_title=None, episode=None):
                         FROM sentences s_jpn
                         JOIN media m_jpn ON s_jpn.media_id = m_jpn.id
                         WHERE (m_jpn.id = m.id OR (
-                              m.show_title IS NOT NULL 
-                              AND m_jpn.show_title = m.show_title 
-                              AND m_jpn.season = m.season 
+                              m.show_title IS NOT NULL
+                              AND m_jpn.show_title = m.show_title
+                              AND m_jpn.season = m.season
                               AND m_jpn.episode = m.episode
                           ))
                           AND s_jpn.language = 'jpn'
@@ -243,9 +250,9 @@ def search_sentences(conn, query, show_title=None, episode=None):
                         FROM sentences s_spa
                         JOIN media m_spa ON s_spa.media_id = m_spa.id
                         WHERE (m_spa.id = m.id OR (
-                              m.show_title IS NOT NULL 
-                              AND m_spa.show_title = m.show_title 
-                              AND m_spa.season = m.season 
+                              m.show_title IS NOT NULL
+                              AND m_spa.show_title = m.show_title
+                              AND m_spa.season = m.season
                               AND m_spa.episode = m.episode
                           ))
                           AND s_spa.language = 'spa'
@@ -260,9 +267,9 @@ def search_sentences(conn, query, show_title=None, episode=None):
                         FROM sentences s_eng
                         JOIN media m_eng ON s_eng.media_id = m_eng.id
                         WHERE (m_eng.id = m.id OR (
-                              m.show_title IS NOT NULL 
-                              AND m_eng.show_title = m.show_title 
-                              AND m_eng.season = m.season 
+                              m.show_title IS NOT NULL
+                              AND m_eng.show_title = m.show_title
+                              AND m_eng.season = m.season
                               AND m_eng.episode = m.episode
                           ))
                           AND s_eng.language = 'eng'
@@ -280,27 +287,29 @@ def search_sentences(conn, query, show_title=None, episode=None):
         LIMIT 1000
     """
     rows = conn.execute(sql, params).fetchall()
-    
+
     results = []
     for row in rows:
         row_dict = dict(row)
-        
+
         final_id = row_dict["jpn_id"] or row_dict["matched_id"]
         final_text = row_dict["jpn_text"] or row_dict["matched_text"]
         final_lang = "jpn" if row_dict["jpn_text"] else row_dict["matched_language"]
-                
-        results.append({
-            "id": final_id,
-            "text": final_text,
-            "language": final_lang,
-            "start_time": row_dict["start_time"],
-            "path": row_dict["path"],
-            "show_title": row_dict["show_title"],
-            "season": row_dict["season"],
-            "episode": row_dict["episode"],
-            "episode_title": row_dict["episode_title"],
-            "spa_translation": row_dict["spa_text"],
-            "eng_translation": row_dict["eng_text"],
-        })
-        
+
+        results.append(
+            {
+                "id": final_id,
+                "text": final_text,
+                "language": final_lang,
+                "start_time": row_dict["start_time"],
+                "path": row_dict["path"],
+                "show_title": row_dict["show_title"],
+                "season": row_dict["season"],
+                "episode": row_dict["episode"],
+                "episode_title": row_dict["episode_title"],
+                "spa_translation": row_dict["spa_text"],
+                "eng_translation": row_dict["eng_text"],
+            }
+        )
+
     return results

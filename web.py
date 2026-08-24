@@ -53,7 +53,7 @@ def get_context(sentence_id: int):
         """,
         (sentence_id,),
     ).fetchone()
-    
+
     if not target:
         raise HTTPException(status_code=404, detail="Sentence not found")
 
@@ -62,74 +62,86 @@ def get_context(sentence_id: int):
         if start_time is None:
             # Fallback to ID-based context if start_time is missing
             if target["show_title"] and target["episode"]:
-                return [dict(r) for r in conn.execute(
-                    """
+                return [
+                    dict(r)
+                    for r in conn.execute(
+                        """
                     SELECT s.id, s.start_time, s.text, s.language
                     FROM sentences s
                     JOIN media m ON s.media_id = m.id
-                    WHERE m.show_title = ? AND m.season = ? AND m.episode = ? 
+                    WHERE m.show_title = ? AND m.season = ? AND m.episode = ?
                     AND s.language = ? AND s.id >= ? AND s.id <= ?
                     ORDER BY s.id ASC
                     """,
-                    (
-                        target["show_title"],
-                        target["season"],
-                        target["episode"],
-                        lang,
-                        sentence_id - 15,
-                        sentence_id + 15,
-                    ),
-                ).fetchall()]
+                        (
+                            target["show_title"],
+                            target["season"],
+                            target["episode"],
+                            lang,
+                            sentence_id - 15,
+                            sentence_id + 15,
+                        ),
+                    ).fetchall()
+                ]
             else:
-                return [dict(r) for r in conn.execute(
-                    """
+                return [
+                    dict(r)
+                    for r in conn.execute(
+                        """
                     SELECT id, start_time, text, language
                     FROM sentences
                     WHERE media_id = ? AND language = ? AND id >= ? AND id <= ?
                     ORDER BY id ASC
                     """,
-                    (
-                        target["media_id"],
-                        lang,
-                        sentence_id - 15,
-                        sentence_id + 15,
-                    ),
-                ).fetchall()]
+                        (
+                            target["media_id"],
+                            lang,
+                            sentence_id - 15,
+                            sentence_id + 15,
+                        ),
+                    ).fetchall()
+                ]
 
         if target["show_title"] and target["episode"]:
-            return [dict(r) for r in conn.execute(
-                """
+            return [
+                dict(r)
+                for r in conn.execute(
+                    """
                 SELECT s.id, s.start_time, s.text, s.language
                 FROM sentences s
                 JOIN media m ON s.media_id = m.id
-                WHERE m.show_title = ? AND m.season = ? AND m.episode = ? 
+                WHERE m.show_title = ? AND m.season = ? AND m.episode = ?
                 AND s.language = ? AND s.start_time >= ? AND s.start_time <= ?
                 ORDER BY s.start_time ASC
                 """,
-                (
-                    target["show_title"],
-                    target["season"],
-                    target["episode"],
-                    lang,
-                    start_time - 30.0,
-                    start_time + 30.0,
-                ),
-            ).fetchall()]
+                    (
+                        target["show_title"],
+                        target["season"],
+                        target["episode"],
+                        lang,
+                        start_time - 30.0,
+                        start_time + 30.0,
+                    ),
+                ).fetchall()
+            ]
         else:
-            return [dict(r) for r in conn.execute(
-                """
+            return [
+                dict(r)
+                for r in conn.execute(
+                    """
                 SELECT id, start_time, text, language
                 FROM sentences
                 WHERE media_id = ? AND language = ? AND start_time >= ? AND start_time <= ?
                 ORDER BY start_time ASC
                 """,
-                (
-                    target["media_id"],
-                    lang,
-                    start_time - 30.0,
-                    start_time + 30.0,
-                ),
-            ).fetchall()]
+                    (
+                        target["media_id"],
+                        lang,
+                        start_time - 30.0,
+                        start_time + 30.0,
+                    ),
+                ).fetchall()
+            ]
 
     other_lang = None
     if target["language"] == "jpn":
@@ -140,32 +152,32 @@ def get_context(sentence_id: int):
                 FROM sentences s
                 JOIN media m ON s.media_id = m.id
                 WHERE m.show_title = ? AND m.season = ? AND m.episode = ? AND s.language != 'jpn'
-                ORDER BY CASE s.language 
-                    WHEN 'spa' THEN 1 
-                    WHEN 'eng' THEN 2 
-                    WHEN 'por' THEN 3 
-                    ELSE 4 
+                ORDER BY CASE s.language
+                    WHEN 'spa' THEN 1
+                    WHEN 'eng' THEN 2
+                    WHEN 'por' THEN 3
+                    ELSE 4
                 END ASC
                 LIMIT 1
                 """,
-                (target["show_title"], target["season"], target["episode"])
+                (target["show_title"], target["season"], target["episode"]),
             ).fetchone()
             if row:
                 other_lang = row["language"]
         else:
             row = conn.execute(
                 """
-                SELECT language FROM sentences 
-                WHERE media_id = ? AND language != 'jpn' 
-                ORDER BY CASE language 
-                    WHEN 'spa' THEN 1 
-                    WHEN 'eng' THEN 2 
-                    WHEN 'por' THEN 3 
-                    ELSE 4 
+                SELECT language FROM sentences
+                WHERE media_id = ? AND language != 'jpn'
+                ORDER BY CASE language
+                    WHEN 'spa' THEN 1
+                    WHEN 'eng' THEN 2
+                    WHEN 'por' THEN 3
+                    ELSE 4
                 END ASC
                 LIMIT 1
                 """,
-                (target["media_id"],)
+                (target["media_id"],),
             ).fetchone()
             if row:
                 other_lang = row["language"]
@@ -179,7 +191,7 @@ def get_context(sentence_id: int):
         "target_lang": target["language"],
         "target_context": fetch_lang(target["language"]),
         "secondary_lang": secondary_lang,
-        "secondary_context": secondary_context
+        "secondary_context": secondary_context,
     }
 
 

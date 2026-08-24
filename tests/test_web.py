@@ -64,20 +64,22 @@ def test_api_extract(test_db):
         assert data["audio_url"] == "/media/audio.mp3"
         assert data["image_url"] == "/media/img.jpg"
 
+
 @pytest.fixture
 def dual_audio_db():
     """Fixture for dual audio context testing."""
     db.DB_PATH = ":memory:"
     conn = db.init_db()
-    
+
     mkv_id = db.add_media(conn, "/fake/show.mkv", "mkv", "Test Show", 1, 1)
     db.add_sentences(conn, mkv_id, [("eng", 10.0, 15.0, "English translation")])
-    
+
     ass_id = db.add_media(conn, "/fake/show.ass", "ass", "Test Show", 1, 1)
     db.add_sentences(conn, ass_id, [("jpn", 10.1, 14.9, "Japanese original")])
-    
+
     yield conn
     conn.close()
+
 
 def test_api_context_dual_audio(dual_audio_db):
     """Test function for dual audio context alignment."""
@@ -85,11 +87,11 @@ def test_api_context_dual_audio(dual_audio_db):
         response = client.get("/api/context/2")
         assert response.status_code == 200
         data = response.json()
-        
+
         assert data["target_lang"] == "jpn"
         assert len(data["target_context"]) == 1
         assert data["target_context"][0]["text"] == "Japanese original"
-        
+
         assert data["secondary_lang"] == "eng"
         assert len(data["secondary_context"]) == 1
         assert data["secondary_context"][0]["text"] == "English translation"

@@ -97,6 +97,7 @@ def test_plex_metadata_filters(test_db):
     # Search with incorrect episode filter should return empty
     assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King", episode=6)) == 0
 
+
 def test_translation_matching(test_db):
     """Test that search results automatically fetch closest translation."""
     # Add Japanese media
@@ -113,13 +114,14 @@ def test_translation_matching(test_db):
 
     results = search_sentences(test_db, "テスト")
     assert len(results) == 1
-    
+
     # Assert that the native text is the Japanese sentence
     assert results[0]["text"] == "これはテストです"
-    
+
     # Assert that the translation field was successfully populated with the English match
     assert results[0]["eng_translation"] == "This is a test"
     assert results[0]["spa_translation"] is None
+
 
 def test_translation_language_priority(test_db):
     """Test that search results prioritize Spanish > English > Portuguese."""
@@ -142,9 +144,10 @@ def test_translation_language_priority(test_db):
 
     results = search_sentences(test_db, "日本のテキスト")
     assert len(results) == 1
-    
+
     # Spanish should be chosen because it is prioritized over Portuguese
     assert results[0]["spa_translation"] == "Spanish text"
+
 
 def test_search_foreign_returns_japanese_primary(test_db):
     """Test that searching for a foreign language word prioritizes the Japanese text as the primary result."""
@@ -161,10 +164,10 @@ def test_search_foreign_returns_japanese_primary(test_db):
     # Search for the Spanish word
     results = search_sentences(test_db, "español")
     assert len(results) == 1
-    
+
     # Primary text should be Japanese, despite the search query matching Spanish
     assert results[0]["text"] == "日本のテキスト"
     assert results[0]["language"] == "jpn"
-    
+
     # Secondary text should be the Spanish match
     assert results[0]["spa_translation"] == "Palabra en español"

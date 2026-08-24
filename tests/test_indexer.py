@@ -23,7 +23,11 @@ def test_incremental_indexing_skips(test_db):
     """Ensure files already present in the media table are not parsed again."""
     db.add_media(test_db, "/fake/path/episode1.srt", "subtitle")
 
-    with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db), patch("os.path.exists", return_value=True):
+    with (
+        patch("os.walk") as mock_walk,
+        patch("indexer.get_db", return_value=test_db),
+        patch("os.path.exists", return_value=True),
+    ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.srt"])]
 
         with patch("indexer.pysubs2.load") as mock_load:
@@ -118,11 +122,12 @@ def test_add_media_lastrowid_bug(test_db):
 
     assert media_id_1 == media_id_2
 
+
 def test_plex_cache_unpacking(test_db):
     """Ensure process_subs correctly unpacks 4 values from the plex_path_cache including episode_title."""
     # Seed the cache with a 4-tuple representing (show_title, season, episode, episode_title)
     indexer.plex_path_cache["episode1"] = ("My Show", 1, 5, "The Best Episode")
-    
+
     with patch("indexer.get_db", return_value=test_db):
         with patch("indexer.pysubs2.load") as mock_load:
             mock_subs = MagicMock()
@@ -132,14 +137,17 @@ def test_plex_cache_unpacking(test_db):
             mock_line.plaintext = "Testing tuple unpacking"
             mock_subs.__iter__.return_value = [mock_line]
             mock_load.return_value = mock_subs
-            
+
             # This should not raise a ValueError
             indexer.process_subs(test_db, "/fake/path/episode1.srt", mock_subs, "subtitle", "eng")
-            
-            row = test_db.execute("SELECT show_title, episode_title FROM media WHERE path = '/fake/path/episode1.srt'").fetchone()
+
+            row = test_db.execute(
+                "SELECT show_title, episode_title FROM media WHERE path = '/fake/path/episode1.srt'"
+            ).fetchone()
             assert row is not None
             assert row["show_title"] == "My Show"
             assert row["episode_title"] == "The Best Episode"
+
 
 def test_mkv_subtitle_filtering(test_db):
     """Ensure we filter unwanted tracks, skip SDH, and catch Japanese mistagging."""
@@ -151,15 +159,32 @@ def test_mkv_subtitle_filtering(test_db):
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
-        probe_output = {"streams": [
-            {"index": 0, "tags": {"language": "fre"}}, # Skipped
-            {"index": 1, "tags": {"language": "eng", "title": "Forced"}}, # Skipped because clean exists
-            {"index": 2, "tags": {"language": "eng", "title": "Dialogue"}}, # Picked (clean)
-            {"index": 3, "tags": {"language": "spa", "title": "Castilian"}}, # Skipped because Latin American exists
-            {"index": 4, "tags": {"language": "spa", "title": "Latin American"}}, # Picked (Latin priority)
-            {"index": 5, "tags": {"language": "jpn", "title": "Full Subtitles"}}, # Picked, but we will mock it to be English text!
-            {"index": 6, "tags": {"language": "unknown"}}, # Picked, will be detected as English text!
-        ]}
+        probe_output = {
+            "streams": [
+                {"index": 0, "tags": {"language": "fre"}},  # Skipped
+                {
+                    "index": 1,
+                    "tags": {"language": "eng", "title": "Forced"},
+                },  # Skipped because clean exists
+                {"index": 2, "tags": {"language": "eng", "title": "Dialogue"}},  # Picked (clean)
+                {
+                    "index": 3,
+                    "tags": {"language": "spa", "title": "Castilian"},
+                },  # Skipped because Latin American exists
+                {
+                    "index": 4,
+                    "tags": {"language": "spa", "title": "Latin American"},
+                },  # Picked (Latin priority)
+                {
+                    "index": 5,
+                    "tags": {"language": "jpn", "title": "Full Subtitles"},
+                },  # Picked, but we will mock it to be English text!
+                {
+                    "index": 6,
+                    "tags": {"language": "unknown"},
+                },  # Picked, will be detected as English text!
+            ]
+        }
         mock_res = MagicMock()
         mock_res.stdout = json.dumps(probe_output)
         mock_res.returncode = 0
@@ -183,7 +208,7 @@ def test_mkv_subtitle_filtering(test_db):
         # English, Spanish, mistagged Japanese track, and untagged track
         assert len(sentences) == 4
         langs = [s["language"] for s in sentences]
-        
+
         assert langs.count("eng") == 3
         assert langs.count("spa") == 1
         assert langs.count("jpn") == 0
@@ -198,10 +223,12 @@ def test_mkv_skip_all_subtitles(test_db):
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
-        probe_output = {"streams": [
-            {"index": 0, "tags": {"language": "fre"}},
-            {"index": 1, "tags": {"language": "ger"}},
-        ]}
+        probe_output = {
+            "streams": [
+                {"index": 0, "tags": {"language": "fre"}},
+                {"index": 1, "tags": {"language": "ger"}},
+            ]
+        }
         mock_res = MagicMock()
         mock_res.stdout = json.dumps(probe_output)
         mock_res.returncode = 0
@@ -221,10 +248,11 @@ def test_mkv_skip_all_subtitles(test_db):
         assert len(media) == 1
         assert media[0]["path"] == "/fake/path/episode1.mkv"
 
+
 def test_build_plex_cache_filtering():
     """Ensure build_plex_cache respects plex_libraries from config.json."""
     from unittest.mock import mock_open
-    
+
     # Create the mock setup inside
     with patch("indexer.plex") as mock_plex, patch("os.path.exists") as mock_exists:
         # Mock indexer.plex
@@ -256,7 +284,7 @@ def test_build_plex_cache_filtering():
         mock_media_movie.parts = [mock_part_movie]
         mock_movie.media = [mock_media_movie]
         mock_section_movies.search.return_value = [mock_movie]
-        
+
         mock_plex.library.sections.return_value = [mock_section_anime, mock_section_movies]
         mock_exists.return_value = True
 
@@ -275,14 +303,15 @@ def test_build_plex_cache_filtering():
             indexer.build_plex_cache()
         assert "anime_ep1" not in indexer.plex_path_cache
         assert "movie1" in indexer.plex_path_cache
-        
+
         # 3. Test no filter (empty config)
         indexer._plex_cache_built = False
         indexer.plex_path_cache = {}
-        with patch("builtins.open", mock_open(read_data='{}')):
+        with patch("builtins.open", mock_open(read_data="{}")):
             indexer.build_plex_cache()
         assert "anime_ep1" in indexer.plex_path_cache
         assert "movie1" in indexer.plex_path_cache
+
 
 def test_language_detection_por_spa():
     """Ensure Portuguese is distinguished from Spanish."""
@@ -290,21 +319,22 @@ def test_language_detection_por_spa():
     mock_line_por = MagicMock()
     mock_line_por.plaintext = "Sim, o caso está encerrado. Tudo graças ao detetive Mouri."
     mock_subs_por.__iter__.return_value = [mock_line_por]
-    
+
     mock_subs_spa = MagicMock()
     mock_line_spa = MagicMock()
     mock_line_spa.plaintext = "Estación de la ciudad de Beika. ¿Qué pasa?"
     mock_subs_spa.__iter__.return_value = [mock_line_spa]
-    
+
     assert indexer.detect_language(mock_subs_por) == "por"
     assert indexer.detect_language(mock_subs_spa) == "spa"
+
 
 def test_incremental_indexing_removes_missing_files(test_db):
     """Ensure files that are in the database but no longer on disk are removed during indexing."""
     # Add a file that will be simulated as deleted
     deleted_media_id = db.add_media(test_db, "/fake/path/deleted_episode.srt", "subtitle")
     db.add_sentences(test_db, deleted_media_id, [("eng", 0, 1, "Deleted sentence")])
-    
+
     # Add a file in a DIFFERENT directory that is also "deleted" but shouldn't be touched by the indexer
     other_media_id = db.add_media(test_db, "/other/path/other_episode.srt", "subtitle")
     db.add_sentences(test_db, other_media_id, [("eng", 0, 1, "Other sentence")])
@@ -316,18 +346,44 @@ def test_incremental_indexing_removes_missing_files(test_db):
             return False
         return True
 
-    with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db), patch("os.path.exists", side_effect=mock_exists):
+    with (
+        patch("os.walk") as mock_walk,
+        patch("indexer.get_db", return_value=test_db),
+        patch("os.path.exists", side_effect=mock_exists),
+    ):
         mock_walk.return_value = []
         indexer.index_directory("/fake/path")
 
     # The deleted file in /fake/path should be removed
-    assert test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (deleted_media_id,)).fetchone()[0] == 0
+    assert (
+        test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (deleted_media_id,)).fetchone()[
+            0
+        ]
+        == 0
+    )
     # Its sentences should be cascaded
-    assert test_db.execute("SELECT COUNT(*) FROM sentences WHERE media_id = ?", (deleted_media_id,)).fetchone()[0] == 0
+    assert (
+        test_db.execute(
+            "SELECT COUNT(*) FROM sentences WHERE media_id = ?", (deleted_media_id,)
+        ).fetchone()[0]
+        == 0
+    )
     # Its FTS should be cascaded (trigger)
-    assert test_db.execute("SELECT COUNT(*) FROM sentences_fts WHERE text = 'Deleted sentence'").fetchone()[0] == 0
+    assert (
+        test_db.execute(
+            "SELECT COUNT(*) FROM sentences_fts WHERE text = 'Deleted sentence'"
+        ).fetchone()[0]
+        == 0
+    )
 
     # The file in /other/path should still exist because we only indexed /fake/path
-    assert test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (other_media_id,)).fetchone()[0] == 1
-    assert test_db.execute("SELECT COUNT(*) FROM sentences WHERE media_id = ?", (other_media_id,)).fetchone()[0] == 1
-
+    assert (
+        test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (other_media_id,)).fetchone()[0]
+        == 1
+    )
+    assert (
+        test_db.execute(
+            "SELECT COUNT(*) FROM sentences WHERE media_id = ?", (other_media_id,)
+        ).fetchone()[0]
+        == 1
+    )

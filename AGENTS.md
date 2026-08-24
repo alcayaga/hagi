@@ -24,11 +24,11 @@ When a user searches for a term, the engine doesn't just return the matching sen
 - Because of these correlated subqueries, **always ensure proper indexing** (e.g., on `media_id`, `language`, and `start_time`) to prevent massive full-table scans.
 
 ## 🧪 Testing Environment
-- The project uses `pytest`. Tests are located in the `tests/` directory.
+- The project uses `pytest`. Tests are located in the `tests/` directory. Linting checks (via `ruff`) are integrated directly into the test suite using `pytest-ruff`.
 - The project relies on a Conda environment named `local-nadeshiko`.
-- **To run tests:** You must include the root directory in the PYTHONPATH.
+- **To run tests & linting:** You must include the root directory in the PYTHONPATH. Run `pytest` on the root directory (rather than `tests/`) so it correctly finds and lints all `.py` files.
   ```bash
-  PYTHONPATH=. conda run -n local-nadeshiko pytest tests/
+  PYTHONPATH=. conda run -n local-nadeshiko pytest
   ```
 - **Test Database:** Tests use an in-memory database (`:memory:`) to avoid touching the user's actual `nadeshiko.db`.
 

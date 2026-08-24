@@ -54,7 +54,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     # Timestamps
     if target["start_time"] is None or target["end_time"] is None:
         return False, f"Missing timestamp data for sentence {sentence_id}", None, None, None
-        
+
     start = max(0, target["start_time"] - pad_start)
     end = target["end_time"] + pad_end
     duration = end - start
