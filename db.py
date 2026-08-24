@@ -65,6 +65,12 @@ def init_db():
             pass
 
         try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sentences_lookup ON sentences(media_id, language, start_time)")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_media_lookup ON media(show_title, season, episode)")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
             conn.execute("ALTER TABLE sentences ADD COLUMN start_time REAL")
             conn.execute("ALTER TABLE sentences ADD COLUMN end_time REAL")
         except sqlite3.OperationalError:
@@ -172,10 +178,10 @@ def search_sentences(conn, query, show_title=None, episode=None):
         if token.startswith("-"):
             term = token[1:]
             if term:
-                conditions.append("s.text NOT LIKE ?")
+                conditions.append("fts.text NOT LIKE ?")
                 params.append(f"%{term}%")
         else:
-            conditions.append("s.text LIKE ?")
+            conditions.append("fts.text LIKE ?")
             params.append(f"%{token}%")
 
     if show_title:
@@ -265,6 +271,7 @@ def search_sentences(conn, query, show_title=None, episode=None):
                     )
                 ) as eng_text
             FROM sentences s
+            JOIN sentences_fts fts ON s.id = fts.rowid
             JOIN media m ON s.media_id = m.id
             WHERE {where_clause} AND s.language != 'por'
         )
