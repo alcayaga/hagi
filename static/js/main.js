@@ -930,33 +930,64 @@ async function applyTimelineExtraction() {
       const selStart = timelineData.selectedStart;
       const selEnd = timelineData.selectedEnd;
 
-      const getEncompassed = (arr) => {
+      const cleanText = (text, lang) => {
+        let cleaned = (text || "").replace(
+          /<br\s*\/?>/gi,
+          lang === "jpn" ? "" : " ",
+        );
+        return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
+      };
+
+      const getEncompassed = (arr, lang) => {
         if (!arr) return "";
-        return arr
-          .filter((s) => {
-            const mid =
-              ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
-            return mid >= selStart && mid <= selEnd;
-          })
-          .map((s) => s.text)
-          .join(" ");
+
+        const filtered = arr.filter((s) => {
+          const mid =
+            ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
+          return mid >= selStart && mid <= selEnd;
+        });
+
+        return filtered
+          .map((s) => cleanText(s.text, lang))
+          .reduce((acc, text, i, array) => {
+            if (i === 0) return text;
+
+            if (lang === "jpn") {
+              const prev = array[i - 1];
+              const endsSentence = /[だですまるかよねわぞ。！？]$/.test(
+                prev.trim(),
+              );
+              return acc + (endsSentence ? "<br/>" : "") + text;
+            } else {
+              let prevText = acc.trim();
+              if (prevText.length > 0 && !prevText.match(/[.!?…,;:]$/)) {
+                prevText += ".";
+              }
+              return prevText + " " + text;
+            }
+          }, "");
       };
 
       const newTargetText = getEncompassed(
         timelineData.contextData.target_context,
+        timelineData.contextData.target_lang,
       );
       const newSecondaryText = getEncompassed(
         timelineData.contextData.secondary_context,
+        timelineData.contextData.secondary_lang,
       );
 
-      const targetTextToSet = newTargetText || timelineData.target.text;
+      const targetTextToSet =
+        newTargetText ||
+        cleanText(
+          timelineData.target.text,
+          timelineData.contextData.target_lang,
+        );
       const cTarget = getLangColors(timelineData.contextData.target_lang);
       const targetLabel = (
         timelineData.contextData.target_lang || "sub"
       ).toUpperCase();
-      document.getElementById("mediaText").innerHTML = (targetTextToSet || "")
-        .replace(/<br\s*\/?>/gi, " ")
-        .replace(/\n/g, " ");
+      document.getElementById("mediaText").innerHTML = targetTextToSet;
 
       let transHtml = "";
       if (newSecondaryText) {
