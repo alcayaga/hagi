@@ -81,12 +81,12 @@ function updateEpisodesAndRender() {
 async function performSearch() {
   const query = document.getElementById("searchInput").value;
   const loading = document.getElementById("loading");
-  const tbody = document.getElementById("resultsBody");
+  const container = document.getElementById("resultsList");
 
   if (!query.trim()) return;
 
   loading.classList.remove("hidden");
-  tbody.innerHTML = "";
+  container.innerHTML = "";
 
   // Reset filters on a new search
   document.getElementById("filterShow").innerHTML = '<option value="">All Shows</option>';
@@ -126,11 +126,11 @@ async function performSearch() {
  * and dynamically generates the HTML for the results table.
  */
 function renderResults() {
-  const tbody = document.getElementById("resultsBody");
+  const container = document.getElementById("resultsList");
   const showFilter = document.getElementById("filterShow").value;
   const epFilter = document.getElementById("filterEpisode").value;
 
-  tbody.innerHTML = "";
+  container.innerHTML = "";
 
   // Apply client-side filters
   let filtered = allSearchResults;
@@ -142,7 +142,7 @@ function renderResults() {
   }
 
   if (filtered.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-gray-500 dark:text-gray-400">No results found matching your filters</td></tr>`;
+    container.innerHTML = `<div class="text-center text-gray-500 dark:text-gray-400 p-8 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">No results found matching your filters</div>`;
     return;
   }
 
@@ -167,67 +167,67 @@ function renderResults() {
     let sanitized = div.innerHTML;
 
     if (highlightRegex) {
-      sanitized = sanitized.replace(highlightRegex, `<mark class="bg-yellow-200 dark:bg-yellow-900 text-inherit rounded px-0.5">$1</mark>`);
+      sanitized = sanitized.replace(highlightRegex, `<mark class="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300 rounded px-1 py-0.5">$1</mark>`);
     }
     return sanitized;
   }
 
   filtered.forEach((r) => {
-    const m = Math.floor(r.start_time / 60)
+    const totalSecs = Math.floor(r.start_time);
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60)
       .toString()
-      .padStart(2, "0");
-    const s = Math.floor(r.start_time % 60)
-      .toString()
-      .padStart(2, "0");
-    const timeStr = `${m}:${s}`;
+      .padStart(h > 0 ? 2 : 1, "0");
+    const s = (totalSecs % 60).toString().padStart(2, "0");
+    const timeStr = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 
     let sourceDisplay = r.path.split("/").pop();
-    let fullTitle = sourceDisplay;
-    let episodeTitleHtml = "";
-
+    let subParts = [];
     if (r.show_title) {
       sourceDisplay = `${r.show_title}`;
       if (r.season !== null && r.episode !== null) {
-        sourceDisplay += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
+        subParts.push(`S${r.season} E${r.episode}`);
       } else if (r.episode !== null) {
-        sourceDisplay += ` - Ep ${r.episode}`;
+        subParts.push(`EP ${r.episode}`);
       }
-      fullTitle = sourceDisplay;
-      if (r.episode_title) {
-        fullTitle += ` "${r.episode_title}"`;
-        episodeTitleHtml = `<div class="mt-1 text-gray-500 italic">${r.episode_title}</div>`;
-      }
-      fullTitle = fullTitle.replace(/"/g, "&quot;");
     }
 
     const cleanText = r.text ? r.text.replace(/\n/g, " ") : "";
     const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
     const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
 
-    const row = document.createElement("tr");
-    row.className = "flex flex-col md:table-row border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors p-2 md:p-0";
-    row.innerHTML = `
-                    <td class="block md:table-cell px-2 py-2 md:px-6 md:py-4">
-                        <div class="text-lg font-medium">${highlightText(cleanText)}</div>
-                        ${cleanSpa ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span> <span>${highlightText(cleanSpa)}</span></div>` : ""}
-                        ${cleanEng ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span> <span>${highlightText(cleanEng)}</span></div>` : ""}
-                    </td>
-                    <td class="block md:table-cell px-2 py-1 md:px-6 md:py-4 text-xs text-gray-400 md:max-w-xs whitespace-normal break-words" title="${fullTitle}">
-                        <span class="inline-block md:hidden font-bold mr-1 text-gray-500">Source:</span>
-                        <span class="font-medium text-gray-600 dark:text-gray-300">${sourceDisplay}</span>
-                        ${episodeTitleHtml ? `<span class="block md:mt-1 text-gray-500 italic">${r.episode_title}</span>` : ""}
-                    </td>
-                    <td class="block md:table-cell px-2 py-1 md:px-6 md:py-4 text-sm text-gray-500 dark:text-gray-400">
-                        <span class="inline-block md:hidden font-bold mr-1">Time:</span>${timeStr}
-                    </td>
-                    <td class="block md:table-cell px-2 py-3 md:px-6 md:py-4">
-                        <div class="flex flex-row md:flex-col items-center justify-start md:justify-center space-x-2 md:space-x-0 md:space-y-2">
-                            <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none w-full md:w-20 bg-gray-100 text-gray-700 dark:bg-gray-600 dark:text-gray-200 px-3 py-2 md:py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-500 font-semibold text-sm transition shadow-sm">Context</button>
-                            <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none w-full md:w-20 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-200 px-3 py-2 md:py-1 rounded hover:bg-indigo-200 dark:hover:bg-indigo-800 font-semibold text-sm transition shadow-sm">Extract</button>
-                        </div>
-                    </td>
-                `;
-    tbody.appendChild(row);
+    const card = document.createElement("div");
+    card.className = "bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow p-4 md:p-5 flex flex-col md:flex-row gap-4 justify-between group";
+
+    card.innerHTML = `
+      <!-- Left: Content -->
+      <div class="flex flex-col gap-1.5 flex-grow">
+        <!-- Top Metadata -->
+        <div class="flex flex-wrap items-center gap-2 text-[0.7rem] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+          <span>${sourceDisplay}</span>
+          ${subParts.length > 0 ? `<span>&bull;</span><span>${subParts.join(" ")}</span>` : ""}
+          ${r.episode_title ? `<span>&bull;</span><span class="italic text-gray-400 dark:text-gray-500">"${r.episode_title}"</span>` : ""}
+          <span>&bull;</span>
+          <span class="font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300 shadow-sm">${timeStr}</span>
+        </div>
+        
+        <!-- Primary Text -->
+        <div class="text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">${highlightText(cleanText)}</div>
+        
+        <!-- Translations -->
+        <div class="flex flex-col gap-1.5 mt-1.5">
+          ${cleanSpa ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanSpa)}</span></div>` : ""}
+          ${cleanEng ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanEng)}</span></div>` : ""}
+        </div>
+      </div>
+
+      <!-- Right: Actions -->
+      <div class="flex flex-row md:flex-col gap-2 justify-start md:justify-center flex-shrink-0 border-t md:border-t-0 md:border-l border-gray-100 dark:border-gray-700 pt-4 md:pt-0 md:pl-5 mt-2 md:mt-0">
+         <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none md:w-24 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 font-bold text-sm transition shadow-sm">Context</button>
+         <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none md:w-24 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white px-3 py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-500 font-bold text-sm transition shadow-sm">Extract</button>
+      </div>
+    `;
+    container.appendChild(card);
   });
 }
 
