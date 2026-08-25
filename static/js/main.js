@@ -216,8 +216,8 @@ function renderResults() {
         
         <!-- Translations -->
         <div class="flex flex-col gap-1.5 mt-1.5">
-          ${cleanSpa ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanSpa)}</span></div>` : ""}
-          ${cleanEng ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanEng)}</span></div>` : ""}
+          ${cleanSpa ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span>&nbsp;<span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanSpa)}</span></div>` : ""}
+          ${cleanEng ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span>&nbsp;<span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanEng)}</span></div>` : ""}
         </div>
       </div>
 
@@ -346,143 +346,96 @@ async function viewContext(id) {
     if (data.target_context.length === 0) {
       list.innerHTML = `<p class="text-gray-500">No context available.</p>`;
     } else {
-      const hasSecondary = data.secondary_context && data.secondary_context.length > 0;
+      const list = document.getElementById("contextList");
+      list.innerHTML = "";
 
-      if (hasSecondary) {
-        // Find target match
-        const targetMatchIndex = data.target_context.findIndex((r) => r.id === id);
-        const targetMatch = targetMatchIndex !== -1 ? data.target_context[targetMatchIndex] : data.target_context[0];
+      // Match and group secondary translations to target sentences
+      const groupedCards = [];
+      let currentGroup = null;
 
-        const targetBefore = targetMatchIndex !== -1 ? data.target_context.slice(0, targetMatchIndex) : [];
-        const targetAfter = targetMatchIndex !== -1 ? data.target_context.slice(targetMatchIndex + 1) : [];
-
-        // Find secondary match (closest start_time within 5 seconds to match search behavior)
-        let secondaryMatchIndex = -1;
+      data.target_context.forEach((tgt) => {
+        let bestSec = null;
         let minDiff = 5.0;
-        if (targetMatch) {
-          data.secondary_context.forEach((r, idx) => {
-            const diff = Math.abs(r.start_time - targetMatch.start_time);
+
+        if (data.secondary_context && data.secondary_context.length > 0) {
+          data.secondary_context.forEach((sec) => {
+            const diff = Math.abs(sec.start_time - tgt.start_time);
             if (diff < minDiff) {
               minDiff = diff;
-              secondaryMatchIndex = idx;
+              bestSec = sec;
             }
           });
         }
 
-        let secondaryBefore = [];
-        let secondaryMatchObj = null;
-        let secondaryAfter = [];
-        if (secondaryMatchIndex !== -1) {
-          secondaryMatchObj = data.secondary_context[secondaryMatchIndex];
-          secondaryBefore = data.secondary_context.slice(0, secondaryMatchIndex);
-          secondaryAfter = data.secondary_context.slice(secondaryMatchIndex + 1);
+        if (currentGroup && bestSec && currentGroup.secId === bestSec.id) {
+          // This target sentence maps to the same secondary sentence as the previous one
+          currentGroup.targets.push(tgt);
         } else {
-          secondaryBefore = data.secondary_context;
+          // Start a new group
+          if (currentGroup) {
+            groupedCards.push(currentGroup);
+          }
+          currentGroup = {
+            secId: bestSec ? bestSec.id : null,
+            secText: bestSec ? bestSec.text : null,
+            secLang: data.secondary_lang,
+            targets: [tgt],
+          };
         }
+      });
+      if (currentGroup) {
+        groupedCards.push(currentGroup);
+      }
 
-        const createSentenceDiv = (r, isHighlight) => {
-          if (!r) return document.createElement("div");
-          const m = Math.floor(r.start_time / 60)
-            .toString()
-            .padStart(2, "0");
-          const s = Math.floor(r.start_time % 60)
-            .toString()
-            .padStart(2, "0");
-          const timeStr = `${m}:${s}`;
-
-          const bgClass = isHighlight ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner" : "bg-gray-50 dark:bg-gray-700 border-transparent";
-
-          const div = document.createElement("div");
-          div.className = `p-2 rounded border ${bgClass}`;
-          div.innerHTML = `
-                <span class="text-xs text-gray-500 dark:text-gray-400 font-mono block mb-1">[${timeStr}]</span>
-                <span class="text-sm ${isHighlight ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${(r.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ")}</span>
-            `;
-          return div;
-        };
-
-        const renderBlock = (targets, secondaries, justifyClass) => {
-          if (targets.length === 0 && secondaries.length === 0) return;
-          const row = document.createElement("div");
-          row.className = "grid grid-cols-2 gap-2 md:gap-4 mb-2";
-
-          const colTarget = document.createElement("div");
-          colTarget.className = `flex flex-col gap-2 border-r dark:border-gray-700 pr-2 md:pr-4 ${justifyClass}`;
-          targets.forEach((r) => colTarget.appendChild(createSentenceDiv(r, false)));
-
-          const colJpn = document.createElement("div");
-          colJpn.className = `flex flex-col gap-2 pl-2 ${justifyClass}`;
-          secondaries.forEach((r) => colJpn.appendChild(createSentenceDiv(r, false)));
-
-          row.appendChild(colTarget);
-          row.appendChild(colJpn);
-          list.appendChild(row);
-        };
-
-        // Header
-        const headerRow = document.createElement("div");
-        headerRow.className = "grid grid-cols-2 gap-2 md:gap-4 mb-2";
-        headerRow.innerHTML = `
-            <div class="border-r dark:border-gray-700 pr-2 md:pr-4">
-                <h4 class="font-bold text-gray-400 uppercase text-xs">${data.target_lang} Track</h4>
-            </div>
-            <div class="pl-2">
-                <h4 class="font-bold text-gray-400 uppercase text-xs">${data.secondary_lang.toUpperCase()} Track</h4>
-            </div>
-        `;
-        list.appendChild(headerRow);
-
-        // Before
-        renderBlock(targetBefore, secondaryBefore, "justify-end");
-
-        // Match
-        const matchRow = document.createElement("div");
-        matchRow.className = "grid grid-cols-2 gap-2 md:gap-4 mb-2";
-
-        const colMatchTarget = document.createElement("div");
-        colMatchTarget.className = "flex flex-col gap-2 border-r dark:border-gray-700 pr-2 md:pr-4";
-        if (targetMatch) {
-          const div = createSentenceDiv(targetMatch, true);
-          colMatchTarget.appendChild(div);
-          setTimeout(() => div.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
-        }
-
-        const colMatchSecondary = document.createElement("div");
-        colMatchSecondary.className = "flex flex-col gap-2 pl-2";
-        if (secondaryMatchObj) {
-          const div = createSentenceDiv(secondaryMatchObj, true);
-          colMatchSecondary.appendChild(div);
-        }
-
-        matchRow.appendChild(colMatchTarget);
-        matchRow.appendChild(colMatchSecondary);
-        list.appendChild(matchRow);
-
-        // After
-        renderBlock(targetAfter, secondaryAfter, "justify-start");
+      if (groupedCards.length === 0) {
+        list.innerHTML = `<p class="text-gray-500 text-center py-4">No context available.</p>`;
       } else {
-        data.target_context.forEach((r) => {
-          const m = Math.floor(r.start_time / 60)
+        groupedCards.forEach((group) => {
+          const isTarget = group.targets.some((t) => t.id === id);
+
+          const firstTarget = group.targets[0];
+          const totalSecs = Math.floor(firstTarget.start_time);
+          const h = Math.floor(totalSecs / 3600);
+          const m = Math.floor((totalSecs % 3600) / 60)
             .toString()
-            .padStart(2, "0");
-          const s = Math.floor(r.start_time % 60)
-            .toString()
-            .padStart(2, "0");
-          const timeStr = `${m}:${s}`;
+            .padStart(h > 0 ? 2 : 1, "0");
+          const s = (totalSecs % 60).toString().padStart(2, "0");
+          const timeStr = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 
-          const isTarget = r.id === id;
-          const bgClass = isTarget ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner" : "bg-gray-50 dark:bg-gray-700 border-transparent";
+          const cleanText = group.targets.map((t) => (t.text ? t.text.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "")).join("<br/>");
+          const cleanSec = group.secText ? group.secText.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "";
 
-          const div = document.createElement("div");
-          div.className = `p-3 rounded border ${bgClass}`;
-          div.innerHTML = `
-                                <span class="text-sm text-gray-500 dark:text-gray-400 font-mono mr-2">[${timeStr}]</span>
-                                <span class="${isTarget ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${(r.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ")}</span>
-                            `;
-          list.appendChild(div);
+          const card = document.createElement("div");
 
+          // Style the matched card distinctly
+          const baseClasses = "rounded-xl shadow-sm border p-4 md:p-5 flex flex-col gap-2 transition-all";
           if (isTarget) {
-            setTimeout(() => div.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
+            card.className = `${baseClasses} bg-indigo-50 dark:bg-indigo-900/30 border-indigo-300 dark:border-indigo-600 ring-2 ring-indigo-500/20`;
+          } else {
+            card.className = `${baseClasses} bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700`;
+          }
+
+          let secondaryHtml = "";
+          if (cleanSec && group.secLang) {
+            const badgeColors = getLangColors(group.secLang);
+            const langCode = group.secLang.substring(0, 3).toUpperCase();
+            secondaryHtml = `<div class="text-sm mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${badgeColors.badge} mr-2 align-middle">${langCode}</span>&nbsp;<span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanSec}</span></div>`;
+          }
+
+          card.innerHTML = `
+            <div class="flex items-center gap-2 mb-1">
+              <span class="font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs text-gray-600 dark:text-gray-300 shadow-sm">${timeStr}</span>
+              ${isTarget ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-800 dark:text-indigo-100 uppercase tracking-wider">Search Match</span>` : ""}
+            </div>
+            <div class="text-lg font-bold text-gray-900 dark:text-gray-100">${cleanText}</div>
+            ${secondaryHtml}
+          `;
+
+          list.appendChild(card);
+
+          // Auto-scroll to the matched target
+          if (isTarget) {
+            setTimeout(() => card.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
           }
         });
       }
