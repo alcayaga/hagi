@@ -208,7 +208,7 @@ def search_sentences(conn, query, show_title=None, episode=None):
     sql = f"""
         SELECT * FROM (
             SELECT
-                s.id AS matched_id, s.text AS matched_text, s.language AS matched_language, s.start_time,
+                s.id AS matched_id, s.text AS matched_text, s.language AS matched_language, s.start_time, s.end_time,
                 m.path, m.show_title, m.season, m.episode, m.episode_title,
                 (
                     SELECT id FROM (
@@ -301,6 +301,7 @@ def search_sentences(conn, query, show_title=None, episode=None):
                 "text": final_text,
                 "language": final_lang,
                 "start_time": row_dict["start_time"],
+                "end_time": row_dict["end_time"],
                 "path": row_dict["path"],
                 "show_title": row_dict["show_title"],
                 "season": row_dict["season"],

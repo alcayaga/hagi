@@ -66,7 +66,7 @@ def get_context(sentence_id: int):
                     dict(r)
                     for r in conn.execute(
                         """
-                    SELECT s.id, s.start_time, s.text, s.language
+                    SELECT s.id, s.start_time, s.end_time, s.text, s.language
                     FROM sentences s
                     JOIN media m ON s.media_id = m.id
                     WHERE m.show_title = ? AND m.season = ? AND m.episode = ?
@@ -88,7 +88,7 @@ def get_context(sentence_id: int):
                     dict(r)
                     for r in conn.execute(
                         """
-                    SELECT id, start_time, text, language
+                    SELECT id, start_time, end_time, text, language
                     FROM sentences
                     WHERE media_id = ? AND language = ? AND id >= ? AND id <= ?
                     ORDER BY id ASC
@@ -107,7 +107,7 @@ def get_context(sentence_id: int):
                 dict(r)
                 for r in conn.execute(
                     """
-                SELECT s.id, s.start_time, s.text, s.language
+                SELECT s.id, s.start_time, s.end_time, s.text, s.language
                 FROM sentences s
                 JOIN media m ON s.media_id = m.id
                 WHERE m.show_title = ? AND m.season = ? AND m.episode = ?
@@ -129,7 +129,7 @@ def get_context(sentence_id: int):
                 dict(r)
                 for r in conn.execute(
                     """
-                SELECT id, start_time, text, language
+                SELECT id, start_time, end_time, text, language
                 FROM sentences
                 WHERE media_id = ? AND language = ? AND start_time >= ? AND start_time <= ?
                 ORDER BY start_time ASC

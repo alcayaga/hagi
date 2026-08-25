@@ -40,6 +40,10 @@ def test_basic_search(test_db):
     assert "おそらく、見られても平気な格好をしてたんでしょう。" in texts
     assert "私 平気" in texts
 
+    # Verify end_time is correctly populated
+    r_first = next(r for r in results if r["text"] == "私 平気")
+    assert r_first["end_time"] == 17.0
+
 
 def test_exclusive_search(test_db):
     # Find "平気" but exclude "私"

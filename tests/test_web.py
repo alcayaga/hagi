@@ -38,6 +38,7 @@ def test_api_search(test_db):
         data = response.json()
         assert len(data) == 1
         assert data[0]["text"] == "Hello web test"
+        assert data[0]["end_time"] == 15.0
 
 
 def test_api_extract(test_db):
@@ -91,7 +92,9 @@ def test_api_context_dual_audio(dual_audio_db):
         assert data["target_lang"] == "jpn"
         assert len(data["target_context"]) == 1
         assert data["target_context"][0]["text"] == "Japanese original"
+        assert data["target_context"][0]["end_time"] == 14.9
 
         assert data["secondary_lang"] == "eng"
         assert len(data["secondary_context"]) == 1
         assert data["secondary_context"][0]["text"] == "English translation"
+        assert data["secondary_context"][0]["end_time"] == 15.0

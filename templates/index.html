@@ -69,34 +69,65 @@
 
     <!-- Extraction Modal -->
     <div id="mediaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-2xl w-full overflow-hidden border dark:border-gray-700">
-            <div class="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
-                <h3 class="font-bold text-lg dark:text-white">Extracted Media</h3>
-                <button onclick="closeModal('mediaModal', 'mediaAudio')" class="text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400 font-bold text-xl">&times;</button>
+        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full flex flex-col max-h-[90vh] overflow-hidden border dark:border-gray-700">
+            <div class="p-4 md:px-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 flex-shrink-0">
+                <div id="mediaMetadata" class="font-bold text-lg text-gray-800 dark:text-gray-100 truncate">Extracted Media</div>
+                <button onclick="closeModal('mediaModal', 'mediaAudio')" class="text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 font-bold text-2xl leading-none">&times;</button>
             </div>
-            <div class="p-4 md:p-6 flex flex-col items-center gap-4 md:gap-6">
-                <div id="mediaMetadata" class="text-sm font-bold text-gray-500 dark:text-gray-400 text-center uppercase tracking-wide"></div>
-                <img id="mediaImage" src="" alt="Snapshot" class="rounded shadow border border-gray-200 dark:border-gray-600 max-h-96 object-contain bg-black w-full">
-                <audio id="mediaAudio" controls class="w-full"></audio>
-                <div class="w-full text-center">
-                    <p id="mediaText" class="text-xl font-medium dark:text-gray-200"></p>
-                    <div id="mediaTranslations" class="mt-4 text-left inline-block"></div>
+            <div class="p-4 md:p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6 md:gap-8">
+                <!-- Left Column -->
+                <div class="w-full md:w-2/5 flex flex-col gap-4 justify-center">
+                    <div class="relative w-full">
+                        <img id="mediaImage" src="" alt="Snapshot" class="rounded shadow border border-gray-200 dark:border-gray-600 w-full object-contain bg-black">
+                        <div id="mediaModalLoading" class="hidden absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center rounded">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+                        </div>
+                    </div>
+                    <audio id="mediaAudio" controls class="w-full"></audio>
                 </div>
                 
-                <!-- Copy Actions -->
-                <div class="flex flex-wrap justify-center gap-3 w-full border-t dark:border-gray-700 pt-4 mt-2">
-                    <button onclick="copyExtractItem('image', this)" class="flex items-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-4 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                        <span>Copy Image</span>
-                    </button>
-                    <button onclick="copyExtractItem('audio', this)" class="flex items-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-4 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                        <span>Copy Audio</span>
-                    </button>
-                    <button onclick="copyExtractItem('text', this)" class="flex items-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-4 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                        <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                        <span>Copy Phrase</span>
-                    </button>
+                <!-- Right Column -->
+                <div class="w-full md:w-3/5 flex flex-col gap-4">
+                    <div>
+                        <p id="mediaText" class="text-xl font-medium dark:text-gray-200"></p>
+                        <div id="mediaTranslations" class="mt-2 text-left inline-block"></div>
+                    </div>
+
+                    <!-- Timeline Controls -->
+                    <div class="flex flex-col w-full bg-gray-50 dark:bg-gray-700 p-3 rounded shadow-sm border dark:border-gray-600 gap-2 mt-auto">
+                        <div class="flex justify-between items-center px-1">
+                            <span class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Fine-tune Extraction</span>
+                            <span class="text-xs font-mono text-gray-500" id="timelineDurationDisplay">0.00s</span>
+                        </div>
+                        
+                        <!-- Custom Timeline Range Slider -->
+                        <div class="relative w-full h-10 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 overflow-hidden select-none touch-none" id="timelineContainer">
+                            <!-- JS will populate grid, marks, and draggable selection handles here -->
+                        </div>
+                        
+                        <div class="flex justify-between items-center mt-1">
+                            <div class="flex gap-2 items-center text-[10px] text-gray-400" id="timelineLegend">
+                                <!-- JS will populate this -->
+                            </div>
+                            <button id="btnReextract" onclick="applyTimelineExtraction()" class="bg-indigo-600 text-white px-4 py-1.5 rounded shadow text-sm font-semibold hover:bg-indigo-700 transition">Apply & Re-extract</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Copy Actions -->
+                    <div class="flex flex-wrap gap-2 w-full border-t dark:border-gray-700 pt-4">
+                        <button onclick="copyExtractItem('image', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                            <span>Image</span>
+                        </button>
+                        <button onclick="copyExtractItem('audio', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                            <span>Audio</span>
+                        </button>
+                        <button onclick="copyExtractItem('text', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
+                            <span>Phrase</span>
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -117,6 +148,9 @@
             </div>
         </div>
     </div>
+
+    <!-- Timeline Tooltip -->
+    <div id="timelineTooltip" class="hidden fixed z-[9999] bg-gray-900 text-white text-xs px-2 py-1.5 rounded shadow-xl pointer-events-none max-w-sm whitespace-normal transform -translate-x-1/2 -translate-y-full mt-[-8px]"></div>
 
     <script src="/static/js/main.js"></script>
 </body>

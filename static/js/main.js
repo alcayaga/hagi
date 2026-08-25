@@ -7,6 +7,39 @@ document
 // Store all results locally so we can filter them on the client side
 let allSearchResults = [];
 
+const LANG_COLORS = {
+  jpn: {
+    solid: "bg-indigo-600",
+    light: "bg-indigo-500",
+    badge: "bg-indigo-600 text-white shadow-sm",
+  },
+  eng: {
+    solid: "bg-emerald-600",
+    light: "bg-emerald-500",
+    badge: "bg-emerald-600 text-white shadow-sm",
+  },
+  spa: {
+    solid: "bg-amber-500",
+    light: "bg-amber-400",
+    badge: "bg-amber-500 text-white shadow-sm",
+  },
+};
+
+/**
+ * Returns styling classes for language-specific badges and timeline blocks.
+ * @param {string} lang - The language code (jpn, eng, spa).
+ * @returns {Object} An object containing Tailwind classes for solid, light, and badge styles.
+ */
+function getLangColors(lang) {
+  return (
+    LANG_COLORS[lang?.toLowerCase()] || {
+      solid: "bg-gray-600",
+      light: "bg-gray-500",
+      badge: "bg-gray-500 text-white shadow-sm",
+    }
+  );
+}
+
 /**
  * Dynamically updates the episode dropdown based on the currently selected show,
  * then triggers a re-render of the search results table.
@@ -198,8 +231,8 @@ function renderResults() {
     row.innerHTML = `
                     <td class="block md:table-cell px-2 py-2 md:px-6 md:py-4">
                         <div class="text-lg font-medium">${highlightText(cleanText)}</div>
-                        ${cleanSpa ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 mr-2 align-middle">SPA</span> <span>${highlightText(cleanSpa)}</span></div>` : ""}
-                        ${cleanEng ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 mr-2 align-middle">ENG</span> <span>${highlightText(cleanEng)}</span></div>` : ""}
+                        ${cleanSpa ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span> <span>${highlightText(cleanSpa)}</span></div>` : ""}
+                        ${cleanEng ? `<div class="text-sm text-gray-500 dark:text-gray-400 mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span> <span>${highlightText(cleanEng)}</span></div>` : ""}
                     </td>
                     <td class="block md:table-cell px-2 py-1 md:px-6 md:py-4 text-xs text-gray-400 md:max-w-xs whitespace-normal break-words" title="${fullTitle}">
                         <span class="inline-block md:hidden font-bold mr-1 text-gray-500">Source:</span>
@@ -220,6 +253,8 @@ function renderResults() {
   });
 }
 
+let currentExtraction = { id: null, padStart: 0.5, padEnd: 0.5 };
+
 /**
  * Calls the backend API to extract audio and snapshot images for a specific sentence.
  * Displays the extracted media in a modal.
@@ -231,11 +266,15 @@ async function extractMedia(id, btnElement) {
   const padStart = parseFloat(document.getElementById("padStart").value) || 0.5;
   const padEnd = parseFloat(document.getElementById("padEnd").value) || 0.5;
 
+  currentExtraction.id = id;
+  currentExtraction.padStart = padStart;
+  currentExtraction.padEnd = padEnd;
+
   const originalText = btnElement.innerText;
 
   const r = allSearchResults.find((x) => x.id === id);
   if (r) {
-    let line1 = (r.show_title || r.path.split("/").pop()).toUpperCase();
+    let line1 = r.show_title || r.path.split("/").pop();
     if (r.season !== null && r.episode !== null) {
       line1 += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
     } else if (r.episode !== null) {
@@ -244,7 +283,7 @@ async function extractMedia(id, btnElement) {
 
     let line2 = "";
     if (r.episode_title) {
-      line2 += `"${r.episode_title.toUpperCase()}" `;
+      line2 += `"${r.episode_title}" `;
     }
     const m = Math.floor(r.start_time / 60)
       .toString()
@@ -255,7 +294,7 @@ async function extractMedia(id, btnElement) {
     line2 += `[${m}:${s}]`;
 
     document.getElementById("mediaMetadata").innerHTML =
-      `<div>${line1}</div><div class="text-xs mt-1 text-gray-500 dark:text-gray-400 font-normal">${line2}</div>`;
+      `<span>${line1}</span><span class="text-sm ml-3 text-gray-500 dark:text-gray-400 font-normal">${line2}</span>`;
   }
   btnElement.innerText = "Wait...";
   btnElement.disabled = true;
@@ -270,7 +309,8 @@ async function extractMedia(id, btnElement) {
     const data = await response.json();
 
     if (data.success) {
-      document.getElementById("mediaText").innerText = data.text;
+      document.getElementById("mediaText").innerHTML =
+        `` + (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
 
       const cleanSpa = r.spa_translation
         ? r.spa_translation.replace(/\n/g, " ")
@@ -280,9 +320,9 @@ async function extractMedia(id, btnElement) {
         : "";
       let transHtml = "";
       if (cleanSpa)
-        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 mr-2 align-middle">SPA</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanSpa}</span></div>`;
+        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanSpa}</span></div>`;
       if (cleanEng)
-        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 mr-2 align-middle">ENG</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanEng}</span></div>`;
+        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanEng}</span></div>`;
       document.getElementById("mediaTranslations").innerHTML = transHtml;
 
       document.getElementById("mediaImage").src =
@@ -291,6 +331,8 @@ async function extractMedia(id, btnElement) {
         data.audio_url + "?t=" + new Date().getTime();
       document.getElementById("mediaAudio").play();
       document.getElementById("mediaModal").classList.remove("hidden");
+
+      openExtractionTimeline(id);
     } else {
       alert("Extraction failed: " + data.detail);
     }
@@ -394,7 +436,7 @@ async function viewContext(id) {
           div.className = `p-2 rounded border ${bgClass}`;
           div.innerHTML = `
                 <span class="text-xs text-gray-500 dark:text-gray-400 font-mono block mb-1">[${timeStr}]</span>
-                <span class="text-sm ${isHighlight ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${r.text}</span>
+                <span class="text-sm ${isHighlight ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${(r.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ")}</span>
             `;
           return div;
         };
@@ -485,7 +527,7 @@ async function viewContext(id) {
           div.className = `p-3 rounded border ${bgClass}`;
           div.innerHTML = `
                                 <span class="text-sm text-gray-500 dark:text-gray-400 font-mono mr-2">[${timeStr}]</span>
-                                <span class="${isTarget ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${r.text}</span>
+                                <span class="${isTarget ? "font-bold text-indigo-700 dark:text-indigo-300" : ""}">${(r.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ")}</span>
                             `;
           list.appendChild(div);
 
@@ -560,4 +602,379 @@ async function copyExtractItem(type, btn) {
     span.innerText = "Failed";
   }
   setTimeout(() => (span.innerText = originalText), 2000);
+}
+
+let timelineData = {
+  target: null,
+  windowStart: 0,
+  windowEnd: 0,
+  duration: 0,
+  selectedStart: 0,
+  selectedEnd: 0,
+  isDragging: false,
+  activeHandle: null,
+  contextData: null,
+};
+
+async function openExtractionTimeline(id) {
+  const timelineContainer = document.getElementById("timelineContainer");
+  timelineContainer.innerHTML =
+    '<div class="absolute inset-0 flex justify-center items-center"><div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div></div>';
+
+  const response = await fetch(`/api/context/${id}`);
+  const contextData = await response.json();
+
+  let targetSentence = contextData.target_context.find((s) => s.id === id);
+  if (!targetSentence) targetSentence = contextData.target_context[0];
+
+  const targetStart = targetSentence.start_time || 0;
+  const targetEnd = targetSentence.end_time || targetStart + 2.0;
+
+  timelineData.windowStart = Math.max(0, targetStart - 10.0);
+  timelineData.windowEnd = targetEnd + 10.0;
+  timelineData.duration = timelineData.windowEnd - timelineData.windowStart;
+  timelineData.contextData = contextData;
+
+  timelineData.target = targetSentence;
+  timelineData.selectedStart = Math.max(
+    0,
+    targetStart - currentExtraction.padStart,
+  );
+  timelineData.selectedEnd = targetEnd + currentExtraction.padEnd;
+
+  renderTimeline(contextData);
+}
+
+/**
+ * Renders the custom visual timeline with dual-track language blocks.
+ * @param {Object} contextData - Context data containing target and secondary subtitle arrays.
+ */
+function renderTimeline(contextData) {
+  const container = document.getElementById("timelineContainer");
+  container.innerHTML = "";
+
+  const legend = document.getElementById("timelineLegend");
+  if (legend) {
+    legend.innerHTML = "";
+    if (contextData.target_lang) {
+      const c = getLangColors(contextData.target_lang);
+      legend.innerHTML += `<div class="flex items-center gap-1"><div class="w-3 h-3 ${c.solid} rounded-[2px] opacity-80"></div> ${contextData.target_lang.toUpperCase()}</div>`;
+    }
+    if (contextData.secondary_lang) {
+      const c = getLangColors(contextData.secondary_lang);
+      legend.innerHTML += `<div class="flex items-center gap-1"><div class="w-3 h-3 ${c.solid} rounded-[2px] opacity-80"></div> ${contextData.secondary_lang.toUpperCase()}</div>`;
+    }
+  }
+
+  const grid = document.createElement("div");
+  grid.className =
+    "absolute inset-0 pointer-events-none flex flex-col justify-between opacity-20";
+  for (let i = 0; i <= 10; i++) {
+    const tick = document.createElement("div");
+    tick.className = "absolute top-0 bottom-0 border-l border-gray-500";
+    tick.style.left = `${(i / 10) * 100}%`;
+    grid.appendChild(tick);
+  }
+  container.appendChild(grid);
+
+  const marks = document.createElement("div");
+  marks.className = "absolute inset-0";
+
+  if (contextData.secondary_context) {
+    contextData.secondary_context.forEach((s) => {
+      if (!s.start_time) return;
+      const sStart = s.start_time;
+      const sEnd = s.end_time || sStart + 2.0;
+      if (sEnd < timelineData.windowStart || sStart > timelineData.windowEnd)
+        return;
+      const leftPct = Math.max(
+        0,
+        ((sStart - timelineData.windowStart) / timelineData.duration) * 100,
+      );
+      const rightPct = Math.max(
+        0,
+        ((timelineData.windowEnd - sEnd) / timelineData.duration) * 100,
+      );
+
+      const c = getLangColors(s.language || contextData.secondary_lang);
+      const block = document.createElement("div");
+      block.className = `absolute bottom-0 h-1/2 ${c.solid} bg-opacity-70 border border-white border-opacity-20 rounded-sm truncate text-[9px] text-white px-1 leading-tight select-none cursor-pointer hover:bg-opacity-100 transition-opacity`;
+      block.style.left = `${leftPct}%`;
+      block.style.right = `${rightPct}%`;
+      block.textContent = (s.text || "")
+        .replace(/<br\s*\/?>/gi, " ")
+        .replace(/\n/g, " ")
+        .replace(/(<([^>]+)>)/gi, "");
+
+      const tooltip = document.getElementById("timelineTooltip");
+      block.addEventListener("mouseenter", () => {
+        tooltip.textContent = (s.text || "")
+          .replace(/<br\s*\/?>/gi, " ")
+          .replace(/\n/g, " ")
+          .replace(/(<([^>]+)>)/gi, "");
+        tooltip.classList.remove("hidden");
+      });
+      block.addEventListener("mousemove", (e) => {
+        tooltip.style.left = e.clientX + "px";
+        tooltip.style.top = e.clientY + "px";
+      });
+      block.addEventListener("mouseleave", () => {
+        tooltip.classList.add("hidden");
+      });
+      marks.appendChild(block);
+    });
+  }
+
+  if (contextData.target_context) {
+    contextData.target_context.forEach((s) => {
+      if (!s.start_time) return;
+      const sStart = s.start_time;
+      const sEnd = s.end_time || sStart + 2.0;
+      if (sEnd < timelineData.windowStart || sStart > timelineData.windowEnd)
+        return;
+
+      const leftPct = Math.max(
+        0,
+        ((sStart - timelineData.windowStart) / timelineData.duration) * 100,
+      );
+      const rightPct = Math.max(
+        0,
+        ((timelineData.windowEnd - sEnd) / timelineData.duration) * 100,
+      );
+
+      const c = getLangColors(s.language || contextData.target_lang);
+      const block = document.createElement("div");
+      block.className = `absolute top-0 h-1/2 ${c.solid} bg-opacity-70 border border-white border-opacity-20 rounded-sm truncate text-[9px] text-white px-1 leading-tight select-none cursor-pointer hover:bg-opacity-100 transition-opacity`;
+      if (s.id === timelineData.target.id) {
+        block.classList.remove("bg-opacity-70");
+        block.classList.add("bg-opacity-100", "font-bold");
+      }
+      block.style.left = `${leftPct}%`;
+      block.style.right = `${rightPct}%`;
+      block.textContent = (s.text || "")
+        .replace(/<br\s*\/?>/gi, " ")
+        .replace(/\n/g, " ")
+        .replace(/(<([^>]+)>)/gi, "");
+
+      const tooltip = document.getElementById("timelineTooltip");
+      block.addEventListener("mouseenter", () => {
+        tooltip.textContent = (s.text || "")
+          .replace(/<br\s*\/?>/gi, " ")
+          .replace(/\n/g, " ")
+          .replace(/(<([^>]+)>)/gi, "");
+        tooltip.classList.remove("hidden");
+      });
+      block.addEventListener("mousemove", (e) => {
+        tooltip.style.left = e.clientX + "px";
+        tooltip.style.top = e.clientY + "px";
+      });
+      block.addEventListener("mouseleave", () => {
+        tooltip.classList.add("hidden");
+      });
+      marks.appendChild(block);
+    });
+  }
+  container.appendChild(marks);
+
+  const selected = document.createElement("div");
+  selected.id = "timelineSelected";
+  selected.className =
+    "absolute h-full bg-indigo-500 bg-opacity-20 border-l-2 border-r-2 border-indigo-600 group pointer-events-none";
+
+  const hStart = document.createElement("div");
+  hStart.id = "handleStart";
+  hStart.className =
+    "absolute top-0 bottom-0 left-0 w-6 -ml-3 cursor-ew-resize flex justify-center items-center pointer-events-auto group-hover:bg-black group-hover:bg-opacity-10";
+  hStart.innerHTML = '<div class="w-1 h-6 bg-indigo-600 rounded"></div>';
+
+  const hEnd = document.createElement("div");
+  hEnd.id = "handleEnd";
+  hEnd.className =
+    "absolute top-0 bottom-0 right-0 w-6 -mr-3 cursor-ew-resize flex justify-center items-center pointer-events-auto group-hover:bg-black group-hover:bg-opacity-10";
+  hEnd.innerHTML = '<div class="w-1 h-6 bg-indigo-600 rounded"></div>';
+
+  selected.appendChild(hStart);
+  selected.appendChild(hEnd);
+  container.appendChild(selected);
+
+  updateTimelineSelection();
+  attachTimelineEvents(container, hStart, hEnd);
+}
+
+/**
+ * Visually updates the position of the left and right selection handles on the timeline.
+ */
+function updateTimelineSelection() {
+  const selected = document.getElementById("timelineSelected");
+  if (!selected) return;
+
+  const leftPct = Math.max(
+    0,
+    ((timelineData.selectedStart - timelineData.windowStart) /
+      timelineData.duration) *
+      100,
+  );
+  const rightPct = Math.max(
+    0,
+    ((timelineData.windowEnd - timelineData.selectedEnd) /
+      timelineData.duration) *
+      100,
+  );
+
+  selected.style.left = `${leftPct}%`;
+  selected.style.right = `${rightPct}%`;
+
+  document.getElementById("timelineDurationDisplay").innerText =
+    `${(timelineData.selectedEnd - timelineData.selectedStart).toFixed(2)}s`;
+}
+
+/**
+ * Binds mouse and touch events to the timeline selection handles to allow dragging.
+ * @param {HTMLElement} container - The timeline container element.
+ * @param {HTMLElement} hStart - The starting (left) drag handle.
+ * @param {HTMLElement} hEnd - The ending (right) drag handle.
+ */
+function attachTimelineEvents(container, hStart, hEnd) {
+  const getPos = (e) => {
+    const rect = container.getBoundingClientRect();
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    let pct = (clientX - rect.left) / rect.width;
+    pct = Math.max(0, Math.min(1, pct));
+    return timelineData.windowStart + pct * timelineData.duration;
+  };
+
+  const onMove = (e) => {
+    if (!timelineData.isDragging) return;
+    const time = getPos(e);
+
+    if (timelineData.activeHandle === "start") {
+      timelineData.selectedStart = Math.min(
+        time,
+        timelineData.selectedEnd - 0.5,
+      );
+    } else if (timelineData.activeHandle === "end") {
+      timelineData.selectedEnd = Math.max(
+        time,
+        timelineData.selectedStart + 0.5,
+      );
+    }
+    updateTimelineSelection();
+  };
+
+  const onEnd = () => {
+    timelineData.isDragging = false;
+    timelineData.activeHandle = null;
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onEnd);
+    document.removeEventListener("touchmove", onMove);
+    document.removeEventListener("touchend", onEnd);
+  };
+
+  const onStartDrag = (handleType) => (e) => {
+    e.preventDefault();
+    timelineData.isDragging = true;
+    timelineData.activeHandle = handleType;
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onEnd);
+    document.addEventListener("touchmove", onMove, { passive: false });
+    document.addEventListener("touchend", onEnd);
+  };
+
+  hStart.addEventListener("mousedown", onStartDrag("start"));
+  hStart.addEventListener("touchstart", onStartDrag("start"), {
+    passive: false,
+  });
+
+  hEnd.addEventListener("mousedown", onStartDrag("end"));
+  hEnd.addEventListener("touchstart", onStartDrag("end"), { passive: false });
+}
+
+/**
+ * Sends the newly selected timeline range to the backend API to extract
+ * a perfectly trimmed audio clip and updates the UI with the enclosed subtitle text.
+ */
+async function applyTimelineExtraction() {
+  const targetStart = timelineData.target.start_time || 0;
+  const targetEnd = timelineData.target.end_time || targetStart + 2.0;
+
+  currentExtraction.padStart = Math.max(
+    0,
+    targetStart - timelineData.selectedStart,
+  );
+  currentExtraction.padEnd = Math.max(0, timelineData.selectedEnd - targetEnd);
+
+  document.getElementById("mediaModalLoading").classList.remove("hidden");
+  const btn = document.getElementById("btnReextract");
+  btn.disabled = true;
+  btn.innerText = "Extracting...";
+
+  try {
+    const response = await fetch(`/api/extract/${currentExtraction.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pad_start: currentExtraction.padStart,
+        pad_end: currentExtraction.padEnd,
+      }),
+    });
+    const data = await response.json();
+
+    if (data.success) {
+      document.getElementById("mediaImage").src =
+        data.image_url + "?t=" + new Date().getTime();
+      document.getElementById("mediaAudio").src =
+        data.audio_url + "?t=" + new Date().getTime();
+      document.getElementById("mediaAudio").play();
+
+      const selStart = timelineData.selectedStart;
+      const selEnd = timelineData.selectedEnd;
+
+      const getEncompassed = (arr) => {
+        if (!arr) return "";
+        return arr
+          .filter((s) => {
+            const mid =
+              ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
+            return mid >= selStart && mid <= selEnd;
+          })
+          .map((s) => s.text)
+          .join(" ");
+      };
+
+      const newTargetText = getEncompassed(
+        timelineData.contextData.target_context,
+      );
+      const newSecondaryText = getEncompassed(
+        timelineData.contextData.secondary_context,
+      );
+
+      const targetTextToSet = newTargetText || timelineData.target.text;
+      const cTarget = getLangColors(timelineData.contextData.target_lang);
+      const targetLabel = (
+        timelineData.contextData.target_lang || "sub"
+      ).toUpperCase();
+      document.getElementById("mediaText").innerHTML = (targetTextToSet || "")
+        .replace(/<br\s*\/?>/gi, " ")
+        .replace(/\n/g, " ");
+
+      let transHtml = "";
+      if (newSecondaryText) {
+        const langLabel = (
+          timelineData.contextData.secondary_lang || "sub"
+        ).toUpperCase();
+        const c = getLangColors(timelineData.contextData.secondary_lang);
+        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-600 dark:text-gray-300 align-middle">${newSecondaryText}</span></div>`;
+      }
+      document.getElementById("mediaTranslations").innerHTML = transHtml;
+    } else {
+      alert("Extraction failed: " + data.detail);
+    }
+  } catch (error) {
+    alert("Error calling extraction API: " + error);
+  } finally {
+    document.getElementById("mediaModalLoading").classList.add("hidden");
+    btn.disabled = false;
+    btn.innerText = "Apply & Re-extract";
+  }
 }
