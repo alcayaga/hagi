@@ -1,8 +1,6 @@
-document
-  .getElementById("searchInput")
-  .addEventListener("keypress", function (e) {
-    if (e.key === "Enter") performSearch();
-  });
+document.getElementById("searchInput").addEventListener("keypress", function (e) {
+  if (e.key === "Enter") performSearch();
+});
 
 // Store all results locally so we can filter them on the client side
 let allSearchResults = [];
@@ -91,10 +89,8 @@ async function performSearch() {
   tbody.innerHTML = "";
 
   // Reset filters on a new search
-  document.getElementById("filterShow").innerHTML =
-    '<option value="">All Shows</option>';
-  document.getElementById("filterEpisode").innerHTML =
-    '<option value="">All Eps</option>';
+  document.getElementById("filterShow").innerHTML = '<option value="">All Shows</option>';
+  document.getElementById("filterEpisode").innerHTML = '<option value="">All Eps</option>';
 
   try {
     // Fetch ALL results matching the keyword
@@ -102,11 +98,7 @@ async function performSearch() {
     allSearchResults = await response.json();
 
     // Extract unique shows to populate the dropdown
-    const uniqueShows = [
-      ...new Set(
-        allSearchResults.map((r) => r.show_title || r.path.split("/").pop()),
-      ),
-    ];
+    const uniqueShows = [...new Set(allSearchResults.map((r) => r.show_title || r.path.split("/").pop()))];
     uniqueShows.sort();
 
     const showDropdown = document.getElementById("filterShow");
@@ -143,9 +135,7 @@ function renderResults() {
   // Apply client-side filters
   let filtered = allSearchResults;
   if (showFilter) {
-    filtered = filtered.filter(
-      (r) => (r.show_title || r.path.split("/").pop()) === showFilter,
-    );
+    filtered = filtered.filter((r) => (r.show_title || r.path.split("/").pop()) === showFilter);
   }
   if (epFilter) {
     filtered = filtered.filter((r) => r.episode == epFilter);
@@ -157,8 +147,7 @@ function renderResults() {
   }
 
   const rawQuery = document.getElementById("searchInput").value;
-  const searchTermsTokens =
-    rawQuery.match(/(".*?"|[^"\s]+)+(?=\s*|\s*$)/g) || [];
+  const searchTermsTokens = rawQuery.match(/(".*?"|[^"\s]+)+(?=\s*|\s*$)/g) || [];
   const validTerms = searchTermsTokens
     .filter((t) => !t.startsWith("-"))
     .map((t) => t.replace(/(^"|"$)/g, ""))
@@ -167,10 +156,7 @@ function renderResults() {
 
   let highlightRegex = null;
   if (validTerms.length > 0) {
-    highlightRegex = new RegExp(
-      `(${validTerms.map((t) => t.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, "\\\\$&")).join("|")})`,
-      "gi",
-    );
+    highlightRegex = new RegExp(`(${validTerms.map((t) => t.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, "\\\\$&")).join("|")})`, "gi");
   }
 
   function highlightText(text) {
@@ -181,10 +167,7 @@ function renderResults() {
     let sanitized = div.innerHTML;
 
     if (highlightRegex) {
-      sanitized = sanitized.replace(
-        highlightRegex,
-        `<mark class="bg-yellow-200 dark:bg-yellow-900 text-inherit rounded px-0.5">$1</mark>`,
-      );
+      sanitized = sanitized.replace(highlightRegex, `<mark class="bg-yellow-200 dark:bg-yellow-900 text-inherit rounded px-0.5">$1</mark>`);
     }
     return sanitized;
   }
@@ -218,16 +201,11 @@ function renderResults() {
     }
 
     const cleanText = r.text ? r.text.replace(/\n/g, " ") : "";
-    const cleanSpa = r.spa_translation
-      ? r.spa_translation.replace(/\n/g, " ")
-      : "";
-    const cleanEng = r.eng_translation
-      ? r.eng_translation.replace(/\n/g, " ")
-      : "";
+    const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
+    const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
 
     const row = document.createElement("tr");
-    row.className =
-      "flex flex-col md:table-row border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors p-2 md:p-0";
+    row.className = "flex flex-col md:table-row border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors p-2 md:p-0";
     row.innerHTML = `
                     <td class="block md:table-cell px-2 py-2 md:px-6 md:py-4">
                         <div class="text-lg font-medium">${highlightText(cleanText)}</div>
@@ -274,27 +252,37 @@ async function extractMedia(id, btnElement) {
 
   const r = allSearchResults.find((x) => x.id === id);
   if (r) {
-    let line1 = r.show_title || r.path.split("/").pop();
+    const mainTitle = r.show_title || r.path.split("/").pop();
+    const subParts = [];
+
     if (r.season !== null && r.episode !== null) {
-      line1 += ` - S${r.season.toString().padStart(2, "0")}E${r.episode.toString().padStart(2, "0")}`;
+      subParts.push(`S${r.season} E${r.episode}`);
     } else if (r.episode !== null) {
-      line1 += ` - EP ${r.episode}`;
+      subParts.push(`EP ${r.episode}`);
     }
 
-    let line2 = "";
     if (r.episode_title) {
-      line2 += `"${r.episode_title}" `;
+      subParts.push(`"${r.episode_title}"`);
     }
-    const m = Math.floor(r.start_time / 60)
-      .toString()
-      .padStart(2, "0");
-    const s = Math.floor(r.start_time % 60)
-      .toString()
-      .padStart(2, "0");
-    line2 += `[${m}:${s}]`;
 
-    document.getElementById("mediaMetadata").innerHTML =
-      `<span>${line1}</span><span class="text-sm ml-3 text-gray-500 dark:text-gray-400 font-normal">${line2}</span>`;
+    const totalSecs = Math.floor(r.start_time);
+    const h = Math.floor(totalSecs / 3600);
+    const m = Math.floor((totalSecs % 3600) / 60)
+      .toString()
+      .padStart(h > 0 ? 2 : 1, "0");
+    const s = (totalSecs % 60).toString().padStart(2, "0");
+    const timeStr = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+
+    document.getElementById("mediaMetadata").innerHTML = `
+      <div class="flex flex-col leading-tight">
+        <span class="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">${mainTitle}</span>
+        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate mt-0.5">
+          ${subParts.length > 0 ? subParts.join(" &bull; ") : "Unknown Episode"}
+        </span>
+      </div>
+    `;
+
+    document.getElementById("mediaTimestampBadge").innerText = timeStr;
   }
   btnElement.innerText = "Wait...";
   btnElement.disabled = true;
@@ -309,26 +297,17 @@ async function extractMedia(id, btnElement) {
     const data = await response.json();
 
     if (data.success) {
-      document.getElementById("mediaText").innerHTML =
-        `` + (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
+      document.getElementById("mediaText").innerHTML = `` + (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
 
-      const cleanSpa = r.spa_translation
-        ? r.spa_translation.replace(/\n/g, " ")
-        : "";
-      const cleanEng = r.eng_translation
-        ? r.eng_translation.replace(/\n/g, " ")
-        : "";
+      const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
+      const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
       let transHtml = "";
-      if (cleanSpa)
-        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanSpa}</span></div>`;
-      if (cleanEng)
-        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-600 dark:text-gray-300 align-middle">${cleanEng}</span></div>`;
+      if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanSpa}</span></div>`;
+      if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanEng}</span></div>`;
       document.getElementById("mediaTranslations").innerHTML = transHtml;
 
-      document.getElementById("mediaImage").src =
-        data.image_url + "?t=" + new Date().getTime();
-      document.getElementById("mediaAudio").src =
-        data.audio_url + "?t=" + new Date().getTime();
+      document.getElementById("mediaImage").src = data.image_url + "?t=" + new Date().getTime();
+      document.getElementById("mediaAudio").src = data.audio_url + "?t=" + new Date().getTime();
       document.getElementById("mediaAudio").play();
       document.getElementById("mediaModal").classList.remove("hidden");
 
@@ -367,27 +346,15 @@ async function viewContext(id) {
     if (data.target_context.length === 0) {
       list.innerHTML = `<p class="text-gray-500">No context available.</p>`;
     } else {
-      const hasSecondary =
-        data.secondary_context && data.secondary_context.length > 0;
+      const hasSecondary = data.secondary_context && data.secondary_context.length > 0;
 
       if (hasSecondary) {
         // Find target match
-        const targetMatchIndex = data.target_context.findIndex(
-          (r) => r.id === id,
-        );
-        const targetMatch =
-          targetMatchIndex !== -1
-            ? data.target_context[targetMatchIndex]
-            : data.target_context[0];
+        const targetMatchIndex = data.target_context.findIndex((r) => r.id === id);
+        const targetMatch = targetMatchIndex !== -1 ? data.target_context[targetMatchIndex] : data.target_context[0];
 
-        const targetBefore =
-          targetMatchIndex !== -1
-            ? data.target_context.slice(0, targetMatchIndex)
-            : [];
-        const targetAfter =
-          targetMatchIndex !== -1
-            ? data.target_context.slice(targetMatchIndex + 1)
-            : [];
+        const targetBefore = targetMatchIndex !== -1 ? data.target_context.slice(0, targetMatchIndex) : [];
+        const targetAfter = targetMatchIndex !== -1 ? data.target_context.slice(targetMatchIndex + 1) : [];
 
         // Find secondary match (closest start_time within 5 seconds to match search behavior)
         let secondaryMatchIndex = -1;
@@ -407,13 +374,8 @@ async function viewContext(id) {
         let secondaryAfter = [];
         if (secondaryMatchIndex !== -1) {
           secondaryMatchObj = data.secondary_context[secondaryMatchIndex];
-          secondaryBefore = data.secondary_context.slice(
-            0,
-            secondaryMatchIndex,
-          );
-          secondaryAfter = data.secondary_context.slice(
-            secondaryMatchIndex + 1,
-          );
+          secondaryBefore = data.secondary_context.slice(0, secondaryMatchIndex);
+          secondaryAfter = data.secondary_context.slice(secondaryMatchIndex + 1);
         } else {
           secondaryBefore = data.secondary_context;
         }
@@ -428,9 +390,7 @@ async function viewContext(id) {
             .padStart(2, "0");
           const timeStr = `${m}:${s}`;
 
-          const bgClass = isHighlight
-            ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner"
-            : "bg-gray-50 dark:bg-gray-700 border-transparent";
+          const bgClass = isHighlight ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner" : "bg-gray-50 dark:bg-gray-700 border-transparent";
 
           const div = document.createElement("div");
           div.className = `p-2 rounded border ${bgClass}`;
@@ -448,15 +408,11 @@ async function viewContext(id) {
 
           const colTarget = document.createElement("div");
           colTarget.className = `flex flex-col gap-2 border-r dark:border-gray-700 pr-2 md:pr-4 ${justifyClass}`;
-          targets.forEach((r) =>
-            colTarget.appendChild(createSentenceDiv(r, false)),
-          );
+          targets.forEach((r) => colTarget.appendChild(createSentenceDiv(r, false)));
 
           const colJpn = document.createElement("div");
           colJpn.className = `flex flex-col gap-2 pl-2 ${justifyClass}`;
-          secondaries.forEach((r) =>
-            colJpn.appendChild(createSentenceDiv(r, false)),
-          );
+          secondaries.forEach((r) => colJpn.appendChild(createSentenceDiv(r, false)));
 
           row.appendChild(colTarget);
           row.appendChild(colJpn);
@@ -484,15 +440,11 @@ async function viewContext(id) {
         matchRow.className = "grid grid-cols-2 gap-2 md:gap-4 mb-2";
 
         const colMatchTarget = document.createElement("div");
-        colMatchTarget.className =
-          "flex flex-col gap-2 border-r dark:border-gray-700 pr-2 md:pr-4";
+        colMatchTarget.className = "flex flex-col gap-2 border-r dark:border-gray-700 pr-2 md:pr-4";
         if (targetMatch) {
           const div = createSentenceDiv(targetMatch, true);
           colMatchTarget.appendChild(div);
-          setTimeout(
-            () => div.scrollIntoView({ behavior: "smooth", block: "center" }),
-            100,
-          );
+          setTimeout(() => div.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
         }
 
         const colMatchSecondary = document.createElement("div");
@@ -519,9 +471,7 @@ async function viewContext(id) {
           const timeStr = `${m}:${s}`;
 
           const isTarget = r.id === id;
-          const bgClass = isTarget
-            ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner"
-            : "bg-gray-50 dark:bg-gray-700 border-transparent";
+          const bgClass = isTarget ? "bg-indigo-50 dark:bg-indigo-900 border-indigo-200 dark:border-indigo-700 shadow-inner" : "bg-gray-50 dark:bg-gray-700 border-transparent";
 
           const div = document.createElement("div");
           div.className = `p-3 rounded border ${bgClass}`;
@@ -532,10 +482,7 @@ async function viewContext(id) {
           list.appendChild(div);
 
           if (isTarget) {
-            setTimeout(
-              () => div.scrollIntoView({ behavior: "smooth", block: "center" }),
-              100,
-            );
+            setTimeout(() => div.scrollIntoView({ behavior: "smooth", block: "center" }), 100);
           }
         });
       }
@@ -618,8 +565,7 @@ let timelineData = {
 
 async function openExtractionTimeline(id) {
   const timelineContainer = document.getElementById("timelineContainer");
-  timelineContainer.innerHTML =
-    '<div class="absolute inset-0 flex justify-center items-center"><div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div></div>';
+  timelineContainer.innerHTML = '<div class="absolute inset-0 flex justify-center items-center"><div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div></div>';
 
   const response = await fetch(`/api/context/${id}`);
   const contextData = await response.json();
@@ -636,10 +582,7 @@ async function openExtractionTimeline(id) {
   timelineData.contextData = contextData;
 
   timelineData.target = targetSentence;
-  timelineData.selectedStart = Math.max(
-    0,
-    targetStart - currentExtraction.padStart,
-  );
+  timelineData.selectedStart = Math.max(0, targetStart - currentExtraction.padStart);
   timelineData.selectedEnd = targetEnd + currentExtraction.padEnd;
 
   renderTimeline(contextData);
@@ -667,8 +610,7 @@ function renderTimeline(contextData) {
   }
 
   const grid = document.createElement("div");
-  grid.className =
-    "absolute inset-0 pointer-events-none flex flex-col justify-between opacity-20";
+  grid.className = "absolute inset-0 pointer-events-none flex flex-col justify-between opacity-20";
   for (let i = 0; i <= 10; i++) {
     const tick = document.createElement("div");
     tick.className = "absolute top-0 bottom-0 border-l border-gray-500";
@@ -685,16 +627,9 @@ function renderTimeline(contextData) {
       if (!s.start_time) return;
       const sStart = s.start_time;
       const sEnd = s.end_time || sStart + 2.0;
-      if (sEnd < timelineData.windowStart || sStart > timelineData.windowEnd)
-        return;
-      const leftPct = Math.max(
-        0,
-        ((sStart - timelineData.windowStart) / timelineData.duration) * 100,
-      );
-      const rightPct = Math.max(
-        0,
-        ((timelineData.windowEnd - sEnd) / timelineData.duration) * 100,
-      );
+      if (sEnd < timelineData.windowStart || sStart > timelineData.windowEnd) return;
+      const leftPct = Math.max(0, ((sStart - timelineData.windowStart) / timelineData.duration) * 100);
+      const rightPct = Math.max(0, ((timelineData.windowEnd - sEnd) / timelineData.duration) * 100);
 
       const c = getLangColors(s.language || contextData.secondary_lang);
       const block = document.createElement("div");
@@ -730,17 +665,10 @@ function renderTimeline(contextData) {
       if (!s.start_time) return;
       const sStart = s.start_time;
       const sEnd = s.end_time || sStart + 2.0;
-      if (sEnd < timelineData.windowStart || sStart > timelineData.windowEnd)
-        return;
+      if (sEnd < timelineData.windowStart || sStart > timelineData.windowEnd) return;
 
-      const leftPct = Math.max(
-        0,
-        ((sStart - timelineData.windowStart) / timelineData.duration) * 100,
-      );
-      const rightPct = Math.max(
-        0,
-        ((timelineData.windowEnd - sEnd) / timelineData.duration) * 100,
-      );
+      const leftPct = Math.max(0, ((sStart - timelineData.windowStart) / timelineData.duration) * 100);
+      const rightPct = Math.max(0, ((timelineData.windowEnd - sEnd) / timelineData.duration) * 100);
 
       const c = getLangColors(s.language || contextData.target_lang);
       const block = document.createElement("div");
@@ -776,22 +704,30 @@ function renderTimeline(contextData) {
   }
   container.appendChild(marks);
 
+  const unselectedLeft = document.createElement("div");
+  unselectedLeft.id = "timelineUnselectedLeft";
+  unselectedLeft.className = "absolute top-0 bottom-0 left-0 bg-black bg-opacity-40 z-10 pointer-events-none";
+
+  const unselectedRight = document.createElement("div");
+  unselectedRight.id = "timelineUnselectedRight";
+  unselectedRight.className = "absolute top-0 bottom-0 right-0 bg-black bg-opacity-40 z-10 pointer-events-none";
+
+  container.appendChild(unselectedLeft);
+  container.appendChild(unselectedRight);
+
   const selected = document.createElement("div");
   selected.id = "timelineSelected";
-  selected.className =
-    "absolute h-full bg-indigo-500 bg-opacity-20 border-l-2 border-r-2 border-indigo-600 group pointer-events-none";
+  selected.className = "absolute h-full border-y-2 border-indigo-500 group pointer-events-none z-20";
 
   const hStart = document.createElement("div");
   hStart.id = "handleStart";
-  hStart.className =
-    "absolute top-0 bottom-0 left-0 w-6 -ml-3 cursor-ew-resize flex justify-center items-center pointer-events-auto group-hover:bg-black group-hover:bg-opacity-10";
-  hStart.innerHTML = '<div class="w-1 h-6 bg-indigo-600 rounded"></div>';
+  hStart.className = "absolute top-0 bottom-0 left-0 w-6 -ml-3 cursor-ew-resize flex justify-center items-center pointer-events-auto hover:brightness-110";
+  hStart.innerHTML = '<div class="w-2 h-full bg-indigo-500 rounded-full shadow-md border border-indigo-600 flex items-center justify-center"><div class="w-[2px] h-3 bg-white rounded-full opacity-70"></div></div>';
 
   const hEnd = document.createElement("div");
   hEnd.id = "handleEnd";
-  hEnd.className =
-    "absolute top-0 bottom-0 right-0 w-6 -mr-3 cursor-ew-resize flex justify-center items-center pointer-events-auto group-hover:bg-black group-hover:bg-opacity-10";
-  hEnd.innerHTML = '<div class="w-1 h-6 bg-indigo-600 rounded"></div>';
+  hEnd.className = "absolute top-0 bottom-0 right-0 w-6 -mr-3 cursor-ew-resize flex justify-center items-center pointer-events-auto hover:brightness-110";
+  hEnd.innerHTML = '<div class="w-2 h-full bg-indigo-500 rounded-full shadow-md border border-indigo-600 flex items-center justify-center"><div class="w-[2px] h-3 bg-white rounded-full opacity-70"></div></div>';
 
   selected.appendChild(hStart);
   selected.appendChild(hEnd);
@@ -808,24 +744,19 @@ function updateTimelineSelection() {
   const selected = document.getElementById("timelineSelected");
   if (!selected) return;
 
-  const leftPct = Math.max(
-    0,
-    ((timelineData.selectedStart - timelineData.windowStart) /
-      timelineData.duration) *
-      100,
-  );
-  const rightPct = Math.max(
-    0,
-    ((timelineData.windowEnd - timelineData.selectedEnd) /
-      timelineData.duration) *
-      100,
-  );
+  const unleft = document.getElementById("timelineUnselectedLeft");
+  const unright = document.getElementById("timelineUnselectedRight");
+
+  const leftPct = Math.max(0, ((timelineData.selectedStart - timelineData.windowStart) / timelineData.duration) * 100);
+  const rightPct = Math.max(0, ((timelineData.windowEnd - timelineData.selectedEnd) / timelineData.duration) * 100);
 
   selected.style.left = `${leftPct}%`;
   selected.style.right = `${rightPct}%`;
 
-  document.getElementById("timelineDurationDisplay").innerText =
-    `${(timelineData.selectedEnd - timelineData.selectedStart).toFixed(2)}s`;
+  if (unleft) unleft.style.width = `${leftPct}%`;
+  if (unright) unright.style.width = `${rightPct}%`;
+
+  document.getElementById("timelineDurationDisplay").innerText = `${(timelineData.selectedEnd - timelineData.selectedStart).toFixed(2)}s`;
 }
 
 /**
@@ -848,15 +779,9 @@ function attachTimelineEvents(container, hStart, hEnd) {
     const time = getPos(e);
 
     if (timelineData.activeHandle === "start") {
-      timelineData.selectedStart = Math.min(
-        time,
-        timelineData.selectedEnd - 0.5,
-      );
+      timelineData.selectedStart = Math.min(time, timelineData.selectedEnd - 0.5);
     } else if (timelineData.activeHandle === "end") {
-      timelineData.selectedEnd = Math.max(
-        time,
-        timelineData.selectedStart + 0.5,
-      );
+      timelineData.selectedEnd = Math.max(time, timelineData.selectedStart + 0.5);
     }
     updateTimelineSelection();
   };
@@ -898,10 +823,7 @@ async function applyTimelineExtraction() {
   const targetStart = timelineData.target.start_time || 0;
   const targetEnd = timelineData.target.end_time || targetStart + 2.0;
 
-  currentExtraction.padStart = Math.max(
-    0,
-    targetStart - timelineData.selectedStart,
-  );
+  currentExtraction.padStart = Math.max(0, targetStart - timelineData.selectedStart);
   currentExtraction.padEnd = Math.max(0, timelineData.selectedEnd - targetEnd);
 
   document.getElementById("mediaModalLoading").classList.remove("hidden");
@@ -921,20 +843,15 @@ async function applyTimelineExtraction() {
     const data = await response.json();
 
     if (data.success) {
-      document.getElementById("mediaImage").src =
-        data.image_url + "?t=" + new Date().getTime();
-      document.getElementById("mediaAudio").src =
-        data.audio_url + "?t=" + new Date().getTime();
+      document.getElementById("mediaImage").src = data.image_url + "?t=" + new Date().getTime();
+      document.getElementById("mediaAudio").src = data.audio_url + "?t=" + new Date().getTime();
       document.getElementById("mediaAudio").play();
 
       const selStart = timelineData.selectedStart;
       const selEnd = timelineData.selectedEnd;
 
       const cleanText = (text, lang) => {
-        let cleaned = (text || "").replace(
-          /<br\s*\/?>/gi,
-          lang === "jpn" ? "" : " ",
-        );
+        let cleaned = (text || "").replace(/<br\s*\/?>/gi, lang === "jpn" ? "" : " ");
         return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
       };
 
@@ -942,8 +859,7 @@ async function applyTimelineExtraction() {
         if (!arr) return "";
 
         const filtered = arr.filter((s) => {
-          const mid =
-            ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
+          const mid = ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
           return mid >= selStart && mid <= selEnd;
         });
 
@@ -954,9 +870,7 @@ async function applyTimelineExtraction() {
 
             if (lang === "jpn") {
               const prev = array[i - 1];
-              const endsSentence = /[だですまるかよねわぞ。！？]$/.test(
-                prev.trim(),
-              );
+              const endsSentence = /[だですまるかよねわぞ。！？]$/.test(prev.trim());
               return acc + (endsSentence ? "<br/>" : "") + text;
             } else {
               let prevText = acc.trim();
@@ -968,34 +882,19 @@ async function applyTimelineExtraction() {
           }, "");
       };
 
-      const newTargetText = getEncompassed(
-        timelineData.contextData.target_context,
-        timelineData.contextData.target_lang,
-      );
-      const newSecondaryText = getEncompassed(
-        timelineData.contextData.secondary_context,
-        timelineData.contextData.secondary_lang,
-      );
+      const newTargetText = getEncompassed(timelineData.contextData.target_context, timelineData.contextData.target_lang);
+      const newSecondaryText = getEncompassed(timelineData.contextData.secondary_context, timelineData.contextData.secondary_lang);
 
-      const targetTextToSet =
-        newTargetText ||
-        cleanText(
-          timelineData.target.text,
-          timelineData.contextData.target_lang,
-        );
+      const targetTextToSet = newTargetText || cleanText(timelineData.target.text, timelineData.contextData.target_lang);
       const cTarget = getLangColors(timelineData.contextData.target_lang);
-      const targetLabel = (
-        timelineData.contextData.target_lang || "sub"
-      ).toUpperCase();
+      const targetLabel = (timelineData.contextData.target_lang || "sub").toUpperCase();
       document.getElementById("mediaText").innerHTML = targetTextToSet;
 
       let transHtml = "";
       if (newSecondaryText) {
-        const langLabel = (
-          timelineData.contextData.secondary_lang || "sub"
-        ).toUpperCase();
+        const langLabel = (timelineData.contextData.secondary_lang || "sub").toUpperCase();
         const c = getLangColors(timelineData.contextData.secondary_lang);
-        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-600 dark:text-gray-300 align-middle">${newSecondaryText}</span></div>`;
+        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;
       }
       document.getElementById("mediaTranslations").innerHTML = transHtml;
     } else {
@@ -1007,5 +906,16 @@ async function applyTimelineExtraction() {
     document.getElementById("mediaModalLoading").classList.add("hidden");
     btn.disabled = false;
     btn.innerText = "Apply & Re-extract";
+  }
+}
+
+/**
+ * Replays the audio from the beginning.
+ */
+function replayAudio() {
+  const audio = document.getElementById("mediaAudio");
+  if (audio) {
+    audio.currentTime = 0;
+    audio.play();
   }
 }

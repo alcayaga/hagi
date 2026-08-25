@@ -1,157 +1,179 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Nadeshiko Search</title>
     <!-- Use Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-gray-100 min-h-screen dark:bg-gray-900 dark:text-gray-100 transition-colors">
+  </head>
+  <body class="bg-gray-100 min-h-screen dark:bg-gray-900 dark:text-gray-100 transition-colors">
     <div class="container mx-auto p-4 md:p-8">
-        <h1 class="text-4xl font-bold mb-8 text-center text-indigo-600 dark:text-indigo-400">Nadeshiko Search</h1>
-        
-        <!-- Search & Config -->
-        <div class="flex flex-col justify-center items-center gap-4 mb-8">
-            <div class="flex flex-col md:flex-row w-full gap-4">
-                <input type="text" id="searchInput" placeholder="Search for a word (e.g. Asakura, -English)" class="flex-grow p-4 rounded shadow text-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100">
-                <button onclick="performSearch()" class="bg-indigo-600 text-white px-8 py-4 rounded shadow hover:bg-indigo-700 text-lg w-full md:w-auto">Search</button>
-            </div>
-            
-            <div class="flex flex-wrap justify-center items-center gap-4 w-full">
-                <div id="filterContainer" class="flex gap-2 hidden">
-                    <select id="filterShow" onchange="updateEpisodesAndRender()" class="p-2 bg-white text-gray-700 border rounded shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white w-48 md:w-64 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option value="">All Shows</option>
-                    </select>
-                    <select id="filterEpisode" onchange="renderResults()" class="p-2 bg-white text-gray-700 border rounded shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white w-24 focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                        <option value="">All Eps</option>
-                    </select>
-                </div>
-                
-                <div class="flex gap-4 items-center">
-                    <div class="flex items-center gap-2">
-                        <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Pad Start</label>
-                        <input type="number" id="padStart" value="0.5" step="0.1" class="w-16 p-2 text-center bg-white dark:bg-gray-800 text-gray-700 dark:text-white border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Pad End</label>
-                        <input type="number" id="padEnd" value="0.5" step="0.1" class="w-16 p-2 text-center bg-white dark:bg-gray-800 text-gray-700 dark:text-white border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                    </div>
-                </div>
-            </div>
+      <h1 class="text-4xl font-bold mb-8 text-center text-indigo-600 dark:text-indigo-400">Nadeshiko Search</h1>
+
+      <!-- Search & Config -->
+      <div class="flex flex-col justify-center items-center gap-4 mb-8">
+        <div class="flex flex-col md:flex-row w-full gap-4">
+          <input type="text" id="searchInput" placeholder="Search for a word (e.g. Asakura, -English)" class="flex-grow p-4 rounded shadow text-lg outline-none focus:ring-2 focus:ring-indigo-500 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-100" />
+          <button onclick="performSearch()" class="bg-indigo-600 text-white px-8 py-4 rounded shadow hover:bg-indigo-700 text-lg w-full md:w-auto">Search</button>
         </div>
 
-        <!-- Loading Indicator -->
-        <div id="loading" class="hidden flex justify-center items-center mb-8">
-            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-            <span class="ml-2 text-indigo-600 dark:text-indigo-400 font-semibold">Searching...</span>
-        </div>
+        <div class="flex flex-wrap justify-center items-center gap-4 w-full">
+          <div id="filterContainer" class="flex gap-2 hidden">
+            <select id="filterShow" onchange="updateEpisodesAndRender()" class="p-2 bg-white text-gray-700 border rounded shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white w-48 md:w-64 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All Shows</option>
+            </select>
+            <select id="filterEpisode" onchange="renderResults()" class="p-2 bg-white text-gray-700 border rounded shadow-sm dark:bg-gray-800 dark:border-gray-700 dark:text-white w-24 focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All Eps</option>
+            </select>
+          </div>
 
-        <!-- Results Table -->
-        <div class="bg-white dark:bg-gray-800 rounded shadow overflow-hidden border dark:border-gray-700">
-            <table class="w-full text-left border-collapse block md:table" id="resultsTable">
-                <thead class="hidden md:table-header-group">
-                    <tr class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 uppercase text-sm font-bold">
-                        <th class="px-6 py-4 w-1/2">Text</th>
-                        <th class="px-6 py-4">Source</th>
-                        <th class="px-6 py-4">Time</th>
-                        <th class="px-6 py-4 text-center">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="resultsBody" class="block md:table-row-group divide-y divide-gray-200 dark:divide-gray-700 text-gray-800 dark:text-gray-200">
-                    <tr class="block md:table-row">
-                        <td colspan="4" class="block md:table-cell px-6 py-4 text-center text-gray-500 dark:text-gray-400">Enter a keyword to start searching</td>
-                    </tr>
-                </tbody>
-            </table>
+          <div class="flex gap-4 items-center">
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Pad Start</label>
+              <input type="number" id="padStart" value="0.5" step="0.1" class="w-16 p-2 text-center bg-white dark:bg-gray-800 text-gray-700 dark:text-white border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+            <div class="flex items-center gap-2">
+              <label class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Pad End</label>
+              <input type="number" id="padEnd" value="0.5" step="0.1" class="w-16 p-2 text-center bg-white dark:bg-gray-800 text-gray-700 dark:text-white border rounded shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            </div>
+          </div>
         </div>
+      </div>
+
+      <!-- Loading Indicator -->
+      <div id="loading" class="hidden flex justify-center items-center mb-8">
+        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+        <span class="ml-2 text-indigo-600 dark:text-indigo-400 font-semibold">Searching...</span>
+      </div>
+
+      <!-- Results Table -->
+      <div class="bg-white dark:bg-gray-800 rounded shadow overflow-hidden border dark:border-gray-700">
+        <table class="w-full text-left border-collapse block md:table" id="resultsTable">
+          <thead class="hidden md:table-header-group">
+            <tr class="bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 uppercase text-sm font-bold">
+              <th class="px-6 py-4 w-1/2">Text</th>
+              <th class="px-6 py-4">Source</th>
+              <th class="px-6 py-4">Time</th>
+              <th class="px-6 py-4 text-center">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="resultsBody" class="block md:table-row-group divide-y divide-gray-200 dark:divide-gray-700 text-gray-800 dark:text-gray-200">
+            <tr class="block md:table-row">
+              <td colspan="4" class="block md:table-cell px-6 py-4 text-center text-gray-500 dark:text-gray-400">Enter a keyword to start searching</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Extraction Modal -->
     <div id="mediaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full flex flex-col max-h-[90vh] overflow-hidden border dark:border-gray-700">
-            <div class="p-4 md:px-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 flex-shrink-0">
-                <div id="mediaMetadata" class="font-bold text-lg text-gray-800 dark:text-gray-100 truncate">Extracted Media</div>
-                <button onclick="closeModal('mediaModal', 'mediaAudio')" class="text-gray-500 hover:text-red-500 dark:text-gray-400 dark:hover:text-red-400 font-bold text-2xl leading-none">&times;</button>
-            </div>
-            <div class="p-4 md:p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6 md:gap-8">
-                <!-- Left Column -->
-                <div class="w-full md:w-2/5 flex flex-col gap-4 justify-center">
-                    <div class="relative w-full">
-                        <img id="mediaImage" src="" alt="Snapshot" class="rounded shadow border border-gray-200 dark:border-gray-600 w-full object-contain bg-black">
-                        <div id="mediaModalLoading" class="hidden absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center rounded">
-                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-                        </div>
-                    </div>
-                    <audio id="mediaAudio" controls class="w-full"></audio>
-                </div>
-                
-                <!-- Right Column -->
-                <div class="w-full md:w-3/5 flex flex-col gap-4">
-                    <div>
-                        <p id="mediaText" class="text-xl font-medium dark:text-gray-200"></p>
-                        <div id="mediaTranslations" class="mt-2 text-left inline-block"></div>
-                    </div>
-
-                    <!-- Timeline Controls -->
-                    <div class="flex flex-col w-full bg-gray-50 dark:bg-gray-700 p-3 rounded shadow-sm border dark:border-gray-600 gap-2 mt-auto">
-                        <div class="flex justify-between items-center px-1">
-                            <span class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Fine-tune Extraction</span>
-                            <span class="text-xs font-mono text-gray-500" id="timelineDurationDisplay">0.00s</span>
-                        </div>
-                        
-                        <!-- Custom Timeline Range Slider -->
-                        <div class="relative w-full h-10 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 overflow-hidden select-none touch-none" id="timelineContainer">
-                            <!-- JS will populate grid, marks, and draggable selection handles here -->
-                        </div>
-                        
-                        <div class="flex justify-between items-center mt-1">
-                            <div class="flex gap-2 items-center text-[10px] text-gray-400" id="timelineLegend">
-                                <!-- JS will populate this -->
-                            </div>
-                            <button id="btnReextract" onclick="applyTimelineExtraction()" class="bg-indigo-600 text-white px-4 py-1.5 rounded shadow text-sm font-semibold hover:bg-indigo-700 transition">Apply & Re-extract</button>
-                        </div>
-                    </div>
-                    
-                    <!-- Copy Actions -->
-                    <div class="flex flex-wrap gap-2 w-full border-t dark:border-gray-700 pt-4">
-                        <button onclick="copyExtractItem('image', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                            <span>Image</span>
-                        </button>
-                        <button onclick="copyExtractItem('audio', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                            <span>Audio</span>
-                        </button>
-                        <button onclick="copyExtractItem('text', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path></svg>
-                            <span>Phrase</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full flex flex-col max-h-[90vh] overflow-hidden border dark:border-gray-700">
+        <div class="p-4 md:px-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 flex-shrink-0">
+          <div id="mediaMetadata" class="truncate w-full pr-4">Extracted Media</div>
+          <button onclick="closeModal('mediaModal', 'mediaAudio')" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+            </svg>
+          </button>
         </div>
+        <div class="p-4 md:p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6 md:gap-8">
+          <!-- Left Column -->
+          <div class="w-full md:w-2/5 flex flex-col gap-4 justify-center">
+            <div class="relative w-full cursor-pointer group rounded overflow-hidden" onclick="replayAudio()">
+              <img id="mediaImage" src="" alt="Snapshot" class="w-full object-contain bg-black border border-gray-200 dark:border-gray-600 shadow" />
+
+              <!-- Play Button Overlay -->
+              <div class="absolute inset-0 flex justify-center items-center opacity-0 group-hover:opacity-100 transition duration-200 bg-black bg-opacity-20">
+                <div class="bg-black bg-opacity-60 text-white rounded-full p-3 backdrop-blur-sm shadow-lg transform transition group-hover:scale-110 group-active:scale-95">
+                  <svg class="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              </div>
+
+              <!-- Timestamp Overlay -->
+              <div id="mediaTimestampBadge" class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs font-mono px-1.5 py-0.5 rounded shadow z-10"></div>
+
+              <div id="mediaModalLoading" class="hidden absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+              </div>
+            </div>
+            <audio id="mediaAudio" class="hidden"></audio>
+          </div>
+
+          <!-- Right Column -->
+          <div class="w-full md:w-3/5 flex flex-col gap-4">
+            <div>
+              <p id="mediaText" class="text-2xl font-bold dark:text-gray-100"></p>
+              <div id="mediaTranslations" class="mt-2 text-left inline-block"></div>
+            </div>
+            <!-- Timeline Controls -->
+            <div class="flex flex-col w-full gap-2 mt-auto">
+              <div class="flex justify-between items-center px-1">
+                <span class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Fine-tune Extraction</span>
+                <span class="text-xs font-mono text-gray-500" id="timelineDurationDisplay">0.00s</span>
+              </div>
+
+              <!-- Custom Timeline Range Slider -->
+              <div class="relative w-full h-10 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 overflow-hidden select-none touch-none" id="timelineContainer">
+                <!-- JS will populate grid, marks, and draggable selection handles here -->
+              </div>
+
+              <div class="flex justify-between items-center mt-1">
+                <div class="flex gap-2 items-center text-[10px] text-gray-400" id="timelineLegend">
+                  <!-- JS will populate this -->
+                </div>
+                <button id="btnReextract" onclick="applyTimelineExtraction()" class="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">Apply & Re-extract</button>
+              </div>
+            </div>
+
+            <!-- Copy Actions -->
+            <div class="flex flex-wrap gap-2 w-full border-t dark:border-gray-700 pt-4">
+              <button onclick="copyExtractItem('image', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                </svg>
+                <span>Image</span>
+              </button>
+              <button onclick="copyExtractItem('audio', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                </svg>
+                <span>Audio</span>
+              </button>
+              <button onclick="copyExtractItem('text', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
+                </svg>
+                <span>Phrase</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Context Modal -->
     <div id="contextModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
-        <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full overflow-hidden border dark:border-gray-700 flex flex-col max-h-[80vh] md:max-h-[90vh]">
-            <div class="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
-                <h3 class="font-bold text-lg dark:text-white">Conversation Context</h3>
-                <button onclick="closeModal('contextModal')" class="text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400 font-bold text-xl">&times;</button>
-            </div>
-            <div class="p-4 md:p-6 overflow-y-auto flex-grow bg-white dark:bg-gray-800">
-                <div id="contextLoading" class="flex justify-center items-center py-8 hidden">
-                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                </div>
-                <div id="contextList" class="flex flex-col gap-2"></div>
-            </div>
+      <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full overflow-hidden border dark:border-gray-700 flex flex-col max-h-[80vh] md:max-h-[90vh]">
+        <div class="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
+          <h3 class="font-bold text-lg dark:text-white">Conversation Context</h3>
+          <button onclick="closeModal('contextModal')" class="text-gray-500 hover:text-red-500 dark:text-gray-300 dark:hover:text-red-400 font-bold text-xl">&times;</button>
         </div>
+        <div class="p-4 md:p-6 overflow-y-auto flex-grow bg-white dark:bg-gray-800">
+          <div id="contextLoading" class="flex justify-center items-center py-8 hidden">
+            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+          </div>
+          <div id="contextList" class="flex flex-col gap-2"></div>
+        </div>
+      </div>
     </div>
 
     <!-- Timeline Tooltip -->
     <div id="timelineTooltip" class="hidden fixed z-[9999] bg-gray-900 text-white text-xs px-2 py-1.5 rounded shadow-xl pointer-events-none max-w-sm whitespace-normal transform -translate-x-1/2 -translate-y-full mt-[-8px]"></div>
 
     <script src="/static/js/main.js"></script>
-</body>
+  </body>
 </html>
