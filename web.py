@@ -1,6 +1,7 @@
 """Web application for Hagi Local UI."""
 
 import os
+import urllib.parse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -19,7 +20,9 @@ def _get_normalized_media_url(config_obj: dict) -> str | None:
     if isinstance(url, str):
         url = url.strip().rstrip("/")
         if url:
-            return url
+            parsed = urllib.parse.urlparse(url)
+            if parsed.scheme in ("http", "https") and parsed.netloc:
+                return url
     return None
 
 app = FastAPI(title="Hagi Local UI")
