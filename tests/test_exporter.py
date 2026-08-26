@@ -290,9 +290,11 @@ def test_export_ankiconnect_multiple_exports(test_db):
     }
 
     def mock_exists(path):
+        """Mock os.path.exists."""
         return True
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock open()."""
         from io import BytesIO
         return BytesIO(b"fake_data")
 
@@ -323,8 +325,8 @@ def test_export_ankiconnect_multiple_exports(test_db):
         sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
         sid = sentence["id"]
 
-        success1, msg1 = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9998)
-        success2, msg2 = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9999)
+        success1, _ = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9998)
+        success2, _ = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9999)
 
         assert success1 is True
         assert success2 is True
