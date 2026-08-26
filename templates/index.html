@@ -144,31 +144,31 @@
             </div>
 
             <!-- Copy Actions -->
-            <div class="flex flex-wrap gap-2 w-full border-t dark:border-gray-700 pt-4">
+            <div class="grid grid-cols-2 sm:flex sm:flex-row gap-2 w-full border-t dark:border-gray-700 pt-4">
               <button onclick="copyExtractItem('image', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
                 </svg>
-                <span>Image</span>
+                <span class="whitespace-nowrap">Image</span>
               </button>
               <button onclick="copyExtractItem('audio', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
                 </svg>
-                <span>Audio</span>
+                <span class="whitespace-nowrap">Audio</span>
               </button>
               <button onclick="copyExtractItem('text', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
                 </svg>
-                <span>Phrase</span>
+                <span class="whitespace-nowrap">Phrase</span>
               </button>
 
               <button onclick="sendToAnki(this)" class="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white px-2 py-2 rounded hover:bg-indigo-700 dark:hover:bg-indigo-500 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
                 </svg>
-                <span>Send to Anki</span>
+                <span class="whitespace-nowrap">Anki</span>
               </button>
             </div>
           </div>
