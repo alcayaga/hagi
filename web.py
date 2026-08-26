@@ -1,6 +1,7 @@
 """Web application for Hagi Local UI."""
 
 import os
+import urllib.parse
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -11,7 +12,49 @@ from pydantic import BaseModel
 import db
 import exporter
 
+
+def _get_normalized_media_url(config_obj: dict) -> str | None:
+    if not isinstance(config_obj, dict):
+        return None
+    url = config_obj.get("mediaBaseUrl")
+    if isinstance(url, str):
+        url = url.strip().rstrip("/")
+        if url:
+            try:
+                parsed = urllib.parse.urlparse(url)
+                if (
+                    parsed.scheme in ("http", "https")
+                    and parsed.hostname
+                    and not parsed.query
+                    and not parsed.fragment
+                    and "?" not in url
+                    and "#" not in url
+                ):
+                    _ = parsed.port
+                    return url
+            except ValueError:
+                pass
+    return None
+
 app = FastAPI(title="Hagi Local UI")
+
+# Startup warnings
+_has_media_base_url = False
+if os.path.exists("config.json"):
+    try:
+        import json
+        with open("config.json", "r") as _f:
+            _has_media_base_url = bool(_get_normalized_media_url(json.load(_f)))
+    except Exception:
+        pass
+
+if not _has_media_base_url:
+    print(
+        "Warning: 'mediaBaseUrl' not found in config.json. Defaulting to "
+        "http://localhost:8000 for Anki media exports. Remote Anki "
+        "instances will fail to download media.",
+        flush=True
+    )
 
 # Ensure templates directory exists
 os.makedirs("templates", exist_ok=True)
@@ -234,8 +277,12 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
 
+    media_base_url = _get_normalized_media_url(app_config)
+    if not media_base_url:
+        media_base_url = "http://localhost:8000"
+
     success, msg = exporter.export_ankiconnect(
-        sentence_id, app_config, "./media", config.pad_start, config.pad_end
+        sentence_id, app_config, "./media", config.pad_start, config.pad_end, base_url=media_base_url
     )
     if not success:
          raise HTTPException(status_code=500, detail=msg)
