@@ -85,3 +85,115 @@ def test_export_anki(test_db):
         mock_writer_instance.writerow.assert_called_once_with(
             ["Test Text", "[sound:audio.mp3]", "<img src='img.jpg'>"]
         )
+
+def test_export_ankiconnect(test_db):
+    """Test that export_ankiconnect properly interacts with AnkiConnect API."""
+    import json
+
+    mock_config = {
+        "ankiConnectUrl": "http://127.0.0.1:8765",
+        "deck": "Mining",
+        "noteType": "Lapis",
+        "sentenceField": "Sentence",
+        "sourceField": "MiscInfo",
+        "audioField": "SentenceAudio",
+        "imageField": "Picture"
+    }
+
+    with (
+        patch("exporter.extract_media") as mock_extract,
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("urllib.request.urlopen") as mock_urlopen,
+    ):
+        mock_extract.return_value = (
+            True,
+            "Success",
+            "/fake/out/audio.mp3",
+            "/fake/out/img.jpg",
+            "Test Text",
+        )
+
+        # We also need to add show info to the test_db to test source_info logic
+        test_db.execute(
+            "UPDATE media SET show_title = ?, season = ?, episode = ?, episode_title = ? WHERE id = ?",
+            ("Conan", 1, 10, "The Case", 1)
+        )
+
+        mock_response = MagicMock()
+        # First call is findNotes, second is updateNoteFields
+        mock_response.read.side_effect = [
+            json.dumps({"result": [10001, 10002], "error": None}).encode("utf-8"),
+            json.dumps({"result": None, "error": None}).encode("utf-8")
+        ]
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sid = sentence["id"]
+
+        success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
+
+        assert success is True
+        assert mock_urlopen.call_count == 2
+
+        # Verify findNotes request
+        req1 = mock_urlopen.call_args_list[0][0][0]
+        payload1 = json.loads(req1.data.decode("utf-8"))
+        assert payload1["action"] == "findNotes"
+        assert payload1["params"]["query"] == 'deck:"Mining" note:"Lapis"'
+
+        # Verify updateNoteFields request
+        req2 = mock_urlopen.call_args_list[1][0][0]
+        payload2 = json.loads(req2.data.decode("utf-8"))
+        assert payload2["action"] == "updateNoteFields"
+
+        params = payload2["params"]["note"]
+        assert params["id"] == 10002 # max id
+        assert params["fields"]["Sentence"] == "Test Text"
+
+        # 10.0 start time = 10s = [00:10]
+        assert params["fields"]["MiscInfo"] == "Conan S01E10 - The Case [00:10]"
+
+        assert params["audio"][0]["fields"] == ["SentenceAudio"]
+        assert "audio.mp3" in params["audio"][0]["path"]
+
+        assert params["picture"][0]["fields"] == ["Picture"]
+        assert "img.jpg" in params["picture"][0]["path"]
+
+def test_export_ankiconnect_with_note_id(test_db):
+    """Test that export_ankiconnect skips findNotes when target_note_id is provided."""
+    import json
+
+    mock_config = {
+        "ankiConnectUrl": "http://127.0.0.1:8765",
+        "sentenceField": "Sentence",
+    }
+
+    with (
+        patch("exporter.extract_media") as mock_extract,
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("urllib.request.urlopen") as mock_urlopen,
+    ):
+        mock_extract.return_value = (
+            True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
+        )
+
+        mock_response = MagicMock()
+        mock_response.read.return_value = json.dumps({"result": None, "error": None}).encode("utf-8")
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sid = sentence["id"]
+
+        success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9999)
+
+        assert success is True
+
+        # Should only have called updateNoteFields, not findNotes
+        assert mock_urlopen.call_count == 1
+        req = mock_urlopen.call_args_list[0][0][0]
+        payload = json.loads(req.data.decode("utf-8"))
+        assert payload["action"] == "updateNoteFields"
+        assert payload["params"]["note"]["id"] == 9999
+

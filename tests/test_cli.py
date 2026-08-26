@@ -40,3 +40,46 @@ def test_index_existing_directory(tmp_path, monkeypatch):
     # It should succeed
     assert result.exit_code == 0
     assert "Indexing complete!" in result.stdout
+
+def test_anki_command(monkeypatch):
+    """Test the anki CLI command."""
+    import json
+    import os
+
+    # Mock config
+    def mock_exists(path):
+        if path == "config.json":
+            return True
+        return os.path.exists(path)
+
+    def mock_open(path, mode="r", *args, **kwargs):
+        if path == "config.json":
+            from io import StringIO
+            return StringIO(json.dumps({"ankiConnectUrl": "mock"}))
+        return open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("builtins.open", mock_open)
+
+    # Mock exporter
+    import exporter
+
+    called_args = {}
+    def mock_export_ankiconnect(sentence_id, config, out_dir, pad_start, pad_end, target_note_id):
+        called_args.update({
+            "sentence_id": sentence_id,
+            "config": config,
+            "target_note_id": target_note_id
+        })
+        return True, "Exported"
+
+    monkeypatch.setattr(exporter, "export_ankiconnect", mock_export_ankiconnect)
+
+    result = runner.invoke(app, ["anki", "123", "--note-id", "999"])
+    assert result.exit_code == 0
+    assert "Exporting sentence 123 via AnkiConnect" in result.stdout
+    assert "Exported" in result.stdout
+
+    assert called_args["sentence_id"] == 123
+    assert called_args["config"] == {"ankiConnectUrl": "mock"}
+    assert called_args["target_note_id"] == 999
