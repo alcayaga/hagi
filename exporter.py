@@ -326,6 +326,12 @@ def export_ankiconnect(
 
         anki_request("updateNoteFields", **update_params)
 
+        # Add tags if configured
+        tags = config.get("tags")
+        if tags and isinstance(tags, list):
+            tags_str = " ".join(tags)
+            anki_request("addTags", notes=[target_note_id], tags=tags_str)
+
         return True, f"Successfully updated note {target_note_id} in Anki."
 
     except Exception as e:
