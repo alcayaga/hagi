@@ -200,7 +200,6 @@ class ExtractConfig(BaseModel):
 
     pad_start: float = 0.5
     pad_end: float = 0.5
-    base_url: str | None = None
 
 
 @app.post("/api/extract/{sentence_id}")
@@ -223,7 +222,7 @@ def extract(sentence_id: int, config: ExtractConfig):
 
 
 @app.post("/api/anki/{sentence_id}")
-def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
+def export_anki_endpoint(sentence_id: int, config: ExtractConfig, request: Request):
     """Export a sentence to AnkiConnect using the existing local config."""
     if not os.path.exists("config.json"):
         raise HTTPException(status_code=500, detail="config.json not found.")
@@ -236,7 +235,7 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
         raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
 
     success, msg = exporter.export_ankiconnect(
-        sentence_id, app_config, "./media", config.pad_start, config.pad_end, base_url=config.base_url
+        sentence_id, app_config, "./media", config.pad_start, config.pad_end, base_url=str(request.base_url).rstrip('/')
     )
     if not success:
          raise HTTPException(status_code=500, detail=msg)

@@ -127,7 +127,7 @@ def test_export_anki_endpoint(test_db):
 
         response = client.post(
             "/api/anki/1",
-            json={"pad_start": 0.2, "pad_end": 0.8, "base_url": "http://localhost:8000"},
+            json={"pad_start": 0.2, "pad_end": 0.8},
         )
         assert response.status_code == 200
         assert response.json()["success"] is True
@@ -140,7 +140,7 @@ def test_export_anki_endpoint(test_db):
         assert args[1] == {"ankiConnectUrl": "mock"}  # config
         assert args[3] == 0.2  # pad_start
         assert args[4] == 0.8  # pad_end
-        assert mock_ankiconnect.call_args.kwargs["base_url"] == "http://localhost:8000"
+        assert mock_ankiconnect.call_args.kwargs["base_url"] == "http://testserver"
 
 def test_export_anki_endpoint_invalid_config(test_db):
     """Test the POST /api/anki endpoint with invalid config (e.g. array)."""
@@ -171,7 +171,7 @@ def test_export_anki_endpoint_invalid_config(test_db):
 
         response = client.post(
             "/api/anki/1",
-            json={"pad_start": 0.2, "pad_end": 0.8, "base_url": "http://localhost:8000"},
+            json={"pad_start": 0.2, "pad_end": 0.8},
         )
         assert response.status_code == 500
         assert "Invalid configuration format" in response.json()["detail"]

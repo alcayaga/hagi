@@ -185,8 +185,8 @@ def export_ankiconnect(
     out_dir: str,
     pad_start: float = 0.5,
     pad_end: float = 0.5,
-    target_note_id: int = None,
-    base_url: str = None,
+    target_note_id: int | None = None,
+    base_url: str | None = None,
 ):
     """Export sentence to AnkiConnect.
 

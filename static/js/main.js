@@ -925,8 +925,7 @@ async function sendToAnki(btn) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         pad_start: currentExtraction.padStart,
-        pad_end: currentExtraction.padEnd,
-        base_url: window.location.origin
+        pad_end: currentExtraction.padEnd
       }),
     });
     const data = await response.json();
