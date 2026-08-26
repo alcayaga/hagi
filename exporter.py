@@ -67,8 +67,6 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
 
     try:
-        import json
-
         # Probe for the Japanese audio track
         probe_cmd = [
             "ffprobe",
@@ -188,6 +186,7 @@ def export_ankiconnect(
     pad_start: float = 0.5,
     pad_end: float = 0.5,
     target_note_id: int = None,
+    base_url: str = None,
 ):
     """Export sentence to AnkiConnect.
 
@@ -198,6 +197,7 @@ def export_ankiconnect(
         pad_start (float, optional): Seconds to pad before start.
         pad_end (float, optional): Seconds to pad after end.
         target_note_id (int, optional): Specific Note ID to update.
+        base_url (str, optional): Base URL of the web UI to serve media from.
 
     Returns:
         tuple: (bool, str) - Success status and message.
@@ -318,20 +318,28 @@ def export_ankiconnect(
 
         # Add media
         audio_field = config.get("audioField")
-        if audio_field:
-            update_params["note"]["audio"] = [{
-                "path": os.path.abspath(audio_out),
+        if audio_field and os.path.exists(audio_out):
+            audio_payload = {
                 "filename": os.path.basename(audio_out),
                 "fields": [audio_field]
-            }]
+            }
+            if base_url:
+                audio_payload["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(audio_out)}"
+            else:
+                audio_payload["path"] = os.path.abspath(audio_out)
+            update_params["note"]["audio"] = [audio_payload]
 
         image_field = config.get("imageField")
-        if image_field:
-            update_params["note"]["picture"] = [{
-                "path": os.path.abspath(image_out),
+        if image_field and os.path.exists(image_out):
+            image_payload = {
                 "filename": os.path.basename(image_out),
                 "fields": [image_field]
-            }]
+            }
+            if base_url:
+                image_payload["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(image_out)}"
+            else:
+                image_payload["path"] = os.path.abspath(image_out)
+            update_params["note"]["picture"] = [image_payload]
 
         anki_request("updateNoteFields", **update_params)
 

@@ -200,6 +200,7 @@ class ExtractConfig(BaseModel):
 
     pad_start: float = 0.5
     pad_end: float = 0.5
+    base_url: str | None = None
 
 
 @app.post("/api/extract/{sentence_id}")
@@ -235,7 +236,7 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
         raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
 
     success, msg = exporter.export_ankiconnect(
-        sentence_id, app_config, "./media", config.pad_start, config.pad_end
+        sentence_id, app_config, "./media", config.pad_start, config.pad_end, base_url=config.base_url
     )
     if not success:
          raise HTTPException(status_code=500, detail=msg)

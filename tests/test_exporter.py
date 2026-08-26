@@ -101,10 +101,23 @@ def test_export_ankiconnect(test_db):
         "imageField": "Picture"
     }
 
+    def mock_exists(path):
+        """Mock os.path.exists."""
+        return True
+
+    def mock_open(path, mode="r", *args, **kwargs):
+        """Mock open()."""
+        from io import BytesIO
+        if "audio" in path:
+            return BytesIO(b"fake_audio")
+        return BytesIO(b"fake_img")
+
     with (
         patch("exporter.extract_media") as mock_extract,
         patch("exporter.db.get_db", return_value=test_db),
         patch("urllib.request.urlopen") as mock_urlopen,
+        patch("os.path.exists", mock_exists),
+        patch("builtins.open", mock_open)
     ):
         mock_extract.return_value = (
             True,
@@ -179,10 +192,23 @@ def test_export_ankiconnect_with_note_id(test_db):
         "tags": ["anime", "hagi"]
     }
 
+    def mock_exists(path):
+        """Mock os.path.exists."""
+        return True
+
+    def mock_open(path, mode="r", *args, **kwargs):
+        """Mock open()."""
+        from io import BytesIO
+        if "audio" in path:
+            return BytesIO(b"fake_audio")
+        return BytesIO(b"fake_img")
+
     with (
         patch("exporter.extract_media") as mock_extract,
         patch("exporter.db.get_db", return_value=test_db),
         patch("urllib.request.urlopen") as mock_urlopen,
+        patch("os.path.exists", mock_exists),
+        patch("builtins.open", mock_open)
     ):
         mock_extract.return_value = (
             True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
