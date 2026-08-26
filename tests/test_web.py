@@ -27,7 +27,7 @@ def test_read_main():
     response = client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
-    assert "Nadeshiko Search" in response.text
+    assert "Hagi Search" in response.text
 
 
 def test_api_search(test_db):

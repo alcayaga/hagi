@@ -1,9 +1,9 @@
 version: '3.8'
 
 services:
-  nadeshiko:
+  hagi:
     build: .
-    container_name: local-nadeshiko
+    container_name: hagi
     restart: unless-stopped
     ports:
       - "8000:8000"
@@ -11,6 +11,6 @@ services:
       - .env
     volumes:
       # Mount only the database file to persist it safely
-      - ./nadeshiko.db:/app/nadeshiko.db
+      - ./hagi.db:/app/hagi.db
       # Mount the NAS directory so the container can access your anime files
       - /mnt/NAS:/mnt/NAS:ro

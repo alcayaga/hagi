@@ -179,16 +179,16 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
-# Nadeshiko Specific
-nadeshiko.db
+# Hagi Specific
+hagi.db
 media/
 anki_deck/
 
 .DS_Store
-nadeshiko.db-journal
+hagi.db-journal
 config.json
 
-nadeshiko.db-shm
-nadeshiko.db-wal
+hagi.db-shm
+hagi.db-wal
 .vscode/
 

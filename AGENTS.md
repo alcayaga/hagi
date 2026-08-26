@@ -1,9 +1,9 @@
-# Agent Instructions for `local-nadeshiko`
+# Agent Instructions for `hagi`
 
-Welcome, AI Agent! This document contains essential context about the `local-nadeshiko` project. Please review this before making changes to the codebase to save time on exploration.
+Welcome, AI Agent! This document contains essential context about the `hagi` project. Please review this before making changes to the codebase to save time on exploration.
 
 ## 🎯 Project Overview
-`local-nadeshiko` is a local tool designed to index and search media files (like anime episodes) and their associated subtitles. It allows users to search for specific phrases (especially in Japanese) and instantly retrieve the matching video context alongside corresponding translations in other languages.
+`hagi` is a local tool designed to index and search media files (like anime episodes) and their associated subtitles. It allows users to search for specific phrases (especially in Japanese) and instantly retrieve the matching video context alongside corresponding translations in other languages.
 
 ## 🏗️ Architecture & Key Files
 - **`web.py`**: The FastAPI backend. Contains all the API endpoints (e.g., `/api/search`, `/api/extract`).
@@ -12,7 +12,7 @@ Welcome, AI Agent! This document contains essential context about the `local-nad
 - **`cli.py`**: Command-line interface for managing the tool.
 
 ## 💾 Database Schema (SQLite)
-The project uses a single SQLite database (`nadeshiko.db`) with WAL mode enabled.
+The project uses a single SQLite database (`hagi.db`) with WAL mode enabled.
 - **`media` table**: Stores information about indexed video/audio files (path, show title, season, episode).
 - **`sentences` table**: Stores individual subtitle lines, linking to `media_id`. Contains `language`, `start_time`, `end_time`, and `text`.
 - **`sentences_fts` table**: A Full-Text Search (FTS5) virtual table configured with the `trigram` tokenizer. 
@@ -25,16 +25,16 @@ When a user searches for a term, the engine doesn't just return the matching sen
 
 ## 🧪 Testing Environment
 - The project uses `pytest`. Tests are located in the `tests/` directory. Linting checks (via `ruff`) are integrated directly into the test suite using `pytest-ruff`.
-- The project relies on a Conda environment named `local-nadeshiko`.
+- The project relies on a Conda environment named `hagi`.
 - **To run tests & linting:** You must include the root directory in the PYTHONPATH. Run `pytest` on the root directory (rather than `tests/`) so it correctly finds and lints all `.py` files.
   ```bash
-  PYTHONPATH=. conda run -n local-nadeshiko pytest
+  PYTHONPATH=. conda run -n hagi pytest
   ```
-- **Test Database:** Tests use an in-memory database (`:memory:`) to avoid touching the user's actual `nadeshiko.db`.
+- **Test Database:** Tests use an in-memory database (`:memory:`) to avoid touching the user's actual `hagi.db`.
 - **JS Formatting:** The project does not use a heavy `node_modules` toolchain or a custom JS linting config. When modifying frontend JavaScript (e.g., `static/js/main.js`), you must format the file using Prettier via `npx` before committing:
   ```bash
   npx prettier --write static/js/main.js
   ```
 ## 🛠️ General Guidelines
-- Do not run commands using `python3` globally; always use the `local-nadeshiko` conda environment.
+- Do not run commands using `python3` globally; always use the `hagi` conda environment.
 - When generating SQL, prefer subqueries or joins on `sentences_fts` for text searching rather than raw `LIKE` on the `sentences` table.

@@ -1,10 +1,10 @@
-"""Database management module for Nadeshiko Local."""
+"""Database management module for Hagi Local."""
 
 import os
 import shlex
 import sqlite3
 
-DB_PATH = os.path.abspath("nadeshiko.db")
+DB_PATH = os.path.abspath("hagi.db")
 
 
 def get_db():

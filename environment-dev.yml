@@ -1,4 +1,4 @@
-name: local-nadeshiko
+name: hagi
 channels:
   - conda-forge
   - defaults

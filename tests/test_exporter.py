@@ -37,8 +37,8 @@ def test_extract_media(test_db):
         success, msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
 
         assert success is True
-        assert audio_out.replace("\\", "/") == f"/fake/out/nadeshiko_audio_{sid}.mp3"
-        assert image_out.replace("\\", "/") == f"/fake/out/nadeshiko_img_{sid}.jpg"
+        assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}.mp3"
+        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}.jpg"
         assert text == "This is a test sentence."
 
         # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)

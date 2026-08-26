@@ -60,8 +60,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     duration = end - start
     midpoint = start + (duration / 2)
 
-    audio_out = os.path.join(out_dir, f"nadeshiko_audio_{sentence_id}.mp3")
-    image_out = os.path.join(out_dir, f"nadeshiko_img_{sentence_id}.jpg")
+    audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}.mp3")
+    image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
 
     try:
         import json

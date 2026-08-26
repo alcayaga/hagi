@@ -1,4 +1,4 @@
-"""Web application for Nadeshiko Local UI."""
+"""Web application for Hagi Local UI."""
 
 import os
 
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 import db
 import exporter
 
-app = FastAPI(title="Nadeshiko Local UI")
+app = FastAPI(title="Hagi Local UI")
 
 # Ensure templates directory exists
 os.makedirs("templates", exist_ok=True)
