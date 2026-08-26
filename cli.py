@@ -186,6 +186,46 @@ def export(
         console.print(f"[red]Error: {msg}[/red]")
 
 
+
+@app.command()
+def anki(
+    sentence_id: int,
+    note_id: Optional[int] = typer.Option(
+        None, "--note-id", "-n", help="Target specific Anki Note ID. Defaults to last created note."
+    ),
+    pad_start: float = typer.Option(
+        0.5, "--pad-start", "-ps", help="Seconds to pad before the sentence"
+    ),
+    pad_end: float = typer.Option(
+        0.5, "--pad-end", "-pe", help="Seconds to pad after the sentence"
+    ),
+):
+    """Export sentence directly to Anki via AnkiConnect."""
+    if not os.path.exists("config.json"):
+        console.print("[red]Error: config.json not found. Please create it with AnkiConnect settings.[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        with open("config.json", "r") as f:
+            config = json.load(f)
+    except Exception as e:
+        console.print(f"[red]Error parsing config.json: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    console.print(f"Exporting sentence {sentence_id} via AnkiConnect...")
+
+    # We use the standard media directory for the extracted files
+    out_dir = "./media"
+    success, msg = exporter.export_ankiconnect(
+        sentence_id, config, out_dir, pad_start, pad_end, target_note_id=note_id
+    )
+    if success:
+        console.print(f"[green]{msg}[/green]")
+    else:
+        console.print(f"[red]Error: {msg}[/red]")
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def ui(port: int = 8000, host: str = "127.0.0.1"):
     """Launch the Hagi local web interface."""

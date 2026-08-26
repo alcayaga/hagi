@@ -163,6 +163,13 @@
                 </svg>
                 <span>Phrase</span>
               </button>
+
+              <button onclick="sendToAnki(this)" class="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white px-2 py-2 rounded hover:bg-indigo-700 dark:hover:bg-indigo-500 transition shadow-sm text-sm font-semibold">
+                <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                </svg>
+                <span>Send to Anki</span>
+              </button>
             </div>
           </div>
         </div>
@@ -189,5 +196,9 @@
     <div id="timelineTooltip" class="hidden fixed z-[9999] bg-gray-900 text-white text-xs px-2 py-1.5 rounded shadow-xl pointer-events-none max-w-sm whitespace-normal transform -translate-x-1/2 -translate-y-full mt-[-8px]"></div>
 
     <script src="/static/js/main.js"></script>
+  
+    <!-- Toast Notification -->
+    <div id="toastContainer" class="fixed bottom-4 right-4 z-[9999] flex flex-col gap-2 pointer-events-none"></div>
+
   </body>
 </html>

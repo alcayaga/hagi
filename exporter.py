@@ -3,6 +3,9 @@
 import csv
 import os
 import subprocess
+import urllib.request
+import urllib.error
+import json
 
 import db
 
@@ -173,5 +176,172 @@ def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end:
             writer.writerow([text, audio_tag, img_tag])
 
         return True, f"Exported to {out_dir}"
+    except Exception as e:
+        return False, str(e)
+
+
+
+def export_ankiconnect(
+    sentence_id: int,
+    config: dict,
+    out_dir: str,
+    pad_start: float = 0.5,
+    pad_end: float = 0.5,
+    target_note_id: int = None,
+):
+    """Export sentence to AnkiConnect.
+
+    Args:
+        sentence_id (int): ID of the sentence.
+        config (dict): AnkiConnect configuration dictionary.
+        out_dir (str): Output directory for temporary media.
+        pad_start (float, optional): Seconds to pad before start.
+        pad_end (float, optional): Seconds to pad after end.
+        target_note_id (int, optional): Specific Note ID to update.
+
+    Returns:
+        tuple: (bool, str) - Success status and message.
+    """
+    success, msg, audio_out, image_out, text = extract_media(
+        sentence_id, out_dir, pad_start, pad_end
+    )
+    if not success:
+        return False, msg
+
+    if not isinstance(config, dict):
+        return False, "Invalid configuration format: expected a dictionary."
+
+    anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
+
+    def anki_request(action, **params):
+        """Helper to send requests to AnkiConnect API."""
+        req_data = json.dumps({"action": action, "version": 6, "params": params}).encode("utf-8")
+        req = urllib.request.Request(anki_url, req_data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=10.0) as response:
+                res = json.loads(response.read().decode("utf-8"))
+                if res.get("error"):
+                    raise Exception(res["error"])
+                return res.get("result")
+        except Exception as e:
+            raise Exception(f"AnkiConnect error: {e}")
+
+    try:
+        # Fetch metadata for source_info
+        conn = db.get_db()
+        meta = conn.execute(
+            '''
+            SELECT m.show_title, m.season, m.episode, m.episode_title, s.start_time
+            FROM sentences s
+            JOIN media m ON s.media_id = m.id
+            WHERE s.id = ?
+            ''',
+            (sentence_id,)
+        ).fetchone()
+
+        source_info = ""
+        if meta:
+            show_part = ""
+            if meta["show_title"]:
+                show_part += meta["show_title"]
+
+            ep_part = ""
+            if meta["season"] is not None and meta["episode"] is not None:
+                ep_part = f"S{meta['season']:02d}E{meta['episode']:02d}"
+            elif meta["episode"] is not None:
+                ep_part = f"Ep {meta['episode']:02d}"
+
+            if show_part and ep_part:
+                show_part += f" {ep_part}"
+            elif ep_part:
+                show_part = ep_part
+
+            title_part = ""
+            if meta["episode_title"]:
+                title_part = meta["episode_title"]
+
+            time_str = ""
+            if meta["start_time"] is not None:
+                time_str = f"[{int(meta['start_time'] // 60):02d}:{int(meta['start_time'] % 60):02d}]"
+
+            parts = []
+            if show_part:
+                parts.append(show_part)
+            if title_part:
+                # If there's a show part, separate with a dash, otherwise just add title
+                if show_part:
+                    parts.append(f"- {title_part}")
+                else:
+                    parts.append(title_part)
+            if time_str:
+                parts.append(time_str)
+
+            source_info = " ".join(parts)
+
+        # Resolve note ID
+        if not target_note_id:
+            deck = config.get("deck", "")
+            note_type = config.get("noteType", "")
+
+            if not deck and not note_type:
+                return False, ("Refusing to query all Anki notes. Please provide "
+                               "'deck' or 'noteType' in config.json, or specify a target Note ID.")
+
+            query_parts = []
+            if deck:
+                query_parts.append(f"deck:\"{deck}\"")
+            if note_type:
+                query_parts.append(f"note:\"{note_type}\"")
+            query = " ".join(query_parts)
+
+            notes = anki_request("findNotes", query=query)
+            if not notes:
+                return False, "No notes found to update."
+            target_note_id = max(notes)
+
+        # Prepare fields
+        fields_to_update = {}
+        sentence_field = config.get("sentenceField")
+        source_field = config.get("sourceField")
+
+        if sentence_field:
+            fields_to_update[sentence_field] = text
+        if source_field and source_info:
+            fields_to_update[source_field] = source_info
+
+        update_params = {
+            "note": {
+                "id": target_note_id,
+                "fields": fields_to_update
+            }
+        }
+
+        # Add media
+        audio_field = config.get("audioField")
+        if audio_field:
+            update_params["note"]["audio"] = [{
+                "path": os.path.abspath(audio_out),
+                "filename": os.path.basename(audio_out),
+                "fields": [audio_field]
+            }]
+
+        image_field = config.get("imageField")
+        if image_field:
+            update_params["note"]["picture"] = [{
+                "path": os.path.abspath(image_out),
+                "filename": os.path.basename(image_out),
+                "fields": [image_field]
+            }]
+
+        anki_request("updateNoteFields", **update_params)
+
+        # Add tags if configured
+        tags = config.get("tags")
+        if tags and isinstance(tags, list):
+            tags_str = " ".join(tags)
+            anki_request("addTags", notes=[target_note_id], tags=tags_str)
+
+        return True, f"Successfully updated note {target_note_id} in Anki."
+
     except Exception as e:
         return False, str(e)
