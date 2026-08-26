@@ -3,6 +3,10 @@ document.getElementById("searchInput").addEventListener("keypress", function (e)
 });
 
 // Responsive Placeholder Text
+/**
+ * Dynamically updates the search bar placeholder text based on viewport width
+ * to prevent awkward text cropping on narrow mobile screens.
+ */
 function updateSearchPlaceholder() {
   const input = document.getElementById("searchInput");
   if (!input) return;
@@ -56,6 +60,10 @@ let activeShow = null;
 let activeSeason = null;
 let activeEp = null;
 
+/**
+ * Handles the selection of a specific Show from the unified filters.
+ * Resets the underlying season/episode states and refreshes the UI.
+ */
 function onShowChange() {
   activeShow = document.getElementById("filterShow").value || null;
   activeSeason = null;
@@ -64,6 +72,10 @@ function onShowChange() {
   renderResults();
 }
 
+/**
+ * Handles the selection of a specific Season or Episode from the unified filters.
+ * Parses the compound string value (e.g. "s1e2") to update internal filter state.
+ */
 function onEpisodeChange() {
   const val = document.getElementById("filterEpisode").value;
   if (!val) {
@@ -83,6 +95,10 @@ function onEpisodeChange() {
   renderResults();
 }
 
+/**
+ * Dynamically populates the Search Filter dropdowns based on the available data.
+ * Constructs optgroups for episodes categorized by season to improve readability.
+ */
 function populateDropdowns() {
   const showSelect = document.getElementById("filterShow");
   const epSelect = document.getElementById("filterEpisode");
@@ -135,9 +151,9 @@ function populateDropdowns() {
   }
 
   // Restore selection
-  if (activeSeason && activeEp) epSelect.value = `s${activeSeason}e${activeEp}`;
-  else if (activeSeason) epSelect.value = `s${activeSeason}`;
-  else if (activeEp) epSelect.value = `e${activeEp}`;
+  if (activeSeason !== null && activeEp !== null) epSelect.value = `s${activeSeason}e${activeEp}`;
+  else if (activeSeason !== null) epSelect.value = `s${activeSeason}`;
+  else if (activeEp !== null) epSelect.value = `e${activeEp}`;
 }
 
 /**
@@ -187,10 +203,10 @@ function renderResults() {
   if (activeShow) {
     filtered = filtered.filter((r) => (r.show_title || r.path.split("/").pop()) === activeShow);
   }
-  if (activeSeason) {
+  if (activeSeason !== null) {
     filtered = filtered.filter((r) => r.season == activeSeason);
   }
-  if (activeEp) {
+  if (activeEp !== null) {
     filtered = filtered.filter((r) => r.episode == activeEp);
   }
 
