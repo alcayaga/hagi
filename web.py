@@ -20,9 +20,12 @@ def _get_normalized_media_url(config_obj: dict) -> str | None:
     if isinstance(url, str):
         url = url.strip().rstrip("/")
         if url:
-            parsed = urllib.parse.urlparse(url)
-            if parsed.scheme in ("http", "https") and parsed.netloc and not parsed.query and not parsed.fragment:
-                return url
+            try:
+                parsed = urllib.parse.urlparse(url)
+                if parsed.scheme in ("http", "https") and parsed.netloc and not parsed.query and not parsed.fragment:
+                    return url
+            except ValueError:
+                pass
     return None
 
 app = FastAPI(title="Hagi Local UI")
