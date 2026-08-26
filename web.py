@@ -21,7 +21,7 @@ def _get_normalized_media_url(config_obj: dict) -> str | None:
         url = url.strip().rstrip("/")
         if url:
             parsed = urllib.parse.urlparse(url)
-            if parsed.scheme in ("http", "https") and parsed.netloc:
+            if parsed.scheme in ("http", "https") and parsed.netloc and not parsed.query and not parsed.fragment:
                 return url
     return None
 
