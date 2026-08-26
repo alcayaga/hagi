@@ -164,12 +164,14 @@ def test_export_ankiconnect(test_db):
         payload_audio = json.loads(req_audio.data.decode("utf-8"))
         assert payload_audio["action"] == "storeMediaFile"
         assert "audio.mp3" in payload_audio["params"]["path"]
+        assert payload_audio["params"]["deleteExisting"] is False
 
         # Verify storeMediaFile (image) request
         req_image = mock_urlopen.call_args_list[2][0][0]
         payload_image = json.loads(req_image.data.decode("utf-8"))
         assert payload_image["action"] == "storeMediaFile"
         assert "img.jpg" in payload_image["params"]["path"]
+        assert payload_image["params"]["deleteExisting"] is False
 
         # Verify updateNoteFields request
         req4 = mock_urlopen.call_args_list[3][0][0]
@@ -275,3 +277,72 @@ def test_export_ankiconnect_unconstrained(test_db):
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
         assert success is False
         assert "Refusing to query all Anki notes" in msg
+
+def test_export_ankiconnect_multiple_exports(test_db):
+    """Test that multiple exports of the same sentence do not overwrite media."""
+    import json
+
+    mock_config = {
+        "ankiConnectUrl": "http://127.0.0.1:8765",
+        "sentenceField": "Sentence",
+        "audioField": "Audio",
+        "imageField": "Picture"
+    }
+
+    def mock_exists(path):
+        return True
+
+    def mock_open(path, mode="r", *args, **kwargs):
+        from io import BytesIO
+        return BytesIO(b"fake_data")
+
+    with (
+        patch("exporter.extract_media") as mock_extract,
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("urllib.request.urlopen") as mock_urlopen,
+        patch("os.path.exists", mock_exists),
+        patch("builtins.open", mock_open)
+    ):
+        mock_extract.return_value = (
+            True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
+        )
+
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"result": "audio.mp3", "error": None}).encode("utf-8"),
+            json.dumps({"result": "img.jpg", "error": None}).encode("utf-8"),
+            json.dumps({"result": None, "error": None}).encode("utf-8"),
+
+            json.dumps({"result": "audio_1.mp3", "error": None}).encode("utf-8"),
+            json.dumps({"result": "img_1.jpg", "error": None}).encode("utf-8"),
+            json.dumps({"result": None, "error": None}).encode("utf-8")
+        ]
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sid = sentence["id"]
+
+        success1, msg1 = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9998)
+        success2, msg2 = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9999)
+
+        assert success1 is True
+        assert success2 is True
+
+        assert mock_urlopen.call_count == 6
+
+        # Verify first export
+        req_audio1 = mock_urlopen.call_args_list[0][0][0]
+        payload_audio1 = json.loads(req_audio1.data.decode("utf-8"))
+        assert payload_audio1["params"]["deleteExisting"] is False
+
+        req_note1 = mock_urlopen.call_args_list[2][0][0]
+        payload_note1 = json.loads(req_note1.data.decode("utf-8"))
+        assert payload_note1["params"]["note"]["id"] == 9998
+        assert payload_note1["params"]["note"]["fields"]["Audio"] == "[sound:audio.mp3]"
+
+        # Verify second export
+        req_note2 = mock_urlopen.call_args_list[5][0][0]
+        payload_note2 = json.loads(req_note2.data.decode("utf-8"))
+        assert payload_note2["params"]["note"]["id"] == 9999
+        assert payload_note2["params"]["note"]["fields"]["Audio"] == "[sound:audio_1.mp3]"

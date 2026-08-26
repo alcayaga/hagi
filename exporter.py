@@ -321,6 +321,7 @@ def export_ankiconnect(
         if audio_field and os.path.exists(audio_out):
             store_params = {
                 "filename": os.path.basename(audio_out),
+                "deleteExisting": False
             }
             if base_url:
                 store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(audio_out)}"
@@ -336,6 +337,7 @@ def export_ankiconnect(
         if image_field and os.path.exists(image_out):
             store_params = {
                 "filename": os.path.basename(image_out),
+                "deleteExisting": False
             }
             if base_url:
                 store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(image_out)}"
