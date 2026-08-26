@@ -98,3 +98,43 @@ def test_api_context_dual_audio(dual_audio_db):
         assert len(data["secondary_context"]) == 1
         assert data["secondary_context"][0]["text"] == "English translation"
         assert data["secondary_context"][0]["end_time"] == 15.0
+
+def test_export_anki_endpoint(test_db):
+    """Test the POST /api/anki endpoint."""
+    import json
+
+    # We mock os.path.exists and open to simulate a local config.json
+    def mock_exists(path):
+        if path == "config.json":
+            return True
+        return False
+
+    def mock_open(path, mode="r", *args, **kwargs):
+        if path == "config.json":
+            from io import StringIO
+            return StringIO(json.dumps({"ankiConnectUrl": "mock"}))
+        return open(path, mode, *args, **kwargs)
+
+    with (
+        patch("web.db.get_db", return_value=test_db),
+        patch("os.path.exists", mock_exists),
+        patch("builtins.open", mock_open),
+        patch("web.exporter.export_ankiconnect") as mock_ankiconnect
+    ):
+        mock_ankiconnect.return_value = (True, "Successfully updated note")
+
+        response = client.post(
+            "/api/anki/1",
+            json={"pad_start": 0.2, "pad_end": 0.8},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+        assert response.json()["message"] == "Successfully updated note"
+
+        # Verify it passed the correct params down to export_ankiconnect
+        mock_ankiconnect.assert_called_once()
+        args = mock_ankiconnect.call_args[0]
+        assert args[0] == 1  # sentence_id
+        assert args[1] == {"ankiConnectUrl": "mock"}  # config
+        assert args[3] == 0.2  # pad_start
+        assert args[4] == 0.8  # pad_end

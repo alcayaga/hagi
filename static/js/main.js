@@ -872,3 +872,71 @@ function replayAudio() {
     audio.play();
   }
 }
+
+/**
+ * Shows a toast notification.
+ * @param {string} message - Message to show.
+ * @param {string} type - 'success' or 'error'
+ */
+function showToast(message, type = "success") {
+  const container = document.getElementById("toastContainer");
+  if (!container) return;
+
+  const toast = document.createElement("div");
+  const bgClass = type === "success" ? "bg-green-600" : "bg-red-600";
+  toast.className = `flex items-center gap-2 text-white px-4 py-3 rounded shadow-lg transform transition-all duration-300 translate-y-10 opacity-0 ${bgClass}`;
+
+  const icon = type === "success" ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+
+  toast.innerHTML = `${icon}<span class="text-sm font-semibold">${message}</span>`;
+  container.appendChild(toast);
+
+  // Trigger animation
+  requestAnimationFrame(() => {
+    toast.classList.remove("translate-y-10", "opacity-0");
+  });
+
+  setTimeout(() => {
+    toast.classList.add("opacity-0");
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+/**
+ * Sends the currently extracted media to Anki via the backend API.
+ * Uses the exact parameters currently stored in currentExtraction.
+ * @param {HTMLElement} btn - The button element that was clicked
+ */
+async function sendToAnki(btn) {
+  if (!currentExtraction.id) return;
+
+  const originalHtml = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-white rounded-full"></div><span>Sending...</span>`;
+  btn.classList.add("opacity-70");
+
+  try {
+    const response = await fetch(`/api/anki/${currentExtraction.id}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pad_start: currentExtraction.padStart,
+        pad_end: currentExtraction.padEnd,
+      }),
+    });
+    const data = await response.json();
+
+    if (data.success) {
+      showToast("Successfully sent to Anki!", "success");
+    } else {
+      showToast(data.detail || "Failed to send to Anki.", "error");
+    }
+  } catch (err) {
+    console.error("Error sending to Anki:", err);
+    showToast("Error connecting to server.", "error");
+  } finally {
+    btn.innerHTML = originalHtml;
+    btn.disabled = false;
+    btn.classList.remove("opacity-70");
+  }
+}

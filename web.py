@@ -219,3 +219,25 @@ def extract(sentence_id: int, config: ExtractConfig):
         "image_url": f"/media/{os.path.basename(image_out)}",
         "text": text,
     }
+
+
+@app.post("/api/anki/{sentence_id}")
+def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
+    """Export a sentence to AnkiConnect using the existing local config."""
+    if not os.path.exists("config.json"):
+        raise HTTPException(status_code=500, detail="config.json not found.")
+
+    try:
+        import json
+        with open("config.json", "r") as f:
+            app_config = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
+
+    success, msg = exporter.export_ankiconnect(
+        sentence_id, app_config, "./media", config.pad_start, config.pad_end
+    )
+    if not success:
+         raise HTTPException(status_code=500, detail=msg)
+
+    return {"success": True, "message": msg}
