@@ -11,6 +11,17 @@ from pydantic import BaseModel
 import db
 import exporter
 
+
+def _get_normalized_media_url(config_obj: dict) -> str | None:
+    if not isinstance(config_obj, dict):
+        return None
+    url = config_obj.get("mediaBaseUrl")
+    if isinstance(url, str):
+        url = url.strip().rstrip("/")
+        if url:
+            return url
+    return None
+
 app = FastAPI(title="Hagi Local UI")
 
 # Startup warnings
@@ -19,9 +30,7 @@ if os.path.exists("config.json"):
     try:
         import json
         with open("config.json", "r") as _f:
-            _config = json.load(_f)
-            if isinstance(_config, dict) and _config.get("mediaBaseUrl"):
-                _has_media_base_url = True
+            _has_media_base_url = bool(_get_normalized_media_url(json.load(_f)))
     except Exception:
         pass
 
@@ -254,10 +263,8 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
 
-    media_base_url = app_config.get("mediaBaseUrl") if isinstance(app_config, dict) else None
-    if isinstance(media_base_url, str) and media_base_url.strip():
-        media_base_url = media_base_url.strip().rstrip("/")
-    else:
+    media_base_url = _get_normalized_media_url(app_config)
+    if not media_base_url:
         media_base_url = "http://localhost:8000"
 
     success, msg = exporter.export_ankiconnect(
