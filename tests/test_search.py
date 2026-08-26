@@ -101,6 +101,12 @@ def test_plex_metadata_filters(test_db):
     # Search with incorrect episode filter should return empty
     assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King", episode=6)) == 0
 
+    # Search with correct season filter should find it
+    assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King", season=1)) == 1
+
+    # Search with incorrect season filter should return empty
+    assert len(search_sentences(test_db, "ハオ様", show_title="Shaman King", season=2)) == 0
+
 
 def test_translation_matching(test_db):
     """Test that search results automatically fetch closest translation."""
