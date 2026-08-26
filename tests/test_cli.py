@@ -86,3 +86,37 @@ def test_anki_command(monkeypatch):
     assert called_args["sentence_id"] == 123
     assert called_args["config"] == {"ankiConnectUrl": "mock"}
     assert called_args["target_note_id"] == 999
+
+def test_anki_command_invalid_config(monkeypatch):
+    """Test anki command fails if config is invalid (e.g., array)."""
+    import os
+    import json
+
+    def mock_exists(path):
+        """Mock os.path.exists."""
+        if path == "config.json":
+            return True
+        return os.path.exists(path)
+
+    def mock_open(path, mode="r", *args, **kwargs):
+        """Mock open()."""
+        if path == "config.json":
+            from io import StringIO
+            # Return an array instead of a dictionary
+            return StringIO(json.dumps([]))
+        return open(path, mode, *args, **kwargs)
+
+    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("builtins.open", mock_open)
+
+    # We should let export_ankiconnect run natively to trigger the validation check
+    # But we mock extract_media to avoid db calls
+    import exporter
+    def mock_extract(sentence_id, out_dir, pad_start, pad_end):
+        """Mock extract_media."""
+        return True, "Extracted", "a.mp3", "b.jpg", "text"
+    monkeypatch.setattr(exporter, "extract_media", mock_extract)
+
+    result = runner.invoke(app, ["anki", "123"])
+    assert result.exit_code == 1
+    assert "Invalid configuration format" in result.stdout

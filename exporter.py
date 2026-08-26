@@ -208,6 +208,9 @@ def export_ankiconnect(
     if not success:
         return False, msg
 
+    if not isinstance(config, dict):
+        return False, "Invalid configuration format: expected a dictionary."
+
     anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
 
     def anki_request(action, **params):
