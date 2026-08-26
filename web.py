@@ -13,6 +13,26 @@ import exporter
 
 app = FastAPI(title="Hagi Local UI")
 
+# Startup warnings
+_has_media_base_url = False
+if os.path.exists("config.json"):
+    try:
+        import json
+        with open("config.json", "r") as _f:
+            _config = json.load(_f)
+            if isinstance(_config, dict) and _config.get("mediaBaseUrl"):
+                _has_media_base_url = True
+    except Exception:
+        pass
+
+if not _has_media_base_url:
+    print(
+        "Warning: 'mediaBaseUrl' not found in config.json. Defaulting to "
+        "http://localhost:8000 for Anki media exports. Remote Anki "
+        "instances will fail to download media.",
+        flush=True
+    )
+
 # Ensure templates directory exists
 os.makedirs("templates", exist_ok=True)
 templates = Jinja2Templates(directory="templates")
@@ -235,16 +255,13 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
         raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
 
     media_base_url = app_config.get("mediaBaseUrl") if isinstance(app_config, dict) else None
-    if not media_base_url:
-        print(
-            "Warning: 'mediaBaseUrl' not found in config.json. Defaulting to "
-            "http://localhost:8000. Remote Anki instances will fail to download media.",
-            flush=True
-        )
+    if isinstance(media_base_url, str) and media_base_url.strip():
+        media_base_url = media_base_url.strip().rstrip("/")
+    else:
         media_base_url = "http://localhost:8000"
 
     success, msg = exporter.export_ankiconnect(
-        sentence_id, app_config, "./media", config.pad_start, config.pad_end, base_url=media_base_url.rstrip('/')
+        sentence_id, app_config, "./media", config.pad_start, config.pad_end, base_url=media_base_url
     )
     if not success:
          raise HTTPException(status_code=500, detail=msg)
