@@ -73,13 +73,15 @@ async def get_ui(request: Request):
 
 
 @app.get("/api/search")
-def search(q: str = "", show: str = None, episode: int = None):
+def search(q: str = "", show: str = None, season: int = None, episode: int = None):
     """Search the database for sentences matching the query and filters."""
     if not q:
         return []
 
     conn = db.get_db()
-    results = db.search_sentences(conn, q, show_title=show, episode=episode)
+    results = db.search_sentences(
+        conn, q, show_title=show, season=season, episode=episode
+    )
     return [dict(r) for r in results]
 
 

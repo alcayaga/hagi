@@ -2,6 +2,24 @@ document.getElementById("searchInput").addEventListener("keypress", function (e)
   if (e.key === "Enter") performSearch();
 });
 
+// Responsive Placeholder Text
+/**
+ * Dynamically updates the search bar placeholder text based on viewport width
+ * to prevent awkward text cropping on narrow mobile screens.
+ */
+function updateSearchPlaceholder() {
+  const input = document.getElementById("searchInput");
+  if (!input) return;
+  if (window.innerWidth < 640) {
+    input.placeholder = "Search phrases...";
+  } else {
+    input.placeholder = "Search for a Japanese phrase or translation...";
+  }
+}
+window.addEventListener("resize", updateSearchPlaceholder);
+document.addEventListener("DOMContentLoaded", updateSearchPlaceholder);
+updateSearchPlaceholder();
+
 // Store all results locally so we can filter them on the client side
 let allSearchResults = [];
 
@@ -38,40 +56,104 @@ function getLangColors(lang) {
   );
 }
 
+let activeShow = null;
+let activeSeason = null;
+let activeEp = null;
+
 /**
- * Dynamically updates the episode dropdown based on the currently selected show,
- * then triggers a re-render of the search results table.
+ * Handles the selection of a specific Show from the unified filters.
+ * Resets the underlying season/episode states and refreshes the UI.
  */
-function updateEpisodesAndRender() {
-  const showFilter = document.getElementById("filterShow").value;
-  const epDropdown = document.getElementById("filterEpisode");
-  const currentEp = epDropdown.value;
+function onShowChange() {
+  activeShow = document.getElementById("filterShow").value || null;
+  activeSeason = null;
+  activeEp = null;
+  populateDropdowns();
+  renderResults();
+}
 
-  // Rebuild episodes dropdown based on the selected show
-  let availableEps = new Set();
-  allSearchResults.forEach((r) => {
-    const showName = r.show_title || r.path.split("/").pop();
-    if ((!showFilter || showName === showFilter) && r.episode !== null) {
-      availableEps.add(r.episode);
-    }
-  });
+/**
+ * Handles the selection of a specific Season or Episode from the unified filters.
+ * Parses the compound string value (e.g. "s1e2") to update internal filter state.
+ */
+function onEpisodeChange() {
+  const val = document.getElementById("filterEpisode").value;
+  if (!val) {
+    activeSeason = null;
+    activeEp = null;
+  } else if (val.startsWith("s") && val.includes("e")) {
+    const parts = val.split("e");
+    activeSeason = parseInt(parts[0].replace("s", ""));
+    activeEp = parseInt(parts[1]);
+  } else if (val.startsWith("s")) {
+    activeSeason = parseInt(val.replace("s", ""));
+    activeEp = null;
+  } else if (val.startsWith("e")) {
+    activeSeason = null;
+    activeEp = parseInt(val.replace("e", ""));
+  }
+  renderResults();
+}
 
-  const sortedEps = [...availableEps].sort((a, b) => a - b);
+/**
+ * Dynamically populates the Search Filter dropdowns based on the available data.
+ * Constructs optgroups for episodes categorized by season to improve readability.
+ */
+function populateDropdowns() {
+  const showSelect = document.getElementById("filterShow");
+  const epSelect = document.getElementById("filterEpisode");
+  const epWrapper = document.getElementById("episodeWrapper");
 
-  epDropdown.innerHTML = '<option value="">All Eps</option>';
-  sortedEps.forEach((ep) => {
-    const option = document.createElement("option");
-    option.value = ep;
-    option.innerText = `Ep ${ep}`;
-    epDropdown.appendChild(option);
-  });
-
-  // Restore previous selection if it's still valid
-  if (sortedEps.includes(parseInt(currentEp))) {
-    epDropdown.value = currentEp;
+  // 1. Always populate Shows
+  if (!showSelect.options.length || showSelect.options.length === 1) {
+    const uniqueShows = [...new Set(allSearchResults.map((r) => r.show_title || r.path.split("/").pop()))].sort();
+    showSelect.innerHTML = '<option value="">All Shows</option>';
+    uniqueShows.forEach((s) => showSelect.add(new Option(`${s}`, s)));
+    showSelect.value = activeShow || "";
   }
 
-  renderResults();
+  // 2. If no show selected, hide Episode wrapper
+  if (!activeShow) {
+    epWrapper.classList.add("hidden");
+    return;
+  }
+
+  // 3. Populate Unified Season & Episode Dropdown
+  const showResults = allSearchResults.filter((r) => (r.show_title || r.path.split("/").pop()) === activeShow);
+  const uniqueSeasons = [...new Set(showResults.filter((r) => r.season != null).map((r) => r.season))].sort((a, b) => a - b);
+  const hasEpisodes = showResults.some((r) => r.episode != null);
+
+  if (uniqueSeasons.length === 0 && !hasEpisodes) {
+    epWrapper.classList.add("hidden");
+    return;
+  }
+
+  epWrapper.classList.remove("hidden");
+  epSelect.innerHTML = '<option value="">All Episodes</option>';
+
+  if (uniqueSeasons.length > 0) {
+    uniqueSeasons.forEach((s) => {
+      const optGroup = document.createElement("optgroup");
+      optGroup.label = `Season ${s}`;
+      optGroup.appendChild(new Option(`All of Season ${s}`, `s${s}`));
+
+      const seasonEps = [...new Set(showResults.filter((r) => r.season == s && r.episode != null).map((r) => r.episode))].sort((a, b) => a - b);
+      seasonEps.forEach((e) => {
+        optGroup.appendChild(new Option(`S${s} E${e}`, `s${s}e${e}`));
+      });
+      epSelect.appendChild(optGroup);
+    });
+  } else {
+    const uniqueEps = [...new Set(showResults.filter((r) => r.episode != null).map((r) => r.episode))].sort((a, b) => a - b);
+    uniqueEps.forEach((e) => {
+      epSelect.add(new Option(`Episode ${e}`, `e${e}`));
+    });
+  }
+
+  // Restore selection
+  if (activeSeason !== null && activeEp !== null) epSelect.value = `s${activeSeason}e${activeEp}`;
+  else if (activeSeason !== null) epSelect.value = `s${activeSeason}`;
+  else if (activeEp !== null) epSelect.value = `e${activeEp}`;
 }
 
 /**
@@ -88,34 +170,21 @@ async function performSearch() {
   loading.classList.remove("hidden");
   container.innerHTML = "";
 
-  // Reset filters on a new search
+  // Reset filters
+  activeShow = null;
+  activeSeason = null;
+  activeEp = null;
   document.getElementById("filterShow").innerHTML = '<option value="">All Shows</option>';
-  document.getElementById("filterEpisode").innerHTML = '<option value="">All Eps</option>';
 
   try {
-    // Fetch ALL results matching the keyword
     const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     allSearchResults = await response.json();
 
-    // Extract unique shows to populate the dropdown
-    const uniqueShows = [...new Set(allSearchResults.map((r) => r.show_title || r.path.split("/").pop()))];
-    uniqueShows.sort();
-
-    const showDropdown = document.getElementById("filterShow");
-    uniqueShows.forEach((show) => {
-      const option = document.createElement("option");
-      option.value = show;
-      option.innerText = show;
-      showDropdown.appendChild(option);
-    });
-
-    // Update episodes dropdown and render the table
-    updateEpisodesAndRender();
-
-    // Show filters now that we have results
-    document.getElementById("filterContainer").classList.remove("hidden");
+    document.getElementById("filtersAndControlsWrapper").classList.remove("hidden");
+    populateDropdowns();
+    renderResults();
   } catch (error) {
-    tbody.innerHTML = `<tr><td colspan="5" class="px-6 py-4 text-center text-red-500">Error fetching results: ${error}</td></tr>`;
+    container.innerHTML = `<div class="px-6 py-4 text-center text-red-500">Error fetching results: ${error}</div>`;
   } finally {
     loading.classList.add("hidden");
   }
@@ -127,18 +196,18 @@ async function performSearch() {
  */
 function renderResults() {
   const container = document.getElementById("resultsList");
-  const showFilter = document.getElementById("filterShow").value;
-  const epFilter = document.getElementById("filterEpisode").value;
-
   container.innerHTML = "";
 
   // Apply client-side filters
   let filtered = allSearchResults;
-  if (showFilter) {
-    filtered = filtered.filter((r) => (r.show_title || r.path.split("/").pop()) === showFilter);
+  if (activeShow) {
+    filtered = filtered.filter((r) => (r.show_title || r.path.split("/").pop()) === activeShow);
   }
-  if (epFilter) {
-    filtered = filtered.filter((r) => r.episode == epFilter);
+  if (activeSeason !== null) {
+    filtered = filtered.filter((r) => r.season == activeSeason);
+  }
+  if (activeEp !== null) {
+    filtered = filtered.filter((r) => r.episode == activeEp);
   }
 
   if (filtered.length === 0) {
@@ -925,7 +994,7 @@ async function sendToAnki(btn) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         pad_start: currentExtraction.padStart,
-        pad_end: currentExtraction.padEnd
+        pad_end: currentExtraction.padEnd,
       }),
     });
     const data = await response.json();

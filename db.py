@@ -161,13 +161,14 @@ def add_sentences(conn, media_id, sentences):
     )
 
 
-def search_sentences(conn, query, show_title=None, episode=None):
+def search_sentences(conn, query, show_title=None, season=None, episode=None):
     """Search for sentences using a query string.
 
     Args:
         conn (sqlite3.Connection): Database connection.
         query (str): The search query.
         show_title (str, optional): Exact show title to filter by.
+        season (int, optional): Exact season number to filter by.
         episode (int, optional): Exact episode number to filter by.
 
     Returns:
@@ -195,6 +196,10 @@ def search_sentences(conn, query, show_title=None, episode=None):
     if show_title:
         conditions.append("m.show_title = ?")
         params.append(show_title)
+
+    if season is not None:
+        conditions.append("m.season = ?")
+        params.append(season)
 
     if episode is not None:
         conditions.append("m.episode = ?")
