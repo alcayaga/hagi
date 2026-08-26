@@ -326,7 +326,7 @@ def export_ankiconnect(
                 store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(audio_out)}"
             else:
                 store_params["path"] = os.path.abspath(audio_out)
-            
+
             actual_filename = anki_request("storeMediaFile", **store_params)
             if actual_filename:
                 current = fields_to_update.get(audio_field, "")
@@ -341,7 +341,7 @@ def export_ankiconnect(
                 store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(image_out)}"
             else:
                 store_params["path"] = os.path.abspath(image_out)
-            
+
             actual_filename = anki_request("storeMediaFile", **store_params)
             if actual_filename:
                 current = fields_to_update.get(image_field, "")
