@@ -319,27 +319,33 @@ def export_ankiconnect(
         # Add media
         audio_field = config.get("audioField")
         if audio_field and os.path.exists(audio_out):
-            audio_payload = {
+            store_params = {
                 "filename": os.path.basename(audio_out),
-                "fields": [audio_field]
             }
             if base_url:
-                audio_payload["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(audio_out)}"
+                store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(audio_out)}"
             else:
-                audio_payload["path"] = os.path.abspath(audio_out)
-            update_params["note"]["audio"] = [audio_payload]
+                store_params["path"] = os.path.abspath(audio_out)
+            
+            actual_filename = anki_request("storeMediaFile", **store_params)
+            if actual_filename:
+                current = fields_to_update.get(audio_field, "")
+                fields_to_update[audio_field] = current + f"[sound:{actual_filename}]"
 
         image_field = config.get("imageField")
         if image_field and os.path.exists(image_out):
-            image_payload = {
+            store_params = {
                 "filename": os.path.basename(image_out),
-                "fields": [image_field]
             }
             if base_url:
-                image_payload["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(image_out)}"
+                store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(image_out)}"
             else:
-                image_payload["path"] = os.path.abspath(image_out)
-            update_params["note"]["picture"] = [image_payload]
+                store_params["path"] = os.path.abspath(image_out)
+            
+            actual_filename = anki_request("storeMediaFile", **store_params)
+            if actual_filename:
+                current = fields_to_update.get(image_field, "")
+                fields_to_update[image_field] = current + f'<img src="{actual_filename}">'
 
         anki_request("updateNoteFields", **update_params)
 

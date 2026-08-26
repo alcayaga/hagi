@@ -137,6 +137,8 @@ def test_export_ankiconnect(test_db):
         # First call is findNotes, second is updateNoteFields
         mock_response.read.side_effect = [
             json.dumps({"result": [10001, 10002], "error": None}).encode("utf-8"),
+            json.dumps({"result": "audio.mp3", "error": None}).encode("utf-8"),
+            json.dumps({"result": "img.jpg", "error": None}).encode("utf-8"),
             json.dumps({"result": None, "error": None}).encode("utf-8"),
             json.dumps({"result": None, "error": None}).encode("utf-8")
         ]
@@ -149,7 +151,7 @@ def test_export_ankiconnect(test_db):
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
 
         assert success is True
-        assert mock_urlopen.call_count == 3
+        assert mock_urlopen.call_count == 5
 
         # Verify findNotes request
         req1 = mock_urlopen.call_args_list[0][0][0]
@@ -157,30 +159,38 @@ def test_export_ankiconnect(test_db):
         assert payload1["action"] == "findNotes"
         assert payload1["params"]["query"] == 'deck:"Mining" note:"Lapis"'
 
-        # Verify updateNoteFields request
-        req2 = mock_urlopen.call_args_list[1][0][0]
-        payload2 = json.loads(req2.data.decode("utf-8"))
-        assert payload2["action"] == "updateNoteFields"
+        # Verify storeMediaFile (audio) request
+        req_audio = mock_urlopen.call_args_list[1][0][0]
+        payload_audio = json.loads(req_audio.data.decode("utf-8"))
+        assert payload_audio["action"] == "storeMediaFile"
+        assert "audio.mp3" in payload_audio["params"]["path"]
 
-        params = payload2["params"]["note"]
+        # Verify storeMediaFile (image) request
+        req_image = mock_urlopen.call_args_list[2][0][0]
+        payload_image = json.loads(req_image.data.decode("utf-8"))
+        assert payload_image["action"] == "storeMediaFile"
+        assert "img.jpg" in payload_image["params"]["path"]
+
+        # Verify updateNoteFields request
+        req4 = mock_urlopen.call_args_list[3][0][0]
+        payload4 = json.loads(req4.data.decode("utf-8"))
+        assert payload4["action"] == "updateNoteFields"
+
+        params = payload4["params"]["note"]
         assert params["id"] == 10002 # max id
         assert params["fields"]["Sentence"] == "Test Text"
 
         # 10.0 start time = 10s = [00:10]
         assert params["fields"]["MiscInfo"] == "Conan S01E10 - The Case [00:10]"
-
-        assert params["audio"][0]["fields"] == ["SentenceAudio"]
-        assert "audio.mp3" in params["audio"][0]["path"]
-
-        assert params["picture"][0]["fields"] == ["Picture"]
-        assert "img.jpg" in params["picture"][0]["path"]
+        assert params["fields"]["SentenceAudio"] == "[sound:audio.mp3]"
+        assert params["fields"]["Picture"] == '<img src="img.jpg">'
 
         # Verify addTags request
-        req3 = mock_urlopen.call_args_list[2][0][0]
-        payload3 = json.loads(req3.data.decode("utf-8"))
-        assert payload3["action"] == "addTags"
-        assert payload3["params"]["notes"] == [10002]
-        assert payload3["params"]["tags"] == "anime hagi"
+        req5 = mock_urlopen.call_args_list[4][0][0]
+        payload5 = json.loads(req5.data.decode("utf-8"))
+        assert payload5["action"] == "addTags"
+        assert payload5["params"]["notes"] == [10002]
+        assert payload5["params"]["tags"] == "anime hagi"
 
 def test_export_ankiconnect_with_note_id(test_db):
     """Test that export_ankiconnect skips findNotes when target_note_id is provided."""
@@ -189,6 +199,8 @@ def test_export_ankiconnect_with_note_id(test_db):
     mock_config = {
         "ankiConnectUrl": "http://127.0.0.1:8765",
         "sentenceField": "Sentence",
+        "audioField": "Audio",
+        "imageField": "Picture",
         "tags": ["anime", "hagi"]
     }
 
@@ -216,6 +228,8 @@ def test_export_ankiconnect_with_note_id(test_db):
 
         mock_response = MagicMock()
         mock_response.read.side_effect = [
+            json.dumps({"result": "audio.mp3", "error": None}).encode("utf-8"),
+            json.dumps({"result": "img.jpg", "error": None}).encode("utf-8"),
             json.dumps({"result": None, "error": None}).encode("utf-8"),
             json.dumps({"result": None, "error": None}).encode("utf-8")
         ]
@@ -229,14 +243,14 @@ def test_export_ankiconnect_with_note_id(test_db):
 
         assert success is True
 
-        # Should have called updateNoteFields and addTags
-        assert mock_urlopen.call_count == 2
-        req = mock_urlopen.call_args_list[0][0][0]
+        # Should have called storeMediaFile twice, updateNoteFields, and addTags
+        assert mock_urlopen.call_count == 4
+        req = mock_urlopen.call_args_list[2][0][0]
         payload = json.loads(req.data.decode("utf-8"))
         assert payload["action"] == "updateNoteFields"
         assert payload["params"]["note"]["id"] == 9999
 
-        req2 = mock_urlopen.call_args_list[1][0][0]
+        req2 = mock_urlopen.call_args_list[3][0][0]
         payload2 = json.loads(req2.data.decode("utf-8"))
         assert payload2["action"] == "addTags"
         assert payload2["params"]["notes"] == [9999]
