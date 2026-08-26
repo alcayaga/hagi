@@ -175,3 +175,34 @@ def test_export_anki_endpoint_invalid_config(test_db):
         )
         assert response.status_code == 500
         assert "Invalid configuration format" in response.json()["detail"]
+
+
+def test_export_anki_endpoint_invalid_media_urls():
+    """Test that malformed mediaBaseUrl config triggers the localhost fallback."""
+    invalid_urls = [
+        "http://:8000",            # Missing host
+        "http://localhost:abc",    # Invalid port
+        "http://",                 # Missing host
+        "http://example.com/?q=1", # Has query
+        "http://example.com/#frag" # Has fragment
+    ]
+
+    for url in invalid_urls:
+        def mock_exists(path):
+            return path == "config.json"
+
+        def mock_open(*args, **kwargs):
+            from io import StringIO
+            import json
+            return StringIO(json.dumps({"mediaBaseUrl": url, "deck": "Default", "noteType": "Basic"}))
+
+        with (
+            patch("os.path.exists", mock_exists),
+            patch("builtins.open", mock_open),
+            patch("web.exporter.export_ankiconnect") as mock_anki,
+            patch("web.exporter.extract_media") as mock_extract
+        ):
+            mock_anki.return_value = (True, "Success")
+            mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text")
+            client.post("/api/anki/1", json={"pad_start": 0.2, "pad_end": 0.8})
+            assert mock_anki.call_args.kwargs["base_url"] == "http://localhost:8000"
