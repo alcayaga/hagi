@@ -888,7 +888,11 @@ function showToast(message, type = "success") {
 
   const icon = type === "success" ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
 
-  toast.innerHTML = `${icon}<span class="text-sm font-semibold">${message}</span>`;
+  toast.innerHTML = icon;
+  const textSpan = document.createElement("span");
+  textSpan.className = "text-sm font-semibold";
+  textSpan.textContent = message;
+  toast.appendChild(textSpan);
   container.appendChild(toast);
 
   // Trigger animation

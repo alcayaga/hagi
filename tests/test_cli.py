@@ -48,11 +48,13 @@ def test_anki_command(monkeypatch):
 
     # Mock config
     def mock_exists(path):
+        """Mock os.path.exists."""
         if path == "config.json":
             return True
         return os.path.exists(path)
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock open()."""
         if path == "config.json":
             from io import StringIO
             return StringIO(json.dumps({"ankiConnectUrl": "mock"}))
@@ -66,6 +68,7 @@ def test_anki_command(monkeypatch):
 
     called_args = {}
     def mock_export_ankiconnect(sentence_id, config, out_dir, pad_start, pad_end, target_note_id):
+        """Mock export_ankiconnect."""
         called_args.update({
             "sentence_id": sentence_id,
             "config": config,

@@ -105,11 +105,13 @@ def test_export_anki_endpoint(test_db):
 
     # We mock os.path.exists and open to simulate a local config.json
     def mock_exists(path):
+        """Mock os.path.exists."""
         if path == "config.json":
             return True
         return False
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock open()."""
         if path == "config.json":
             from io import StringIO
             return StringIO(json.dumps({"ankiConnectUrl": "mock"}))

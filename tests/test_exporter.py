@@ -216,3 +216,22 @@ def test_export_ankiconnect_with_note_id(test_db):
         assert payload2["params"]["notes"] == [9999]
         assert payload2["params"]["tags"] == "anime hagi"
 
+
+def test_export_ankiconnect_unconstrained(test_db):
+    """Test that export_ankiconnect rejects unconstrained searches."""
+    mock_config = {
+        "ankiConnectUrl": "http://127.0.0.1:8765"
+    }
+
+    with patch("exporter.extract_media") as mock_extract, \
+         patch("exporter.db.get_db", return_value=test_db):
+        mock_extract.return_value = (
+            True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
+        )
+
+        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sid = sentence["id"]
+
+        success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
+        assert success is False
+        assert "Refusing to query all Anki notes" in msg

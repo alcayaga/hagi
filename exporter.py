@@ -211,10 +211,11 @@ def export_ankiconnect(
     anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
 
     def anki_request(action, **params):
+        """Helper to send requests to AnkiConnect API."""
         req_data = json.dumps({"action": action, "version": 6, "params": params}).encode("utf-8")
         req = urllib.request.Request(anki_url, req_data, headers={"Content-Type": "application/json"})
         try:
-            with urllib.request.urlopen(req) as response:
+            with urllib.request.urlopen(req, timeout=10.0) as response:
                 res = json.loads(response.read().decode("utf-8"))
                 if res.get("error"):
                     raise Exception(res["error"])
@@ -240,13 +241,13 @@ def export_ankiconnect(
             show_part = ""
             if meta["show_title"]:
                 show_part += meta["show_title"]
-            
+
             ep_part = ""
             if meta["season"] is not None and meta["episode"] is not None:
                 ep_part = f"S{meta['season']:02d}E{meta['episode']:02d}"
             elif meta["episode"] is not None:
                 ep_part = f"Ep {meta['episode']:02d}"
-                
+
             if show_part and ep_part:
                 show_part += f" {ep_part}"
             elif ep_part:
@@ -271,13 +272,18 @@ def export_ankiconnect(
                     parts.append(title_part)
             if time_str:
                 parts.append(time_str)
-                
+
             source_info = " ".join(parts)
 
         # Resolve note ID
         if not target_note_id:
             deck = config.get("deck", "")
             note_type = config.get("noteType", "")
+
+            if not deck and not note_type:
+                return False, ("Refusing to query all Anki notes. Please provide "
+                               "'deck' or 'noteType' in config.json, or specify a target Note ID.")
+
             query_parts = []
             if deck:
                 query_parts.append(f"deck:\"{deck}\"")

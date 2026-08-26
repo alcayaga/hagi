@@ -223,6 +223,7 @@ def anki(
         console.print(f"[green]{msg}[/green]")
     else:
         console.print(f"[red]Error: {msg}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command()
