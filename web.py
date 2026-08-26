@@ -22,7 +22,14 @@ def _get_normalized_media_url(config_obj: dict) -> str | None:
         if url:
             try:
                 parsed = urllib.parse.urlparse(url)
-                if parsed.scheme in ("http", "https") and parsed.hostname and not parsed.query and not parsed.fragment:
+                if (
+                    parsed.scheme in ("http", "https")
+                    and parsed.hostname
+                    and not parsed.query
+                    and not parsed.fragment
+                    and "?" not in url
+                    and "#" not in url
+                ):
                     _ = parsed.port
                     return url
             except ValueError:

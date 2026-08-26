@@ -184,14 +184,16 @@ def test_export_anki_endpoint_invalid_media_urls():
         "http://localhost:abc",    # Invalid port
         "http://",                 # Missing host
         "http://example.com/?q=1", # Has query
-        "http://example.com/#frag" # Has fragment
+        "http://example.com/#frag", # Has fragment
+        "http://example.com/?",    # Bare query delimiter
+        "http://example.com/#"     # Bare fragment delimiter
     ]
 
     for url in invalid_urls:
         def mock_exists(path):
             return path == "config.json"
 
-        def mock_open(*args, **kwargs):
+        def mock_open(*args, url=url, **kwargs):
             from io import StringIO
             import json
             return StringIO(json.dumps({"mediaBaseUrl": url, "deck": "Default", "noteType": "Basic"}))
