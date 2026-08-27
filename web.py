@@ -245,6 +245,7 @@ class ExtractConfig(BaseModel):
 
     pad_start: float = 0.5
     pad_end: float = 0.5
+    target_note_id: int | None = None
 
 
 @app.post("/api/extract/{sentence_id}")
@@ -284,7 +285,13 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
         media_base_url = "http://localhost:8000"
 
     success, msg = exporter.export_ankiconnect(
-        sentence_id, app_config, "./media", config.pad_start, config.pad_end, base_url=media_base_url
+        sentence_id,
+        app_config,
+        "./media",
+        config.pad_start,
+        config.pad_end,
+        target_note_id=config.target_note_id,
+        base_url=media_base_url
     )
     if not success:
          raise HTTPException(status_code=500, detail=msg)

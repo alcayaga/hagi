@@ -529,6 +529,9 @@ function closeModal(modalId, audioId = null) {
   if (audioId) {
     document.getElementById(audioId).pause();
   }
+  if (modalId === "mediaModal") {
+    toggleModalView("mediaExtractView");
+  }
 }
 
 /**
@@ -986,8 +989,9 @@ function showToast(message, type = "success") {
  * Sends the currently extracted media to Anki via the backend API.
  * Uses the exact parameters currently stored in currentExtraction.
  * @param {HTMLElement} btn - The button element that was clicked
+ * @param {string|null} targetNoteId - Optional specific NID to update
  */
-async function sendToAnki(btn) {
+async function sendToAnki(btn, targetNoteId = null) {
   if (!currentExtraction.id) return;
 
   const originalHtml = btn.innerHTML;
@@ -996,18 +1000,24 @@ async function sendToAnki(btn) {
   btn.classList.add("opacity-70");
 
   try {
+    const payload = {
+      pad_start: currentExtraction.padStart,
+      pad_end: currentExtraction.padEnd,
+    };
+    if (targetNoteId) {
+      payload.target_note_id = parseInt(targetNoteId, 10);
+    }
+
     const response = await fetch(`/api/anki/${currentExtraction.id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        pad_start: currentExtraction.padStart,
-        pad_end: currentExtraction.padEnd,
-      }),
+      body: JSON.stringify(payload),
     });
     const data = await response.json();
 
     if (data.success) {
       showToast("Successfully sent to Anki!", "success");
+      if (targetNoteId) toggleModalView("mediaExtractView");
     } else {
       showToast(data.detail || "Failed to send to Anki.", "error");
     }
@@ -1018,5 +1028,45 @@ async function sendToAnki(btn) {
     btn.innerHTML = originalHtml;
     btn.disabled = false;
     btn.classList.remove("opacity-70");
+  }
+}
+
+/**
+ * Handles sending to a specific Anki NID from the UI
+ */
+function sendToAnkiSpecific(btn) {
+  const nidInput = document.getElementById("ankiTargetNid");
+  const nid = nidInput.value.trim();
+  if (!nid) {
+    showToast("Please enter a Note ID.", "error");
+    return;
+  }
+  sendToAnki(btn, nid);
+}
+
+/**
+ * Toggles the views inside the media extraction modal
+ */
+function toggleModalView(viewName) {
+  const extractView = document.getElementById("mediaExtractView");
+  const searchView = document.getElementById("mediaAnkiSearchView");
+  const backBtn = document.getElementById("mediaModalBackButton");
+
+  if (!extractView || !searchView || !backBtn) return;
+
+  if (viewName === "mediaAnkiSearchView") {
+    extractView.classList.add("-translate-x-full");
+    searchView.classList.remove("invisible", "translate-x-full");
+    backBtn.classList.remove("hidden");
+  } else {
+    extractView.classList.remove("-translate-x-full");
+    searchView.classList.add("translate-x-full");
+    backBtn.classList.add("hidden");
+    // Hide completely after transition to prevent blocking clicks
+    setTimeout(() => {
+      if (!extractView.classList.contains("-translate-x-full")) {
+        searchView.classList.add("invisible");
+      }
+    }, 300);
   }
 }

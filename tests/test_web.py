@@ -142,6 +142,39 @@ def test_export_anki_endpoint(test_db):
         assert args[4] == 0.8  # pad_end
         assert mock_ankiconnect.call_args.kwargs["base_url"] == "http://localhost:8000"
 
+def test_export_anki_endpoint_with_nid(test_db):
+    """Test the POST /api/anki endpoint when target_note_id is provided."""
+    import json
+
+    def mock_exists(path):
+        """Mock os.path.exists."""
+        return path == "config.json"
+
+    def mock_open(path, mode="r", *args, **kwargs):
+        """Mock open()."""
+        if path == "config.json":
+            from io import StringIO
+            return StringIO(json.dumps({"ankiConnectUrl": "mock"}))
+        return open(path, mode, *args, **kwargs)
+
+    with (
+        patch("web.db.get_db", return_value=test_db),
+        patch("os.path.exists", mock_exists),
+        patch("builtins.open", mock_open),
+        patch("web.exporter.export_ankiconnect") as mock_ankiconnect
+    ):
+        mock_ankiconnect.return_value = (True, "Successfully updated note")
+
+        response = client.post(
+            "/api/anki/1",
+            json={"pad_start": 0.2, "pad_end": 0.8, "target_note_id": 12345},
+        )
+        assert response.status_code == 200
+        assert response.json()["success"] is True
+
+        mock_ankiconnect.assert_called_once()
+        assert mock_ankiconnect.call_args.kwargs["target_note_id"] == 12345
+
 def test_export_anki_endpoint_invalid_config(test_db):
     """Test the POST /api/anki endpoint with invalid config (e.g. array)."""
     import json
