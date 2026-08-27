@@ -71,7 +71,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
         WHERE media_id = ? AND language = ?
           AND ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) >= ?
           AND ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) <= ?
-        ORDER BY start_time ASC, id ASC
+        ORDER BY ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) ASC, id ASC
         """,
         (target["media_id"], target["language"], start, end)
     ).fetchall()
