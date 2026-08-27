@@ -1078,6 +1078,9 @@ function toggleModalView(viewName) {
     searchView.removeAttribute("inert");
     backBtn.classList.remove("opacity-0", "pointer-events-none");
     backBtn.removeAttribute("tabindex");
+    setTimeout(() => {
+      document.getElementById("ankiTargetNid")?.focus();
+    }, 300);
   } else {
     extractView.classList.remove("-translate-x-full");
     extractView.removeAttribute("inert");
@@ -1089,6 +1092,7 @@ function toggleModalView(viewName) {
     setTimeout(() => {
       if (!extractView.classList.contains("-translate-x-full")) {
         searchView.classList.add("invisible");
+        document.getElementById("btnReextract")?.focus();
       }
     }, 300);
   }
