@@ -83,17 +83,19 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
             if not text:
                 return ""
             if lang in ("jpn", "ja", "jp", "zho", "zh"):
-                return re.sub(r"<br\s*/?>|\n", "", text, flags=re.IGNORECASE)
+                return re.sub(r"<br\s*/?>|[\r\n]+", "", text, flags=re.IGNORECASE)
             else:
-                return re.sub(r"<br\s*/?>|\n", " ", text, flags=re.IGNORECASE)
+                return re.sub(r"<br\s*/?>|[\r\n]+", " ", text, flags=re.IGNORECASE)
 
         lang = target["language"]
         combined_text = ""
 
-        for i, s in enumerate(overlapping_sentences):
+        for s in overlapping_sentences:
             text_val = clean_text(s["text"], lang)
+            if not text_val.strip():
+                continue
 
-            if i == 0:
+            if not combined_text:
                 combined_text = text_val
                 continue
 
@@ -112,9 +114,9 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
         text_val = target["text"] if target["text"] else ""
         lang = target["language"]
         if lang in ("jpn", "ja", "jp", "zho", "zh"):
-            combined_text = re.sub(r"<br\s*/?>|\n", "", text_val, flags=re.IGNORECASE)
+            combined_text = re.sub(r"<br\s*/?>|[\r\n]+", "", text_val, flags=re.IGNORECASE)
         else:
-            combined_text = re.sub(r"<br\s*/?>|\n", " ", text_val, flags=re.IGNORECASE)
+            combined_text = re.sub(r"<br\s*/?>|[\r\n]+", " ", text_val, flags=re.IGNORECASE)
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
