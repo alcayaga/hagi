@@ -16,11 +16,7 @@ def test_db():
 
     # Add a mock sentence for testing
     media_id = db.add_media(conn, "/fake/path/episode1.mkv", "mkv_embedded")
-    db.add_sentences(conn, media_id, [
-        ("jpn", 8.0, 10.0, "Previous\nsentence."),
-        ("jpn", 10.0, 15.0, "This is a<br/>test sentence."),
-        ("jpn", 15.0, 17.0, "Next sentence.")
-    ])
+    db.add_sentences(conn, media_id, [("jpn", 10.0, 15.0, "This is a test sentence.")])
 
     yield conn
     conn.close()
@@ -35,7 +31,7 @@ def test_extract_media(test_db):
         patch("subprocess.run") as mock_subrun,
     ):
         # Get the ID of the mock sentence
-        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a<br/>test sentence.'").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, _msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
@@ -44,10 +40,7 @@ def test_extract_media(test_db):
         assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}.mp3"
         assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}.jpg"
 
-        # Because padding is 0.5, it overlaps with the previous (end 10.0 > 9.5)
-        # and next sentence (start 15.0 < 15.5)
-        # They will be combined using <br/> after replacing newlines with spaces.
-        assert text == "Previous sentence.<br/>This is a test sentence.<br/>Next sentence."
+        assert text == "This is a test sentence."
 
         # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)
         assert mock_subrun.call_count == 3
@@ -153,7 +146,7 @@ def test_export_ankiconnect(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a<br/>test sentence.'").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
@@ -246,7 +239,7 @@ def test_export_ankiconnect_with_note_id(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a<br/>test sentence.'").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9999)
@@ -279,7 +272,7 @@ def test_export_ankiconnect_unconstrained(test_db):
             True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
         )
 
-        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a<br/>test sentence.'").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
@@ -330,7 +323,7 @@ def test_export_ankiconnect_multiple_exports(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a<br/>test sentence.'").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success1, _ = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9998)
@@ -356,3 +349,46 @@ def test_export_ankiconnect_multiple_exports(test_db):
         payload_note2 = json.loads(req_note2.data.decode("utf-8"))
         assert payload_note2["params"]["note"]["id"] == 9999
         assert payload_note2["params"]["note"]["fields"]["Audio"] == "[sound:audio_1.mp3]"
+
+
+def test_extract_media_concatenation(test_db):
+    """Test that extract_media correctly concatenates overlapping sentences by language grammar."""
+    with (
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("subprocess.run"),
+    ):
+        # 1. Japanese (No Punctuation)
+        m1 = db.add_media(test_db, "/fake/path/ep2.mkv", "mkv_embedded")
+        db.add_sentences(test_db, m1, [
+            ("jpn", 8.0, 10.0, "冷凍メンチ冷凍コロッケの"),
+            ("jpn", 10.0, 15.0, "生産工場の完成記念スペシャルゲストとして"),
+            ("jpn", 15.0, 17.0, "来ていただきとても光栄です。")
+        ])
+        res = test_db.execute("SELECT id FROM sentences WHERE text = '生産工場の完成記念スペシャルゲストとして'").fetchone()
+        sid_jpn_no_punct = res["id"]
+        _, _, _, _, text1 = exporter.extract_media(sid_jpn_no_punct, "/fake/out")
+        assert text1 == "冷凍メンチ冷凍コロッケの生産工場の完成記念スペシャルゲストとして来ていただきとても光栄です。"
+
+        # 2. Japanese (With Punctuation)
+        m2 = db.add_media(test_db, "/fake/path/ep3.mkv", "mkv_embedded")
+        db.add_sentences(test_db, m2, [
+            ("jpn", 8.0, 10.0, "そうだ。"),
+            ("jpn", 10.0, 15.0, "行くぞ"),
+            ("jpn", 15.0, 17.0, "待って")
+        ])
+        sid_jpn_punct = test_db.execute("SELECT id FROM sentences WHERE text = '行くぞ'").fetchone()["id"]
+        _, _, _, _, text2 = exporter.extract_media(sid_jpn_punct, "/fake/out")
+        assert text2 == "そうだ。<br/>行くぞ<br/>待って"
+
+        # 3. English (Punctuation and Spacing)
+        m3 = db.add_media(test_db, "/fake/path/ep4.mkv", "mkv_embedded")
+        db.add_sentences(test_db, m3, [
+            ("eng", 8.0, 10.0, "Hello\nthere"),
+            ("eng", 10.0, 15.0, "How are you?"),
+            ("eng", 15.0, 17.0, "Good.")
+        ])
+        sid_eng = test_db.execute("SELECT id FROM sentences WHERE text = 'How are you?'").fetchone()["id"]
+        _, _, _, _, text3 = exporter.extract_media(sid_eng, "/fake/out")
+        assert text3 == "Hello there. How are you? Good."

@@ -77,14 +77,43 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
 
     if overlapping_sentences:
         import re
-        cleaned_sentences = []
-        for s in overlapping_sentences:
-            text_val = s["text"] if s["text"] else ""
-            cleaned = re.sub(r"<br\s*/?>|\n", " ", text_val, flags=re.IGNORECASE)
-            cleaned_sentences.append(cleaned)
-        combined_text = "<br/>".join(cleaned_sentences)
+
+        def clean_text(text: str, lang: str) -> str:
+            if not text:
+                return ""
+            if lang in ("jpn", "ja", "jp", "zho", "zh"):
+                return re.sub(r"<br\s*/?>|\n", "", text, flags=re.IGNORECASE)
+            else:
+                return re.sub(r"<br\s*/?>|\n", " ", text, flags=re.IGNORECASE)
+
+        lang = target["language"]
+        combined_text = ""
+
+        for i, s in enumerate(overlapping_sentences):
+            text_val = clean_text(s["text"], lang)
+
+            if i == 0:
+                combined_text = text_val
+                continue
+
+            if lang in ("jpn", "ja", "jp", "zho", "zh"):
+                prev_trimmed = combined_text.strip()
+                ends_sentence = bool(re.search(r'[だですまるかよねわぞ。！？]$', prev_trimmed))
+                delimiter = "<br/>" if ends_sentence else ""
+                combined_text = combined_text + delimiter + text_val
+            else:
+                prev_trimmed = combined_text.strip()
+                if prev_trimmed and not re.search(r'[.!?…,;:]$', prev_trimmed):
+                    prev_trimmed += "."
+                combined_text = prev_trimmed + " " + text_val
     else:
-        combined_text = target["text"] if target["text"] else ""
+        import re
+        text_val = target["text"] if target["text"] else ""
+        lang = target["language"]
+        if lang in ("jpn", "ja", "jp", "zho", "zh"):
+            combined_text = re.sub(r"<br\s*/?>|\n", "", text_val, flags=re.IGNORECASE)
+        else:
+            combined_text = re.sub(r"<br\s*/?>|\n", " ", text_val, flags=re.IGNORECASE)
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
