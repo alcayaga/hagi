@@ -30,7 +30,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     conn = db.get_db()
     target = conn.execute(
         """
-        SELECT s.id, s.text, s.start_time, s.end_time, m.path
+        SELECT s.id, s.text, s.start_time, s.end_time, s.language, s.media_id, m.path
         FROM sentences s
         JOIN media m ON s.media_id = m.id
         WHERE s.id = ?
@@ -62,6 +62,24 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     end = target["end_time"] + pad_end
     duration = end - start
     midpoint = start + (duration / 2)
+
+    # Grab overlapping text within the padded timeframe
+    overlapping_sentences = conn.execute(
+        """
+        SELECT text
+        FROM sentences
+        WHERE media_id = ? AND language = ?
+          AND start_time < ? AND end_time > ?
+        ORDER BY start_time ASC, id ASC
+        """,
+        (target["media_id"], target["language"], end, start)
+    ).fetchall()
+
+    if overlapping_sentences:
+        delimiter = "" if target["language"] in ("jpn", "ja", "jp", "zho", "zh") else " "
+        combined_text = delimiter.join([s["text"] for s in overlapping_sentences])
+    else:
+        combined_text = target["text"]
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
@@ -137,7 +155,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
             "Media extracted successfully",
             audio_out,
             image_out,
-            target["text"],
+            combined_text,
         )
     except Exception as e:
         return False, str(e), None, None, None

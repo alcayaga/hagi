@@ -16,7 +16,11 @@ def test_db():
 
     # Add a mock sentence for testing
     media_id = db.add_media(conn, "/fake/path/episode1.mkv", "mkv_embedded")
-    db.add_sentences(conn, media_id, [("jpn", 10.0, 15.0, "This is a test sentence.")])
+    db.add_sentences(conn, media_id, [
+        ("jpn", 8.0, 10.0, "Previous sentence."),
+        ("jpn", 10.0, 15.0, "This is a test sentence."),
+        ("jpn", 15.0, 17.0, "Next sentence.")
+    ])
 
     yield conn
     conn.close()
@@ -31,7 +35,7 @@ def test_extract_media(test_db):
         patch("subprocess.run") as mock_subrun,
     ):
         # Get the ID of the mock sentence
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
@@ -39,7 +43,11 @@ def test_extract_media(test_db):
         assert success is True
         assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}.mp3"
         assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}.jpg"
-        assert text == "This is a test sentence."
+
+        # Because padding is 0.5, it overlaps with the previous (end 10.0 > 9.5)
+        # and next sentence (start 15.0 < 15.5)
+        # They will be combined without spaces because the language is "jpn".
+        assert text == "Previous sentence.This is a test sentence.Next sentence."
 
         # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)
         assert mock_subrun.call_count == 3
@@ -145,7 +153,7 @@ def test_export_ankiconnect(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
@@ -238,7 +246,7 @@ def test_export_ankiconnect_with_note_id(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9999)
@@ -271,7 +279,7 @@ def test_export_ankiconnect_unconstrained(test_db):
             True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
         )
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
@@ -322,7 +330,7 @@ def test_export_ankiconnect_multiple_exports(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success1, _ = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9998)
