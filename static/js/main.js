@@ -1079,7 +1079,7 @@ function toggleModalView(viewName) {
     backBtn.classList.remove("opacity-0", "pointer-events-none");
     backBtn.removeAttribute("tabindex");
     setTimeout(() => {
-      if (!document.getElementById("mediaModal").classList.contains("hidden")) {
+      if (!document.getElementById("mediaModal").classList.contains("hidden") && extractView.classList.contains("-translate-x-full")) {
         document.getElementById("ankiTargetNid")?.focus();
       }
     }, 300);
