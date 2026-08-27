@@ -1079,7 +1079,9 @@ function toggleModalView(viewName) {
     backBtn.classList.remove("opacity-0", "pointer-events-none");
     backBtn.removeAttribute("tabindex");
     setTimeout(() => {
-      document.getElementById("ankiTargetNid")?.focus();
+      if (!document.getElementById("mediaModal").classList.contains("hidden")) {
+        document.getElementById("ankiTargetNid")?.focus();
+      }
     }, 300);
   } else {
     extractView.classList.remove("-translate-x-full");
@@ -1092,7 +1094,9 @@ function toggleModalView(viewName) {
     setTimeout(() => {
       if (!extractView.classList.contains("-translate-x-full")) {
         searchView.classList.add("invisible");
-        document.getElementById("btnReextract")?.focus();
+        if (!document.getElementById("mediaModal").classList.contains("hidden")) {
+          document.getElementById("btnReextract")?.focus();
+        }
       }
     }, 300);
   }
