@@ -23,6 +23,10 @@ When a user searches for a term, the engine doesn't just return the matching sen
 - It does this by finding sentences in the same media file where `ABS(start_time - target_start_time) < 5.0`.
 - Because of these correlated subqueries, **always ensure proper indexing** (e.g., on `media_id`, `language`, and `start_time`) to prevent massive full-table scans.
 
+## ✂️ Timeline & Extraction Logic
+- **Frontend/Backend Parity:** The frontend (`static/js/main.js`) has sophisticated grammatical logic for joining overlapping sentences (e.g., squishing Japanese text together unless it ends in a specific punctuation like `[だですまるかよねわぞ。！？]$`). The backend `exporter.py` must perfectly mirror this logic when extracting to Anki.
+- **Midpoint Bounding Logic:** When grabbing overlapping sentences within a padded timeframe, the logic determines inclusion based on the **midpoint** of the subtitle (`(start + end) / 2.0`) falling within the padded bounds. Do not use greedy `start < end AND end > start` overlaps.
+- **Carriage Returns:** When cleaning text from raw subtitles, always use the regex `[\r\n]+` to handle Windows-style CRLF breaks natively found in subtitle files.
 
 ## 🔌 AnkiConnect Integration
 `hagi` integrates natively with local Anki instances via AnkiConnect (`http://127.0.0.1:8765`).
@@ -45,14 +49,17 @@ When a user searches for a term, the engine doesn't just return the matching sen
   ```
 ## 🛠️ General Guidelines
 - Do not run commands using `python3` globally; always use the `hagi` conda environment.
-- When generating SQL, prefer subqueries or joins on `sentences_fts` for text searching rather than raw `LIKE` on the `sentences` table.
+- When generating SQL, prefer subqueries or joins on `sentences_fts` for text searching rather than raw `LIKE` on the `sentences` table. **However, note that FTS5 trigram indexes do not always work well with short Japanese words of 2 or fewer characters, so `LIKE` may be necessary in those edge cases.**
+- **Conventional Commits:** It is mandatory to use the Conventional Commits standard (e.g., `feat:`, `fix:`) for all commit messages. This standard must also be applied to branch naming (e.g., `feat/...`, `fix/...`).
 
 ## 🔄 GitHub PR & Review Loop
 When committing new features or fixes, you are expected to handle the entire PR lifecycle natively:
-1. Commit your changes and push the branch to origin.
-2. Create the Pull Request using the GitHub CLI (`gh pr create`).
-3. Monitor the pre-merge checks and wait for CodeRabbit AI's review to finish by running:
+1. **Testing is Mandatory:** You must run the full unit tests (`PYTHONPATH=. conda run -n hagi pytest`) and ensure they pass before making *any* commit.
+2. Commit your changes and push the branch to origin. **Do NOT push multiple commits rapidly**, as this breaks or auto-pauses the CodeRabbit AI review process. Wait for the review to finish before pushing iterative fixes.
+3. Create the Pull Request using the GitHub CLI (`gh pr create`). It is required to fill out and follow the PR template provided by the repository.
+4. Monitor the pre-merge checks and wait for CodeRabbit AI's review to finish by running:
    ```bash
    gh pr checks <pr_number> --watch --interval 60 && gh pr view <pr_number> --comments
    ```
-4. Address any actionable review comments from CodeRabbit. Ensure all tests and coverage checks pass before merging via `gh pr merge <pr_number> --squash --delete-branch`.
+5. **Do NOT ask the user for feedback** until the `gh pr checks` command definitively reports that the CodeRabbit review has passed and you have checked for new comments.
+6. Address any actionable review comments from CodeRabbit. Ensure all tests and coverage checks pass before merging via `gh pr merge <pr_number> --squash --delete-branch`.
