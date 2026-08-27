@@ -847,6 +847,11 @@ async function applyTimelineExtraction() {
   const targetStart = timelineData.target.start_time || 0;
   const targetEnd = timelineData.target.end_time || targetStart + 2.0;
 
+  if (timelineData.selectedEnd <= timelineData.selectedStart) {
+    alert("Invalid timeline selection.");
+    return;
+  }
+
   currentExtraction.padStart = targetStart - timelineData.selectedStart;
   currentExtraction.padEnd = timelineData.selectedEnd - targetEnd;
 
