@@ -76,10 +76,15 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     ).fetchall()
 
     if overlapping_sentences:
-        delimiter = "" if target["language"] in ("jpn", "ja", "jp", "zho", "zh") else " "
-        combined_text = delimiter.join([s["text"] for s in overlapping_sentences])
+        import re
+        cleaned_sentences = []
+        for s in overlapping_sentences:
+            text_val = s["text"] if s["text"] else ""
+            cleaned = re.sub(r"<br\s*/?>|\n", " ", text_val, flags=re.IGNORECASE)
+            cleaned_sentences.append(cleaned)
+        combined_text = "<br/>".join(cleaned_sentences)
     else:
-        combined_text = target["text"]
+        combined_text = target["text"] if target["text"] else ""
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")

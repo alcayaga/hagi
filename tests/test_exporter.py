@@ -46,8 +46,8 @@ def test_extract_media(test_db):
 
         # Because padding is 0.5, it overlaps with the previous (end 10.0 > 9.5)
         # and next sentence (start 15.0 < 15.5)
-        # They will be combined without spaces because the language is "jpn".
-        assert text == "Previous sentence.This is a test sentence.Next sentence."
+        # They will be combined using <br/> after replacing newlines with spaces.
+        assert text == "Previous sentence.<br/>This is a test sentence.<br/>Next sentence."
 
         # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)
         assert mock_subrun.call_count == 3
