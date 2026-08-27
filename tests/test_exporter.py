@@ -359,12 +359,15 @@ def test_extract_media_concatenation(test_db):
         patch("os.path.exists", return_value=True),
         patch("subprocess.run"),
     ):
+        # Bounding box will be [8.5, 16.5] for all tests since pad_start=1.5, pad_end=1.5 on target [10.0, 15.0]
         # 1. Japanese (No Punctuation)
         m1 = db.add_media(test_db, "/fake/path/ep2.mkv", "mkv_embedded")
         db.add_sentences(test_db, m1, [
-            ("jpn", 8.0, 10.0, "冷凍メンチ冷凍コロッケの"),
-            ("jpn", 10.0, 15.0, "生産工場の完成記念スペシャルゲストとして"),
-            ("jpn", 15.0, 17.0, "来ていただきとても光栄です。")
+            ("jpn", 7.0, 8.6, "本日はフライ氏の特産品である"), # Midpoint 7.8 (Excluded: < 8.5, but overlaps > 8.5)
+            ("jpn", 8.0, 10.0, "冷凍メンチ冷凍コロッケの"), # Midpoint 9.0 (Included)
+            ("jpn", 10.0, 15.0, "生産工場の完成記念スペシャルゲストとして"), # Midpoint 12.5 (Included)
+            ("jpn", 15.0, 17.0, "来ていただきとても光栄です。"), # Midpoint 16.0 (Included)
+            ("jpn", 16.4, 18.0, "名探偵毛利小五郎大先生を") # Midpoint 17.2 (Excluded: > 16.5, but overlaps < 16.5)
         ])
         res = test_db.execute("SELECT id FROM sentences WHERE text = '生産工場の完成記念スペシャルゲストとして'").fetchone()
         sid_jpn_no_punct = res["id"]
@@ -374,9 +377,11 @@ def test_extract_media_concatenation(test_db):
         # 2. Japanese (With Punctuation)
         m2 = db.add_media(test_db, "/fake/path/ep3.mkv", "mkv_embedded")
         db.add_sentences(test_db, m2, [
-            ("jpn", 8.0, 10.0, "そうだ。"),
-            ("jpn", 10.0, 15.0, "行くぞ"),
-            ("jpn", 15.0, 17.0, "待って")
+            ("jpn", 7.0, 8.6, "前回のあらすじ"), # Midpoint 7.8 (Excluded)
+            ("jpn", 8.0, 10.0, "そうだ。"), # Midpoint 9.0 (Included)
+            ("jpn", 10.0, 15.0, "行くぞ"), # Midpoint 12.5 (Included)
+            ("jpn", 15.0, 17.0, "待って"), # Midpoint 16.0 (Included)
+            ("jpn", 16.4, 18.0, "次回予告") # Midpoint 17.2 (Excluded)
         ])
         sid_jpn_punct = test_db.execute("SELECT id FROM sentences WHERE text = '行くぞ'").fetchone()["id"]
         _, _, _, _, text2 = exporter.extract_media(sid_jpn_punct, "/fake/out", pad_start=1.5, pad_end=1.5)
@@ -385,9 +390,11 @@ def test_extract_media_concatenation(test_db):
         # 3. English (Punctuation and Spacing)
         m3 = db.add_media(test_db, "/fake/path/ep4.mkv", "mkv_embedded")
         db.add_sentences(test_db, m3, [
-            ("eng", 8.0, 10.0, "Hello\nthere"),
-            ("eng", 10.0, 15.0, "How are you?"),
-            ("eng", 15.0, 17.0, "Good.")
+            ("eng", 7.0, 8.6, "Previously on"), # Midpoint 7.8 (Excluded)
+            ("eng", 8.0, 10.0, "Hello\nthere"), # Midpoint 9.0 (Included)
+            ("eng", 10.0, 15.0, "How are you?"), # Midpoint 12.5 (Included)
+            ("eng", 15.0, 17.0, "Good."), # Midpoint 16.0 (Included)
+            ("eng", 16.4, 18.0, "Next time") # Midpoint 17.2 (Excluded)
         ])
         sid_eng = test_db.execute("SELECT id FROM sentences WHERE text = 'How are you?'").fetchone()["id"]
         _, _, _, _, text3 = exporter.extract_media(sid_eng, "/fake/out", pad_start=1.5, pad_end=1.5)
