@@ -31,14 +31,15 @@ def test_extract_media(test_db):
         patch("subprocess.run") as mock_subrun,
     ):
         # Get the ID of the mock sentence
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
-        success, msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
+        success, _msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
 
         assert success is True
         assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}.mp3"
         assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}.jpg"
+
         assert text == "This is a test sentence."
 
         # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)
@@ -145,7 +146,7 @@ def test_export_ankiconnect(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
@@ -238,7 +239,7 @@ def test_export_ankiconnect_with_note_id(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9999)
@@ -271,7 +272,7 @@ def test_export_ankiconnect_unconstrained(test_db):
             True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
         )
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success, msg = exporter.export_ankiconnect(sid, mock_config, "/fake/out")
@@ -322,7 +323,7 @@ def test_export_ankiconnect_multiple_exports(test_db):
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        sentence = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
         success1, _ = exporter.export_ankiconnect(sid, mock_config, "/fake/out", target_note_id=9998)
@@ -348,3 +349,53 @@ def test_export_ankiconnect_multiple_exports(test_db):
         payload_note2 = json.loads(req_note2.data.decode("utf-8"))
         assert payload_note2["params"]["note"]["id"] == 9999
         assert payload_note2["params"]["note"]["fields"]["Audio"] == "[sound:audio_1.mp3]"
+
+
+def test_extract_media_concatenation(test_db):
+    """Test that extract_media correctly concatenates overlapping sentences by language grammar."""
+    with (
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("subprocess.run"),
+    ):
+        # Bounding box will be [8.5, 16.5] for all tests since pad_start=1.5, pad_end=1.5 on target [10.0, 15.0]
+        # 1. Japanese (No Punctuation)
+        m1 = db.add_media(test_db, "/fake/path/ep2.mkv", "mkv_embedded")
+        db.add_sentences(test_db, m1, [
+            ("jpn", 7.0, 8.6, "本日はフライ氏の特産品である"), # Midpoint 7.8 (Excluded: < 8.5, but overlaps > 8.5)
+            ("jpn", 8.0, 10.0, "冷凍メンチ冷凍コロッケの"), # Midpoint 9.0 (Included)
+            ("jpn", 10.0, 15.0, "生産工場の完成記念スペシャルゲストとして"), # Midpoint 12.5 (Included)
+            ("jpn", 15.0, 17.0, "来ていただきとても光栄です。"), # Midpoint 16.0 (Included)
+            ("jpn", 16.4, 18.0, "名探偵毛利小五郎大先生を") # Midpoint 17.2 (Excluded: > 16.5, but overlaps < 16.5)
+        ])
+        res = test_db.execute("SELECT id FROM sentences WHERE text = '生産工場の完成記念スペシャルゲストとして'").fetchone()
+        sid_jpn_no_punct = res["id"]
+        _, _, _, _, text1 = exporter.extract_media(sid_jpn_no_punct, "/fake/out", pad_start=1.5, pad_end=1.5)
+        assert text1 == "冷凍メンチ冷凍コロッケの生産工場の完成記念スペシャルゲストとして来ていただきとても光栄です。"
+
+        # 2. Japanese (With Punctuation)
+        m2 = db.add_media(test_db, "/fake/path/ep3.mkv", "mkv_embedded")
+        db.add_sentences(test_db, m2, [
+            ("jpn", 7.0, 8.6, "前回のあらすじ"), # Midpoint 7.8 (Excluded)
+            ("jpn", 8.0, 10.0, "そうだ。"), # Midpoint 9.0 (Included)
+            ("jpn", 10.0, 15.0, "行くぞ"), # Midpoint 12.5 (Included)
+            ("jpn", 15.0, 17.0, "待って"), # Midpoint 16.0 (Included)
+            ("jpn", 16.4, 18.0, "次回予告") # Midpoint 17.2 (Excluded)
+        ])
+        sid_jpn_punct = test_db.execute("SELECT id FROM sentences WHERE text = '行くぞ'").fetchone()["id"]
+        _, _, _, _, text2 = exporter.extract_media(sid_jpn_punct, "/fake/out", pad_start=1.5, pad_end=1.5)
+        assert text2 == "そうだ。<br/>行くぞ<br/>待って"
+
+        # 3. English (Punctuation and Spacing)
+        m3 = db.add_media(test_db, "/fake/path/ep4.mkv", "mkv_embedded")
+        db.add_sentences(test_db, m3, [
+            ("eng", 7.0, 8.6, "Previously on"), # Midpoint 7.8 (Excluded)
+            ("eng", 8.0, 10.0, "Hello\nthere"), # Midpoint 9.0 (Included)
+            ("eng", 10.0, 15.0, "How are you?"), # Midpoint 12.5 (Included)
+            ("eng", 15.0, 17.0, "Good."), # Midpoint 16.0 (Included)
+            ("eng", 16.4, 18.0, "Next time") # Midpoint 17.2 (Excluded)
+        ])
+        sid_eng = test_db.execute("SELECT id FROM sentences WHERE text = 'How are you?'").fetchone()["id"]
+        _, _, _, _, text3 = exporter.extract_media(sid_eng, "/fake/out", pad_start=1.5, pad_end=1.5)
+        assert text3 == "Hello there. How are you? Good."

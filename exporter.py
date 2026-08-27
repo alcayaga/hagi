@@ -30,7 +30,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     conn = db.get_db()
     target = conn.execute(
         """
-        SELECT s.id, s.text, s.start_time, s.end_time, m.path
+        SELECT s.id, s.text, s.start_time, s.end_time, s.language, s.media_id, m.path
         FROM sentences s
         JOIN media m ON s.media_id = m.id
         WHERE s.id = ?
@@ -62,6 +62,61 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     end = target["end_time"] + pad_end
     duration = end - start
     midpoint = start + (duration / 2)
+
+    # Grab overlapping text whose midpoint falls within the padded timeframe (matching UI logic)
+    overlapping_sentences = conn.execute(
+        """
+        SELECT text
+        FROM sentences
+        WHERE media_id = ? AND language = ?
+          AND ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) >= ?
+          AND ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) <= ?
+        ORDER BY ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) ASC, id ASC
+        """,
+        (target["media_id"], target["language"], start, end)
+    ).fetchall()
+
+    if overlapping_sentences:
+        import re
+
+        def clean_text(text: str, lang: str) -> str:
+            if not text:
+                return ""
+            if lang in ("jpn", "ja", "jp", "zho", "zh"):
+                return re.sub(r"<br\s*/?>|[\r\n]+", "", text, flags=re.IGNORECASE)
+            else:
+                return re.sub(r"<br\s*/?>|[\r\n]+", " ", text, flags=re.IGNORECASE)
+
+        lang = target["language"]
+        combined_text = ""
+
+        for s in overlapping_sentences:
+            text_val = clean_text(s["text"], lang)
+            if not text_val.strip():
+                continue
+
+            if not combined_text:
+                combined_text = text_val
+                continue
+
+            if lang in ("jpn", "ja", "jp", "zho", "zh"):
+                prev_trimmed = combined_text.strip()
+                ends_sentence = bool(re.search(r'[だですまるかよねわぞ。！？]$', prev_trimmed))
+                delimiter = "<br/>" if ends_sentence else ""
+                combined_text = combined_text + delimiter + text_val
+            else:
+                prev_trimmed = combined_text.strip()
+                if prev_trimmed and not re.search(r'[.!?…,;:]$', prev_trimmed):
+                    prev_trimmed += "."
+                combined_text = prev_trimmed + " " + text_val
+    else:
+        import re
+        text_val = target["text"] if target["text"] else ""
+        lang = target["language"]
+        if lang in ("jpn", "ja", "jp", "zho", "zh"):
+            combined_text = re.sub(r"<br\s*/?>|[\r\n]+", "", text_val, flags=re.IGNORECASE)
+        else:
+            combined_text = re.sub(r"<br\s*/?>|[\r\n]+", " ", text_val, flags=re.IGNORECASE)
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
@@ -137,7 +192,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
             "Media extracted successfully",
             audio_out,
             image_out,
-            target["text"],
+            combined_text,
         )
     except Exception as e:
         return False, str(e), None, None, None
