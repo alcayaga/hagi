@@ -566,16 +566,17 @@ async function copyExtractItem(type, btn) {
   if (!content) return;
 
   const span = btn.querySelector("span");
-  const originalText = span.innerText;
+  const targetElement = span ? span : btn;
+  const originalText = targetElement.innerText;
 
   try {
     await navigator.clipboard.writeText(content);
-    span.innerText = "Copied!";
+    targetElement.innerText = "Copied!";
   } catch (err) {
     console.error("Failed to copy: ", err);
-    span.innerText = "Failed";
+    targetElement.innerText = "Failed";
   }
-  setTimeout(() => (span.innerText = originalText), 2000);
+  setTimeout(() => (targetElement.innerText = originalText), 2000);
 }
 
 let timelineData = {
@@ -1000,9 +1001,20 @@ async function sendToAnki(btn, targetNoteId = null) {
   btn.classList.add("opacity-70");
 
   try {
+    let sendPadStart = currentExtraction.padStart;
+    let sendPadEnd = currentExtraction.padEnd;
+
+    // If the timeline is open, prefer its current slider state
+    if (timelineData && timelineData.target) {
+      const targetStart = timelineData.target.start_time || 0;
+      const targetEnd = timelineData.target.end_time || targetStart + 2.0;
+      sendPadStart = targetStart - timelineData.selectedStart;
+      sendPadEnd = timelineData.selectedEnd - targetEnd;
+    }
+
     const payload = {
-      pad_start: currentExtraction.padStart,
-      pad_end: currentExtraction.padEnd,
+      pad_start: sendPadStart,
+      pad_end: sendPadEnd,
     };
     if (targetNoteId) {
       payload.target_note_id = Number(targetNoteId);
@@ -1062,11 +1074,11 @@ function toggleModalView(viewName) {
   if (viewName === "mediaAnkiSearchView") {
     extractView.classList.add("-translate-x-full");
     searchView.classList.remove("invisible", "translate-x-full");
-    backBtn.classList.remove("hidden");
+    backBtn.classList.remove("opacity-0", "pointer-events-none");
   } else {
     extractView.classList.remove("-translate-x-full");
     searchView.classList.add("translate-x-full");
-    backBtn.classList.add("hidden");
+    backBtn.classList.add("opacity-0", "pointer-events-none");
     // Hide completely after transition to prevent blocking clicks
     setTimeout(() => {
       if (!extractView.classList.contains("-translate-x-full")) {
