@@ -1073,12 +1073,18 @@ function toggleModalView(viewName) {
 
   if (viewName === "mediaAnkiSearchView") {
     extractView.classList.add("-translate-x-full");
+    extractView.setAttribute("inert", "");
     searchView.classList.remove("invisible", "translate-x-full");
+    searchView.removeAttribute("inert");
     backBtn.classList.remove("opacity-0", "pointer-events-none");
+    backBtn.removeAttribute("tabindex");
   } else {
     extractView.classList.remove("-translate-x-full");
+    extractView.removeAttribute("inert");
     searchView.classList.add("translate-x-full");
+    searchView.setAttribute("inert", "");
     backBtn.classList.add("opacity-0", "pointer-events-none");
+    backBtn.setAttribute("tabindex", "-1");
     // Hide completely after transition to prevent blocking clicks
     setTimeout(() => {
       if (!extractView.classList.contains("-translate-x-full")) {
