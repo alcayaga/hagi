@@ -90,91 +90,113 @@
     <div id="mediaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full flex flex-col max-h-[90vh] overflow-hidden border dark:border-gray-700">
         <div class="p-4 md:px-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 flex-shrink-0">
-          <div id="mediaMetadata" class="truncate w-full pr-4">Extracted Media</div>
-          <button onclick="closeModal('mediaModal', 'mediaAudio')" class="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition">
+          <div class="flex items-center gap-2 w-full pr-4 overflow-hidden">
+            <button id="mediaModalBackButton" tabindex="-1" aria-label="Back to Extraction View" onclick="toggleModalView('mediaExtractView')" class="opacity-0 pointer-events-none flex-shrink-0 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+            </button>
+            <div id="mediaMetadata" class="truncate w-full">Extracted Media</div>
+          </div>
+          <button onclick="closeModal('mediaModal', 'mediaAudio')" class="flex-shrink-0 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
             </svg>
           </button>
         </div>
-        <div class="p-4 md:p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6 md:gap-8">
-          <!-- Left Column -->
-          <div class="w-full md:w-2/5 flex flex-col gap-4 justify-center">
-            <div class="relative w-full cursor-pointer group rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 shadow-sm" onclick="replayAudio()">
-              <img id="mediaImage" src="" alt="Snapshot" class="w-full object-contain bg-black block" />
-
-              <!-- Play Button Overlay -->
-              <div class="absolute inset-0 flex justify-center items-center opacity-0 group-hover:opacity-100 transition duration-200 bg-black bg-opacity-20">
-                <div class="bg-black bg-opacity-60 text-white rounded-full p-3 backdrop-blur-sm shadow-lg transform transition group-hover:scale-110 group-active:scale-95">
-                  <svg class="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
+        <div class="relative overflow-hidden flex-grow flex flex-col">
+          <!-- View 1: Extract -->
+          <div id="mediaExtractView" class="p-4 md:p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6 md:gap-8 transition-transform duration-300 w-full">
+            <!-- Left Column -->
+            <div class="w-full md:w-2/5 flex flex-col gap-4 justify-center">
+              <div class="relative w-full cursor-pointer group rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 shadow-sm" onclick="replayAudio()">
+                <img id="mediaImage" src="" alt="Snapshot" class="w-full object-contain bg-black block" />
+  
+                <!-- Play Button Overlay -->
+                <div class="absolute inset-0 flex justify-center items-center opacity-0 group-hover:opacity-100 transition duration-200 bg-black bg-opacity-20">
+                  <div class="bg-black bg-opacity-60 text-white rounded-full p-3 backdrop-blur-sm shadow-lg transform transition group-hover:scale-110 group-active:scale-95">
+                    <svg class="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </div>
+                </div>
+  
+                <!-- Timestamp Overlay -->
+                <div id="mediaTimestampBadge" class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs font-mono px-1.5 py-0.5 rounded shadow z-10"></div>
+  
+                <div id="mediaModalLoading" class="hidden absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
                 </div>
               </div>
-
-              <!-- Timestamp Overlay -->
-              <div id="mediaTimestampBadge" class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs font-mono px-1.5 py-0.5 rounded shadow z-10"></div>
-
-              <div id="mediaModalLoading" class="hidden absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center">
-                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
+              <audio id="mediaAudio" class="hidden"></audio>
+            </div>
+  
+            <!-- Right Column -->
+            <div class="w-full md:w-3/5 flex flex-col gap-4">
+              <div>
+                <p id="mediaText" class="text-2xl font-bold dark:text-gray-100"></p>
+                <div id="mediaTranslations" class="mt-2 text-left inline-block"></div>
+              </div>
+              <!-- Timeline Controls -->
+              <div class="flex flex-col w-full gap-2 mt-auto">
+                <div class="flex justify-between items-center px-1">
+                  <span class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Fine-tune Extraction</span>
+                  <span class="text-xs font-mono text-gray-500" id="timelineDurationDisplay">0.00s</span>
+                </div>
+  
+                <!-- Custom Timeline Range Slider -->
+                <div class="relative w-full h-10 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 overflow-hidden select-none touch-none" id="timelineContainer">
+                  <!-- JS will populate grid, marks, and draggable selection handles here -->
+                </div>
+  
+                <div class="flex justify-between items-center mt-1">
+                  <div class="flex gap-2 items-center text-[10px] text-gray-400" id="timelineLegend">
+                    <!-- JS will populate this -->
+                  </div>
+                  <button id="btnReextract" onclick="applyTimelineExtraction()" class="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">Apply & Re-extract</button>
+                </div>
+              </div>
+  
+              <!-- Actions -->
+              <div class="flex flex-wrap sm:flex-nowrap gap-2 w-full border-t dark:border-gray-700 pt-4">
+                <!-- Grouped Copy Actions -->
+                <div class="relative group">
+                  <button class="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold h-full whitespace-nowrap">
+                    <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                    Copy
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </button>
+                  <div class="absolute bottom-full left-0 mb-1 hidden group-hover:block group-focus-within:block w-32 bg-white dark:bg-gray-800 border dark:border-gray-700 rounded shadow-lg overflow-hidden z-50">
+                    <button onclick="copyExtractItem('image', this)" class="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm dark:text-gray-200">Image</button>
+                    <button onclick="copyExtractItem('audio', this)" class="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm dark:text-gray-200 border-t dark:border-gray-700">Audio</button>
+                    <button onclick="copyExtractItem('text', this)" class="w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 text-sm dark:text-gray-200 border-t dark:border-gray-700">Phrase</button>
+                  </div>
+                </div>
+                
+                <!-- Anki Buttons -->
+                <button onclick="toggleModalView('mediaAnkiSearchView')" class="flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-4 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold whitespace-nowrap">
+                  <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                  <span>Update Specific...</span>
+                </button>
+                <button onclick="sendToAnki(this)" class="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white px-4 py-2 rounded hover:bg-indigo-700 dark:hover:bg-indigo-500 transition shadow-sm text-sm font-semibold whitespace-nowrap">
+                  <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
+                  </svg>
+                  <span>Quick Update</span>
+                </button>
               </div>
             </div>
-            <audio id="mediaAudio" class="hidden"></audio>
           </div>
 
-          <!-- Right Column -->
-          <div class="w-full md:w-3/5 flex flex-col gap-4">
-            <div>
-              <p id="mediaText" class="text-2xl font-bold dark:text-gray-100"></p>
-              <div id="mediaTranslations" class="mt-2 text-left inline-block"></div>
+          <!-- View 2: Anki Search -->
+          <div id="mediaAnkiSearchView" inert class="absolute inset-0 p-4 md:p-6 overflow-y-auto flex flex-col gap-4 w-full transform translate-x-full transition-transform duration-300 bg-white dark:bg-gray-800 invisible">
+            <h3 class="text-xl font-bold dark:text-gray-100">Update Specific Anki Card</h3>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Enter the Note ID (NID) of the card you want to update. You can find this in Anki's browser.</p>
+            <div class="flex gap-2">
+              <input type="number" id="ankiTargetNid" aria-label="Note ID" placeholder="e.g. 1700000000000" class="flex-1 p-2 border rounded dark:bg-gray-800 dark:border-gray-600 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+              <button onclick="sendToAnkiSpecific(this)" class="flex items-center justify-center gap-2 w-36 bg-indigo-600 text-white px-4 py-2 rounded font-bold hover:bg-indigo-700 transition shadow-sm whitespace-nowrap">Update Card</button>
             </div>
-            <!-- Timeline Controls -->
-            <div class="flex flex-col w-full gap-2 mt-auto">
-              <div class="flex justify-between items-center px-1">
-                <span class="text-xs text-gray-500 dark:text-gray-400 font-bold uppercase tracking-wide">Fine-tune Extraction</span>
-                <span class="text-xs font-mono text-gray-500" id="timelineDurationDisplay">0.00s</span>
-              </div>
-
-              <!-- Custom Timeline Range Slider -->
-              <div class="relative w-full h-10 bg-white dark:bg-gray-800 rounded border dark:border-gray-600 overflow-hidden select-none touch-none" id="timelineContainer">
-                <!-- JS will populate grid, marks, and draggable selection handles here -->
-              </div>
-
-              <div class="flex justify-between items-center mt-1">
-                <div class="flex gap-2 items-center text-[10px] text-gray-400" id="timelineLegend">
-                  <!-- JS will populate this -->
-                </div>
-                <button id="btnReextract" onclick="applyTimelineExtraction()" class="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">Apply & Re-extract</button>
-              </div>
-            </div>
-
-            <!-- Copy Actions -->
-            <div class="grid grid-cols-2 sm:flex sm:flex-row gap-2 w-full border-t dark:border-gray-700 pt-4">
-              <button onclick="copyExtractItem('image', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
-                </svg>
-                <span class="whitespace-nowrap">Image</span>
-              </button>
-              <button onclick="copyExtractItem('audio', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
-                </svg>
-                <span class="whitespace-nowrap">Audio</span>
-              </button>
-              <button onclick="copyExtractItem('text', this)" class="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-2 py-2 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
-                </svg>
-                <span class="whitespace-nowrap">Phrase</span>
-              </button>
-
-              <button onclick="sendToAnki(this)" class="flex-1 flex items-center justify-center gap-2 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white px-2 py-2 rounded hover:bg-indigo-700 dark:hover:bg-indigo-500 transition shadow-sm text-sm font-semibold">
-                <svg class="h-4 w-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
-                </svg>
-                <span class="whitespace-nowrap">Anki</span>
-              </button>
+            <!-- Placeholder for future search results -->
+            <div class="flex-grow mt-4 border-t dark:border-gray-700 pt-8 flex items-center justify-center text-gray-400 text-sm">
+              Card search functionality coming soon.
             </div>
           </div>
         </div>

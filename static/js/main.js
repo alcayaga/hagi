@@ -529,6 +529,9 @@ function closeModal(modalId, audioId = null) {
   if (audioId) {
     document.getElementById(audioId).pause();
   }
+  if (modalId === "mediaModal") {
+    toggleModalView("mediaExtractView");
+  }
 }
 
 /**
@@ -563,16 +566,17 @@ async function copyExtractItem(type, btn) {
   if (!content) return;
 
   const span = btn.querySelector("span");
-  const originalText = span.innerText;
+  const targetElement = span ? span : btn;
+  const originalText = targetElement.innerText;
 
   try {
     await navigator.clipboard.writeText(content);
-    span.innerText = "Copied!";
+    targetElement.innerText = "Copied!";
   } catch (err) {
     console.error("Failed to copy: ", err);
-    span.innerText = "Failed";
+    targetElement.innerText = "Failed";
   }
-  setTimeout(() => (span.innerText = originalText), 2000);
+  setTimeout(() => (targetElement.innerText = originalText), 2000);
 }
 
 let timelineData = {
@@ -986,8 +990,9 @@ function showToast(message, type = "success") {
  * Sends the currently extracted media to Anki via the backend API.
  * Uses the exact parameters currently stored in currentExtraction.
  * @param {HTMLElement} btn - The button element that was clicked
+ * @param {string|null} targetNoteId - Optional specific NID to update
  */
-async function sendToAnki(btn) {
+async function sendToAnki(btn, targetNoteId = null) {
   if (!currentExtraction.id) return;
 
   const originalHtml = btn.innerHTML;
@@ -996,18 +1001,35 @@ async function sendToAnki(btn) {
   btn.classList.add("opacity-70");
 
   try {
+    let sendPadStart = currentExtraction.padStart;
+    let sendPadEnd = currentExtraction.padEnd;
+
+    // If the timeline is open, prefer its current slider state
+    if (timelineData && timelineData.target) {
+      const targetStart = timelineData.target.start_time || 0;
+      const targetEnd = timelineData.target.end_time || targetStart + 2.0;
+      sendPadStart = targetStart - timelineData.selectedStart;
+      sendPadEnd = timelineData.selectedEnd - targetEnd;
+    }
+
+    const payload = {
+      pad_start: sendPadStart,
+      pad_end: sendPadEnd,
+    };
+    if (targetNoteId) {
+      payload.target_note_id = Number(targetNoteId);
+    }
+
     const response = await fetch(`/api/anki/${currentExtraction.id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        pad_start: currentExtraction.padStart,
-        pad_end: currentExtraction.padEnd,
-      }),
+      body: JSON.stringify(payload),
     });
     const data = await response.json();
 
     if (data.success) {
       showToast("Successfully sent to Anki!", "success");
+      if (targetNoteId) toggleModalView("mediaExtractView");
     } else {
       showToast(data.detail || "Failed to send to Anki.", "error");
     }
@@ -1018,5 +1040,64 @@ async function sendToAnki(btn) {
     btn.innerHTML = originalHtml;
     btn.disabled = false;
     btn.classList.remove("opacity-70");
+  }
+}
+
+/**
+ * Handles sending to a specific Anki NID from the UI
+ */
+function sendToAnkiSpecific(btn) {
+  const nidInput = document.getElementById("ankiTargetNid");
+  const nid = nidInput.value.trim();
+  if (!nid) {
+    showToast("Please enter a Note ID.", "error");
+    return;
+  }
+  const numericNid = Number(nid);
+  if (!Number.isSafeInteger(numericNid) || numericNid <= 0) {
+    showToast("Please enter a valid positive Note ID.", "error");
+    return;
+  }
+  sendToAnki(btn, numericNid);
+}
+
+/**
+ * Toggles the views inside the media extraction modal
+ */
+function toggleModalView(viewName) {
+  const extractView = document.getElementById("mediaExtractView");
+  const searchView = document.getElementById("mediaAnkiSearchView");
+  const backBtn = document.getElementById("mediaModalBackButton");
+
+  if (!extractView || !searchView || !backBtn) return;
+
+  if (viewName === "mediaAnkiSearchView") {
+    extractView.classList.add("-translate-x-full");
+    extractView.setAttribute("inert", "");
+    searchView.classList.remove("invisible", "translate-x-full");
+    searchView.removeAttribute("inert");
+    backBtn.classList.remove("opacity-0", "pointer-events-none");
+    backBtn.removeAttribute("tabindex");
+    setTimeout(() => {
+      if (!document.getElementById("mediaModal").classList.contains("hidden") && extractView.classList.contains("-translate-x-full")) {
+        document.getElementById("ankiTargetNid")?.focus();
+      }
+    }, 300);
+  } else {
+    extractView.classList.remove("-translate-x-full");
+    extractView.removeAttribute("inert");
+    searchView.classList.add("translate-x-full");
+    searchView.setAttribute("inert", "");
+    backBtn.classList.add("opacity-0", "pointer-events-none");
+    backBtn.setAttribute("tabindex", "-1");
+    // Hide completely after transition to prevent blocking clicks
+    setTimeout(() => {
+      if (!extractView.classList.contains("-translate-x-full")) {
+        searchView.classList.add("invisible");
+        if (!document.getElementById("mediaModal").classList.contains("hidden")) {
+          document.getElementById("btnReextract")?.focus();
+        }
+      }
+    }, 300);
   }
 }
