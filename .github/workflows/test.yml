@@ -1,0 +1,25 @@
+name: Test
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Conda environment
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        activate-environment: hagi
+        environment-file: environment-dev.yml
+        auto-activate-base: false
+
+    - name: Run tests and linting
+      run: |
+        PYTHONPATH=. conda run -n hagi pytest
