@@ -63,16 +63,17 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     duration = end - start
     midpoint = start + (duration / 2)
 
-    # Grab overlapping text within the padded timeframe
+    # Grab overlapping text whose midpoint falls within the padded timeframe (matching UI logic)
     overlapping_sentences = conn.execute(
         """
         SELECT text
         FROM sentences
         WHERE media_id = ? AND language = ?
-          AND start_time < ? AND end_time > ?
+          AND ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) >= ?
+          AND ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) <= ?
         ORDER BY start_time ASC, id ASC
         """,
-        (target["media_id"], target["language"], end, start)
+        (target["media_id"], target["language"], start, end)
     ).fetchall()
 
     if overlapping_sentences:

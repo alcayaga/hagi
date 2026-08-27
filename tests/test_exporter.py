@@ -368,7 +368,7 @@ def test_extract_media_concatenation(test_db):
         ])
         res = test_db.execute("SELECT id FROM sentences WHERE text = '生産工場の完成記念スペシャルゲストとして'").fetchone()
         sid_jpn_no_punct = res["id"]
-        _, _, _, _, text1 = exporter.extract_media(sid_jpn_no_punct, "/fake/out")
+        _, _, _, _, text1 = exporter.extract_media(sid_jpn_no_punct, "/fake/out", pad_start=1.5, pad_end=1.5)
         assert text1 == "冷凍メンチ冷凍コロッケの生産工場の完成記念スペシャルゲストとして来ていただきとても光栄です。"
 
         # 2. Japanese (With Punctuation)
@@ -379,7 +379,7 @@ def test_extract_media_concatenation(test_db):
             ("jpn", 15.0, 17.0, "待って")
         ])
         sid_jpn_punct = test_db.execute("SELECT id FROM sentences WHERE text = '行くぞ'").fetchone()["id"]
-        _, _, _, _, text2 = exporter.extract_media(sid_jpn_punct, "/fake/out")
+        _, _, _, _, text2 = exporter.extract_media(sid_jpn_punct, "/fake/out", pad_start=1.5, pad_end=1.5)
         assert text2 == "そうだ。<br/>行くぞ<br/>待って"
 
         # 3. English (Punctuation and Spacing)
@@ -390,5 +390,5 @@ def test_extract_media_concatenation(test_db):
             ("eng", 15.0, 17.0, "Good.")
         ])
         sid_eng = test_db.execute("SELECT id FROM sentences WHERE text = 'How are you?'").fetchone()["id"]
-        _, _, _, _, text3 = exporter.extract_media(sid_eng, "/fake/out")
+        _, _, _, _, text3 = exporter.extract_media(sid_eng, "/fake/out", pad_start=1.5, pad_end=1.5)
         assert text3 == "Hello there. How are you? Good."
