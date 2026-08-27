@@ -38,7 +38,7 @@ def test_extract_media(test_db):
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
-        success, msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
+        success, _msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
 
         assert success is True
         assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}.mp3"
