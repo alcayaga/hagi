@@ -175,6 +175,29 @@ def test_export_anki_endpoint_with_nid(test_db):
         mock_ankiconnect.assert_called_once()
         assert mock_ankiconnect.call_args.kwargs["target_note_id"] == 12345
 
+def test_export_anki_endpoint_invalid_nid(test_db):
+    """Test the POST /api/anki endpoint when target_note_id is invalid (e.g. 0 or string)."""
+    # 0 is invalid since gt=0
+    response = client.post(
+        "/api/anki/1",
+        json={"pad_start": 0.2, "pad_end": 0.8, "target_note_id": 0},
+    )
+    assert response.status_code == 422
+
+    # Negative is invalid
+    response = client.post(
+        "/api/anki/1",
+        json={"pad_start": 0.2, "pad_end": 0.8, "target_note_id": -5},
+    )
+    assert response.status_code == 422
+
+    # Non-integer string is invalid (Pydantic will reject or try to parse, but "abc" fails)
+    response = client.post(
+        "/api/anki/1",
+        json={"pad_start": 0.2, "pad_end": 0.8, "target_note_id": "abc"},
+    )
+    assert response.status_code == 422
+
 def test_export_anki_endpoint_invalid_config(test_db):
     """Test the POST /api/anki endpoint with invalid config (e.g. array)."""
     import json

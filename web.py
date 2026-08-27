@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 import db
 import exporter
@@ -245,7 +245,7 @@ class ExtractConfig(BaseModel):
 
     pad_start: float = 0.5
     pad_end: float = 0.5
-    target_note_id: int | None = None
+    target_note_id: int | None = Field(default=None, gt=0)
 
 
 @app.post("/api/extract/{sentence_id}")

@@ -1005,7 +1005,7 @@ async function sendToAnki(btn, targetNoteId = null) {
       pad_end: currentExtraction.padEnd,
     };
     if (targetNoteId) {
-      payload.target_note_id = parseInt(targetNoteId, 10);
+      payload.target_note_id = Number(targetNoteId);
     }
 
     const response = await fetch(`/api/anki/${currentExtraction.id}`, {
@@ -1041,7 +1041,12 @@ function sendToAnkiSpecific(btn) {
     showToast("Please enter a Note ID.", "error");
     return;
   }
-  sendToAnki(btn, nid);
+  const numericNid = Number(nid);
+  if (!Number.isSafeInteger(numericNid) || numericNid <= 0) {
+    showToast("Please enter a valid positive Note ID.", "error");
+    return;
+  }
+  sendToAnki(btn, numericNid);
 }
 
 /**
