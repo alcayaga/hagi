@@ -310,8 +310,10 @@ let currentExtraction = { id: null, padStart: 0.5, padEnd: 0.5 };
  * @param {HTMLElement} btnElement - The button element that triggered the extraction.
  */
 async function extractMedia(id, btnElement) {
-  const padStart = parseFloat(document.getElementById("padStart").value) || 0.5;
-  const padEnd = parseFloat(document.getElementById("padEnd").value) || 0.5;
+  const sStart = parseFloat(document.getElementById("padStart").value);
+  const sEnd = parseFloat(document.getElementById("padEnd").value);
+  const padStart = isNaN(sStart) ? 0.5 : sStart;
+  const padEnd = isNaN(sEnd) ? 0.5 : sEnd;
 
   currentExtraction.id = id;
   currentExtraction.padStart = padStart;
@@ -845,8 +847,13 @@ async function applyTimelineExtraction() {
   const targetStart = timelineData.target.start_time || 0;
   const targetEnd = timelineData.target.end_time || targetStart + 2.0;
 
-  currentExtraction.padStart = Math.max(0, targetStart - timelineData.selectedStart);
-  currentExtraction.padEnd = Math.max(0, timelineData.selectedEnd - targetEnd);
+  if (timelineData.selectedEnd <= timelineData.selectedStart) {
+    alert("Invalid timeline selection.");
+    return;
+  }
+
+  currentExtraction.padStart = targetStart - timelineData.selectedStart;
+  currentExtraction.padEnd = timelineData.selectedEnd - targetEnd;
 
   document.getElementById("mediaModalLoading").classList.remove("hidden");
   const btn = document.getElementById("btnReextract");
