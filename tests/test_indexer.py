@@ -30,7 +30,7 @@ def test_incremental_indexing_skips(test_db):
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.srt"])]
 
-        with patch("indexer.pysubs2.load") as mock_load:
+        with patch("indexer.load_and_sanitize_subs") as mock_load:
             indexer.index_directory("/fake/path")
 
             mock_load.assert_not_called()
@@ -41,7 +41,7 @@ def test_language_detection_external_subs(test_db):
     with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db):
         mock_walk.return_value = [("/fake/path", [], ["ep1.srt", "ep2.srt", "ep3.srt"])]
 
-        with patch("indexer.pysubs2.load") as mock_load:
+        with patch("indexer.load_and_sanitize_subs") as mock_load:
             # Setup mock returns: English, Japanese, Spanish
             def mock_load_side_effect(path, **kwargs):
                 """Test function."""
@@ -79,7 +79,7 @@ def test_mkv_embedded_extraction(test_db):
         patch("os.walk") as mock_walk,
         patch("indexer.get_db", return_value=test_db),
         patch("subprocess.run") as mock_subrun,
-        patch("indexer.pysubs2.load") as mock_load,
+        patch("indexer.load_and_sanitize_subs") as mock_load,
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
@@ -129,7 +129,7 @@ def test_plex_cache_unpacking(test_db):
     indexer.plex_path_cache["episode1"] = ("My Show", 1, 5, "The Best Episode")
 
     with patch("indexer.get_db", return_value=test_db):
-        with patch("indexer.pysubs2.load") as mock_load:
+        with patch("indexer.load_and_sanitize_subs") as mock_load:
             mock_subs = MagicMock()
             mock_line = MagicMock()
             mock_line.start = 0
@@ -155,7 +155,7 @@ def test_mkv_subtitle_filtering(test_db):
         patch("os.walk") as mock_walk,
         patch("indexer.get_db", return_value=test_db),
         patch("subprocess.run") as mock_subrun,
-        patch("indexer.pysubs2.load") as mock_load,
+        patch("indexer.load_and_sanitize_subs") as mock_load,
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
@@ -406,3 +406,57 @@ def test_get_plex_metadata_external_subtitles():
     res3 = indexer.get_plex_metadata("/fake/path/Unknown (2021).en.srt")
     assert res3 == (None, None, None, None)
 
+
+def test_load_and_sanitize_subs():
+    """Ensure load_and_sanitize_subs clamps negative timestamps to 0 and parses successfully."""
+    import tempfile
+    import os
+
+    test_ass = """[Script Info]
+ScriptType: v4.00+
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize
+Style: Default,Arial,20
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:-27.-60,0:00:-25.-60,Default,,0,0,0,,Hello Negative ASS
+"""
+    test_srt = """1
+00:00:-02,000 --> 00:00:-01,000
+Hello Negative SRT
+
+2
+00:00:01,000 --> 00:00:02,000
+The marker is 00:00:-02,000
+"""
+
+    with tempfile.NamedTemporaryFile("w", suffix=".ass", delete=False) as f_ass:
+        f_ass.write(test_ass)
+        ass_name = f_ass.name
+
+    with tempfile.NamedTemporaryFile("w", suffix=".srt", delete=False) as f_srt:
+        f_srt.write(test_srt)
+        srt_name = f_srt.name
+
+    try:
+        # These should not raise ValueError and should clamp timestamps to 0
+        subs_ass = indexer.load_and_sanitize_subs(ass_name)
+        assert len(subs_ass) == 1
+        assert subs_ass[0].start == 0
+        assert subs_ass[0].end == 0
+        assert subs_ass[0].plaintext == "Hello Negative ASS"
+
+        subs_srt = indexer.load_and_sanitize_subs(srt_name)
+        assert len(subs_srt) == 2
+        assert subs_srt[0].start == 0
+        assert subs_srt[0].end == 0
+        assert subs_srt[0].plaintext == "Hello Negative SRT"
+
+        # Verify text containing negative timestamps is not altered
+        assert subs_srt[1].plaintext == "The marker is 00:00:-02,000"
+
+    finally:
+        os.remove(ass_name)
+        os.remove(srt_name)

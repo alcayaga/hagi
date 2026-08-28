@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import subprocess
 import tempfile
 
@@ -11,6 +12,38 @@ from dotenv import load_dotenv
 from db import add_media, add_sentences, get_db
 
 load_dotenv()
+
+def load_and_sanitize_subs(file_path, encoding="utf-8"):
+    """Load a subtitle file and sanitize invalid negative timestamps.
+
+    Args:
+        file_path (str): Path to the subtitle file.
+        encoding (str): Encoding to use when reading the file. Defaults to "utf-8".
+
+    Returns:
+        pysubs2.SSAFile: Parsed subtitles object.
+    """
+    with open(file_path, "r", encoding=encoding) as f:
+        lines = f.readlines()
+
+    def replacer(match):
+        val = match.group(0)
+        if "-" in val:
+            if "," in val:
+                return "00:00:00,000"
+            return "0:00:00.00"
+        return val
+
+    pattern = re.compile(r"-?\d{1,2}:-?\d{1,2}:-?\d{1,2}[.,]-?\d{1,3}")
+
+    sanitized_lines = []
+    for line in lines:
+        if line.startswith("Dialogue:") or "-->" in line:
+            line = pattern.sub(replacer, line)
+        sanitized_lines.append(line)
+
+    content = "".join(sanitized_lines)
+    return pysubs2.SSAFile.from_string(content)
 
 plex = None
 plex_path_cache = {}
@@ -222,7 +255,7 @@ def index_directory(directory_path: str):
                     subs = None
                     for enc in ["utf-8", "utf-16", "utf-8-sig", "latin-1", "shift_jis"]:
                         try:
-                            subs = pysubs2.load(file_path, encoding=enc)
+                            subs = load_and_sanitize_subs(file_path, encoding=enc)
                             break
                         except UnicodeDecodeError:
                             continue
@@ -343,7 +376,7 @@ def index_directory(directory_path: str):
 
                         if ext_res.returncode == 0:
                             try:
-                                subs = pysubs2.load(temp_sub_path)
+                                subs = load_and_sanitize_subs(temp_sub_path)
                                 final_lang = lang
 
                                 detected_lang = detect_language(subs)
