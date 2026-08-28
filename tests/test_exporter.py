@@ -406,7 +406,7 @@ def test_extract_media_external_subtitle(test_db):
     with (
         patch("exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("subprocess.run"),
+        patch("subprocess.run") as mock_subrun,
     ):
         # Create an external subtitle media
         m_id = db.add_media(test_db, "/fake/path/Belle (2021).en.srt", "subtitle")
@@ -436,4 +436,17 @@ def test_extract_media_external_subtitle(test_db):
         with patch("os.path.exists", side_effect=mock_exists_fallback):
             success, msg, _, _, _ = exporter.extract_media(sid, "/fake/out")
             assert success is True
+
+        # Now test when both exist, stripped is preferred
+        def mock_exists_both(path):
+            if path in ["/fake/path/Belle (2021).mkv", "/fake/path/Belle (2021).en.mkv"]:
+                return True
+            return False
+
+        with patch("os.path.exists", side_effect=mock_exists_both):
+            success, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
+            assert success is True
+            # Verify the stripped path was passed to ffprobe
+            ffprobe_args = mock_subrun.call_args_list[-2][0][0]  # The ffprobe command
+            assert "/fake/path/Belle (2021).mkv" in ffprobe_args
 

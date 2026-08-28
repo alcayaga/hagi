@@ -52,9 +52,10 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
         base_name = os.path.splitext(os.path.basename(media_path))[0]
 
         video_exts = (".mkv", ".mp4", ".avi", ".m4v")
-        possible_video_names = [base_name]
+        possible_video_names = []
         if "." in base_name:
             possible_video_names.append(base_name.rsplit(".", 1)[0])
+        possible_video_names.append(base_name)
 
         found_video = None
         for v_name in possible_video_names:
@@ -70,7 +71,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
             mkv_path = found_video
         else:
             # Fallback
-            mkv_path = base_name + ".mkv"
+            mkv_path = os.path.join(dir_name, base_name + ".mkv")
 
     if not os.path.exists(mkv_path):
         return False, f"Video file not found: {mkv_path}", None, None, None
