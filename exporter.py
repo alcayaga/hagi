@@ -44,12 +44,34 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     os.makedirs(out_dir, exist_ok=True)
 
     media_path = target["path"]
-    if media_path.endswith(".mkv"):
+    if media_path.endswith(".mkv") or media_path.endswith(".mp4"):
         mkv_path = media_path
     else:
         # We assume the media path is an external subtitle file
-        base_path = os.path.splitext(media_path)[0]
-        mkv_path = base_path + ".mkv"
+        dir_name = os.path.dirname(media_path)
+        base_name = os.path.splitext(os.path.basename(media_path))[0]
+
+        video_exts = (".mkv", ".mp4", ".avi", ".m4v")
+        possible_video_names = []
+        if "." in base_name:
+            possible_video_names.append(base_name.rsplit(".", 1)[0])
+        possible_video_names.append(base_name)
+
+        found_video = None
+        for v_name in possible_video_names:
+            for ext in video_exts:
+                test_path = os.path.join(dir_name, v_name + ext)
+                if os.path.exists(test_path):
+                    found_video = test_path
+                    break
+            if found_video:
+                break
+
+        if found_video:
+            mkv_path = found_video
+        else:
+            # Fallback
+            mkv_path = os.path.join(dir_name, base_name + ".mkv")
 
     if not os.path.exists(mkv_path):
         return False, f"Video file not found: {mkv_path}", None, None, None
