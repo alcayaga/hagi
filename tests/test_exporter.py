@@ -438,7 +438,8 @@ def test_extract_media_external_subtitle(test_db):
             assert success is True
 
         # Now test when both exist, stripped is preferred
-        def mock_exists_both(path):
+        def mock_exists_both(path) -> bool:
+            """Mock os.path.exists so it returns True for both the stripped and unstripped video paths."""
             if path in ["/fake/path/Belle (2021).mkv", "/fake/path/Belle (2021).en.mkv"]:
                 return True
             return False
