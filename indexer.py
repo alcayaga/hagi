@@ -76,6 +76,24 @@ def build_plex_cache():
         print(f"Error building Plex cache: {e}")
 
 
+def get_plex_metadata(file_path):
+    """Get Plex metadata, accounting for external subtitle language codes.
+
+    Args:
+        file_path (str): Path to the subtitle or media file.
+
+    Returns:
+        tuple: (show_title, season, episode, episode_title)
+    """
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    info = plex_path_cache.get(base_name)
+    if not info and "." in base_name:
+        stripped = base_name.rsplit(".", 1)[0]
+        info = plex_path_cache.get(stripped)
+    return info or (None, None, None, None)
+
+
+
 def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown"):
     """Process subtitles and add them to the database.
 
@@ -86,10 +104,7 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
         media_type (str, optional): Type of the media. Defaults to "subtitle".
         language (str, optional): Language of the subtitles. Defaults to "unknown".
     """
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    show_title, season, episode, episode_title = plex_path_cache.get(
-        base_name, (None, None, None, None)
-    )
+    show_title, season, episode, episode_title = get_plex_metadata(file_path)
     media_id = add_media(conn, file_path, media_type, show_title, season, episode, episode_title)
     sentences = []
 
@@ -172,16 +187,13 @@ def index_directory(directory_path: str):
                 continue
 
             file_path = os.path.join(root, file)
-            base_name = os.path.splitext(os.path.basename(file_path))[0]
 
             # Incremental indexing: skip if already in DB
             row = conn.execute(
                 "SELECT id, show_title, episode_title FROM media WHERE path = ?", (file_path,)
             ).fetchone()
             if row:
-                show_title, season, episode, episode_title = plex_path_cache.get(
-                    base_name, (None, None, None, None)
-                )
+                show_title, season, episode, episode_title = get_plex_metadata(file_path)
                 updated = False
                 if row["show_title"] is None and show_title:
                     conn.execute(
@@ -245,9 +257,7 @@ def index_directory(directory_path: str):
                     streams = json.loads(result.stdout).get("streams", [])
                     if not streams:
                         # We process the mkv, so add it to the media table once to mark it as indexed even if tracks fail
-                        show_title, season, episode, episode_title = plex_path_cache.get(
-                            base_name, (None, None, None, None)
-                        )
+                        show_title, season, episode, episode_title = get_plex_metadata(file_path)
                         add_media(
                             conn,
                             file_path,
@@ -361,9 +371,7 @@ def index_directory(directory_path: str):
 
                     if not processed_any:
                         # Ensure the media is still added even if all subtitles were skipped
-                        show_title, season, episode, episode_title = plex_path_cache.get(
-                            base_name, (None, None, None, None)
-                        )
+                        show_title, season, episode, episode_title = get_plex_metadata(file_path)
                         add_media(
                             conn,
                             file_path,

@@ -399,3 +399,41 @@ def test_extract_media_concatenation(test_db):
         sid_eng = test_db.execute("SELECT id FROM sentences WHERE text = 'How are you?'").fetchone()["id"]
         _, _, _, _, text3 = exporter.extract_media(sid_eng, "/fake/out", pad_start=1.5, pad_end=1.5)
         assert text3 == "Hello there. How are you? Good."
+
+
+def test_extract_media_external_subtitle(test_db):
+    """Test that extract_media correctly resolves the video path for an external subtitle using the Plex standard."""
+    with (
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("subprocess.run"),
+    ):
+        # Create an external subtitle media
+        m_id = db.add_media(test_db, "/fake/path/Belle (2021).en.srt", "subtitle")
+        db.add_sentences(test_db, m_id, [("eng", 10.0, 15.0, "Testing external subtitle")])
+        sid = test_db.execute("SELECT id FROM sentences WHERE text = 'Testing external subtitle'").fetchone()["id"]
+
+        def mock_exists(path):
+            """Mock os.path.exists so it only returns True for the stripped .mkv path."""
+            if path == "/fake/path/Belle (2021).mkv":
+                return True
+            return False
+
+        with patch("os.path.exists", side_effect=mock_exists):
+            success, msg, audio_out, image_out, text = exporter.extract_media(sid, "/fake/out")
+
+            # Since subprocess.run is mocked, we expect success because the video path resolved
+            assert success is True
+            assert text == "Testing external subtitle"
+
+        # Now test the fallback when no video matches the stripped path
+        def mock_exists_fallback(path):
+            """Mock os.path.exists so it falls back to .en.mkv and finds it."""
+            if path == "/fake/path/Belle (2021).en.mkv":
+                return True
+            return False
+
+        with patch("os.path.exists", side_effect=mock_exists_fallback):
+            success, msg, _, _, _ = exporter.extract_media(sid, "/fake/out")
+            assert success is True
+

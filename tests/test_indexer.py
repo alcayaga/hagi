@@ -387,3 +387,22 @@ def test_incremental_indexing_removes_missing_files(test_db):
         ).fetchone()[0]
         == 1
     )
+
+
+def test_get_plex_metadata_external_subtitles():
+    """Ensure get_plex_metadata correctly strips language suffixes to find Plex metadata."""
+    # Seed the cache with a movie base name
+    indexer.plex_path_cache["Belle (2021)"] = ("Belle", None, None, "Belle")
+
+    # Exact match should work
+    res1 = indexer.get_plex_metadata("/fake/path/Belle (2021).mkv")
+    assert res1 == ("Belle", None, None, "Belle")
+
+    # Subtitle with language suffix should work by stripping it
+    res2 = indexer.get_plex_metadata("/fake/path/Belle (2021).en.srt")
+    assert res2 == ("Belle", None, None, "Belle")
+
+    # Unknown movie should return Nones
+    res3 = indexer.get_plex_metadata("/fake/path/Unknown (2021).en.srt")
+    assert res3 == (None, None, None, None)
+
