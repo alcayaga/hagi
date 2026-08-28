@@ -30,7 +30,7 @@ def test_incremental_indexing_skips(test_db):
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.srt"])]
 
-        with patch("indexer.pysubs2.load") as mock_load:
+        with patch("indexer.load_and_sanitize_subs") as mock_load:
             indexer.index_directory("/fake/path")
 
             mock_load.assert_not_called()
@@ -41,7 +41,7 @@ def test_language_detection_external_subs(test_db):
     with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db):
         mock_walk.return_value = [("/fake/path", [], ["ep1.srt", "ep2.srt", "ep3.srt"])]
 
-        with patch("indexer.pysubs2.load") as mock_load:
+        with patch("indexer.load_and_sanitize_subs") as mock_load:
             # Setup mock returns: English, Japanese, Spanish
             def mock_load_side_effect(path, **kwargs):
                 """Test function."""
@@ -79,7 +79,7 @@ def test_mkv_embedded_extraction(test_db):
         patch("os.walk") as mock_walk,
         patch("indexer.get_db", return_value=test_db),
         patch("subprocess.run") as mock_subrun,
-        patch("indexer.pysubs2.load") as mock_load,
+        patch("indexer.load_and_sanitize_subs") as mock_load,
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
@@ -129,7 +129,7 @@ def test_plex_cache_unpacking(test_db):
     indexer.plex_path_cache["episode1"] = ("My Show", 1, 5, "The Best Episode")
 
     with patch("indexer.get_db", return_value=test_db):
-        with patch("indexer.pysubs2.load") as mock_load:
+        with patch("indexer.load_and_sanitize_subs") as mock_load:
             mock_subs = MagicMock()
             mock_line = MagicMock()
             mock_line.start = 0
@@ -155,7 +155,7 @@ def test_mkv_subtitle_filtering(test_db):
         patch("os.walk") as mock_walk,
         patch("indexer.get_db", return_value=test_db),
         patch("subprocess.run") as mock_subrun,
-        patch("indexer.pysubs2.load") as mock_load,
+        patch("indexer.load_and_sanitize_subs") as mock_load,
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
