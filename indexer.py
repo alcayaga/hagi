@@ -24,7 +24,7 @@ def load_and_sanitize_subs(file_path, encoding="utf-8"):
         pysubs2.SSAFile: Parsed subtitles object.
     """
     with open(file_path, "r", encoding=encoding) as f:
-        content = f.read()
+        lines = f.readlines()
 
     def replacer(match):
         val = match.group(0)
@@ -35,9 +35,15 @@ def load_and_sanitize_subs(file_path, encoding="utf-8"):
         return val
 
     pattern = re.compile(r"-?\d{1,2}:-?\d{1,2}:-?\d{1,2}[.,]-?\d{1,3}")
-    sanitized = pattern.sub(replacer, content)
 
-    return pysubs2.SSAFile.from_string(sanitized)
+    sanitized_lines = []
+    for line in lines:
+        if line.startswith("Dialogue:") or "-->" in line:
+            line = pattern.sub(replacer, line)
+        sanitized_lines.append(line)
+
+    content = "".join(sanitized_lines)
+    return pysubs2.SSAFile.from_string(content)
 
 plex = None
 plex_path_cache = {}

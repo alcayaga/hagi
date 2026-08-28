@@ -426,6 +426,10 @@ Dialogue: 0,0:00:-27.-60,0:00:-25.-60,Default,,0,0,0,,Hello Negative ASS
     test_srt = """1
 00:00:-02,000 --> 00:00:-01,000
 Hello Negative SRT
+
+2
+00:00:01,000 --> 00:00:02,000
+The marker is 00:00:-02,000
 """
 
     with tempfile.NamedTemporaryFile("w", suffix=".ass", delete=False) as f_ass:
@@ -445,13 +449,14 @@ Hello Negative SRT
         assert subs_ass[0].plaintext == "Hello Negative ASS"
 
         subs_srt = indexer.load_and_sanitize_subs(srt_name)
-        assert len(subs_srt) == 1
+        assert len(subs_srt) == 2
         assert subs_srt[0].start == 0
         assert subs_srt[0].end == 0
         assert subs_srt[0].plaintext == "Hello Negative SRT"
 
+        # Verify text containing negative timestamps is not altered
+        assert subs_srt[1].plaintext == "The marker is 00:00:-02,000"
+
     finally:
         os.remove(ass_name)
         os.remove(srt_name)
-
-
