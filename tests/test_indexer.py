@@ -406,3 +406,52 @@ def test_get_plex_metadata_external_subtitles():
     res3 = indexer.get_plex_metadata("/fake/path/Unknown (2021).en.srt")
     assert res3 == (None, None, None, None)
 
+
+def test_load_and_sanitize_subs():
+    """Ensure load_and_sanitize_subs clamps negative timestamps to 0 and parses successfully."""
+    import tempfile
+    import os
+
+    test_ass = """[Script Info]
+ScriptType: v4.00+
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize
+Style: Default,Arial,20
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:-27.-60,0:00:-25.-60,Default,,0,0,0,,Hello Negative ASS
+"""
+    test_srt = """1
+00:00:-02,000 --> 00:00:-01,000
+Hello Negative SRT
+"""
+
+    with tempfile.NamedTemporaryFile("w", suffix=".ass", delete=False) as f_ass:
+        f_ass.write(test_ass)
+        ass_name = f_ass.name
+
+    with tempfile.NamedTemporaryFile("w", suffix=".srt", delete=False) as f_srt:
+        f_srt.write(test_srt)
+        srt_name = f_srt.name
+
+    try:
+        # These should not raise ValueError and should clamp timestamps to 0
+        subs_ass = indexer.load_and_sanitize_subs(ass_name)
+        assert len(subs_ass) == 1
+        assert subs_ass[0].start == 0
+        assert subs_ass[0].end == 0
+        assert subs_ass[0].plaintext == "Hello Negative ASS"
+
+        subs_srt = indexer.load_and_sanitize_subs(srt_name)
+        assert len(subs_srt) == 1
+        assert subs_srt[0].start == 0
+        assert subs_srt[0].end == 0
+        assert subs_srt[0].plaintext == "Hello Negative SRT"
+
+    finally:
+        os.remove(ass_name)
+        os.remove(srt_name)
+
+
