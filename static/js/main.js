@@ -879,14 +879,14 @@ async function applyTimelineExtraction() {
       const mediaImage = document.getElementById("mediaImage");
       const mediaAudio = document.getElementById("mediaAudio");
 
-      const imgLoadPromise = new Promise((resolve) => {
+      const imgLoadPromise = new Promise((resolve, reject) => {
         mediaImage.onload = resolve;
-        mediaImage.onerror = resolve;
+        mediaImage.onerror = () => reject(new Error("Failed to load image"));
       });
 
-      const audioLoadPromise = new Promise((resolve) => {
+      const audioLoadPromise = new Promise((resolve, reject) => {
         mediaAudio.oncanplaythrough = resolve;
-        mediaAudio.onerror = resolve;
+        mediaAudio.onerror = () => reject(new Error("Failed to load audio"));
       });
 
       mediaImage.src = data.image_url + "?t=" + new Date().getTime();
