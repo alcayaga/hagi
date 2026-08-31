@@ -264,6 +264,7 @@ def export_ankiconnect(
     pad_end: float = 0.5,
     target_note_id: int | None = None,
     base_url: str | None = None,
+    search_query: str | None = None,
 ):
     """Export sentence to AnkiConnect.
 
@@ -275,6 +276,7 @@ def export_ankiconnect(
         pad_end (float, optional): Seconds to pad after end.
         target_note_id (int, optional): Specific Note ID to update.
         base_url (str, optional): Base URL of the web UI to serve media from.
+        search_query (str, optional): Search query used to find the sentence, to highlight.
 
     Returns:
         tuple: (bool, str) - Success status and message.
@@ -376,13 +378,38 @@ def export_ankiconnect(
                 return False, "No notes found to update."
             target_note_id = max(notes)
 
+        # Generate highlighted text if search query is provided
+        highlighted_text = text
+        if search_query:
+            import shlex
+            import re
+            try:
+                tokens = shlex.split(search_query)
+            except ValueError:
+                tokens = search_query.split()
+
+            for token in tokens:
+                if token.startswith("-") or not token:
+                    continue
+                escaped_token = re.escape(token)
+                # Replace the token, ignoring matches that are inside an HTML tag
+                highlighted_text = re.sub(
+                    f"({escaped_token})(?![^<]*>)",
+                    r"<b>\1</b>",
+                    highlighted_text,
+                    flags=re.IGNORECASE
+                )
+
         # Prepare fields
         fields_to_update = {}
         sentence_field = config.get("sentenceField")
+        sentence_highlighted_field = config.get("sentenceHighlightedField")
         source_field = config.get("sourceField")
 
         if sentence_field:
             fields_to_update[sentence_field] = text
+        if sentence_highlighted_field:
+            fields_to_update[sentence_highlighted_field] = highlighted_text
         if source_field and source_info:
             fields_to_update[source_field] = source_info
 

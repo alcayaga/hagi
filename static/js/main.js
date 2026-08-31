@@ -300,6 +300,30 @@ function renderResults() {
   });
 }
 
+/**
+ * Highlights search terms in the given text, wrapping them in styling tags.
+ */
+function highlightSearchTerms(text) {
+  const searchInput = document.getElementById("searchInput");
+  if (!searchInput) return text;
+  const query = searchInput.value.trim();
+  if (!query) return text;
+
+  const tokens = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+  let highlighted = text;
+
+  for (let t of tokens) {
+    if (t.startsWith("-")) continue;
+    if (t.startsWith('"') && t.endsWith('"')) t = t.slice(1, -1);
+    if (!t) continue;
+
+    const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const regex = new RegExp(`(${escaped})(?![^<]*>)`, "gi");
+    highlighted = highlighted.replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
+  }
+  return highlighted;
+}
+
 let currentExtraction = { id: null, padStart: 0.5, padEnd: 0.5 };
 
 /**
@@ -368,14 +392,15 @@ async function extractMedia(id, btnElement) {
     const data = await response.json();
 
     if (data.success) {
-      document.getElementById("mediaText").innerHTML = `` + (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
+      const extractedText = (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
+      document.getElementById("mediaText").innerHTML = highlightSearchTerms(extractedText);
 
       const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
       const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
       let transHtml = "";
       if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanSpa}</span></div>`;
       if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanEng}</span></div>`;
-      document.getElementById("mediaTranslations").innerHTML = transHtml;
+      document.getElementById("mediaTranslations").innerHTML = highlightSearchTerms(transHtml);
 
       document.getElementById("mediaImage").src = data.image_url + "?t=" + new Date().getTime();
       document.getElementById("mediaAudio").src = data.audio_url + "?t=" + new Date().getTime();
@@ -864,6 +889,56 @@ async function applyTimelineExtraction() {
   btn.disabled = true;
   btn.innerText = "Extracting...";
 
+  // Immediately update UI text with highlights
+  const selStart = timelineData.selectedStart;
+  const selEnd = timelineData.selectedEnd;
+
+  const cleanText = (text, lang) => {
+    let cleaned = (text || "").replace(/<br\s*\/?>/gi, lang === "jpn" ? "" : " ");
+    return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
+  };
+
+  const getEncompassed = (arr, lang) => {
+    if (!arr) return "";
+
+    const filtered = arr.filter((s) => {
+      const mid = ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
+      return mid >= selStart && mid <= selEnd;
+    });
+
+    return filtered
+      .map((s) => cleanText(s.text, lang))
+      .reduce((acc, text, i, array) => {
+        if (i === 0) return text;
+
+        if (lang === "jpn") {
+          const prev = array[i - 1];
+          const endsSentence = /[だですまるかよねわぞ。！？]$/.test(prev.trim());
+          return acc + (endsSentence ? "<br/>" : "") + text;
+        } else {
+          let prevText = acc.trim();
+          if (prevText.length > 0 && !prevText.match(/[.!?…,;:]$/)) {
+            prevText += ".";
+          }
+          return prevText + " " + text;
+        }
+      }, "");
+  };
+
+  const newTargetText = getEncompassed(timelineData.contextData.target_context, timelineData.contextData.target_lang);
+  const newSecondaryText = getEncompassed(timelineData.contextData.secondary_context, timelineData.contextData.secondary_lang);
+
+  const targetTextToSet = newTargetText || cleanText(timelineData.target.text, timelineData.contextData.target_lang);
+  document.getElementById("mediaText").innerHTML = highlightSearchTerms(targetTextToSet);
+
+  let transHtml = "";
+  if (newSecondaryText) {
+    const langLabel = (timelineData.contextData.secondary_lang || "sub").toUpperCase();
+    const c = getLangColors(timelineData.contextData.secondary_lang);
+    transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;
+  }
+  document.getElementById("mediaTranslations").innerHTML = highlightSearchTerms(transHtml);
+
   try {
     const response = await fetch(`/api/extract/${currentExtraction.id}`, {
       method: "POST",
@@ -895,56 +970,7 @@ async function applyTimelineExtraction() {
 
       await Promise.all([imgLoadPromise, audioLoadPromise]);
 
-      const selStart = timelineData.selectedStart;
-      const selEnd = timelineData.selectedEnd;
-
-      const cleanText = (text, lang) => {
-        let cleaned = (text || "").replace(/<br\s*\/?>/gi, lang === "jpn" ? "" : " ");
-        return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
-      };
-
-      const getEncompassed = (arr, lang) => {
-        if (!arr) return "";
-
-        const filtered = arr.filter((s) => {
-          const mid = ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
-          return mid >= selStart && mid <= selEnd;
-        });
-
-        return filtered
-          .map((s) => cleanText(s.text, lang))
-          .reduce((acc, text, i, array) => {
-            if (i === 0) return text;
-
-            if (lang === "jpn") {
-              const prev = array[i - 1];
-              const endsSentence = /[だですまるかよねわぞ。！？]$/.test(prev.trim());
-              return acc + (endsSentence ? "<br/>" : "") + text;
-            } else {
-              let prevText = acc.trim();
-              if (prevText.length > 0 && !prevText.match(/[.!?…,;:]$/)) {
-                prevText += ".";
-              }
-              return prevText + " " + text;
-            }
-          }, "");
-      };
-
-      const newTargetText = getEncompassed(timelineData.contextData.target_context, timelineData.contextData.target_lang);
-      const newSecondaryText = getEncompassed(timelineData.contextData.secondary_context, timelineData.contextData.secondary_lang);
-
-      const targetTextToSet = newTargetText || cleanText(timelineData.target.text, timelineData.contextData.target_lang);
-      const cTarget = getLangColors(timelineData.contextData.target_lang);
-      const targetLabel = (timelineData.contextData.target_lang || "sub").toUpperCase();
-      document.getElementById("mediaText").innerHTML = targetTextToSet;
-
-      let transHtml = "";
-      if (newSecondaryText) {
-        const langLabel = (timelineData.contextData.secondary_lang || "sub").toUpperCase();
-        const c = getLangColors(timelineData.contextData.secondary_lang);
-        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;
-      }
-      document.getElementById("mediaTranslations").innerHTML = transHtml;
+      // Media fully loaded
     } else {
       alert("Extraction failed: " + data.detail);
     }
@@ -1030,6 +1056,7 @@ async function sendToAnki(btn, targetNoteId = null) {
     const payload = {
       pad_start: sendPadStart,
       pad_end: sendPadEnd,
+      search_query: document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim() : "",
     };
     if (targetNoteId) {
       payload.target_note_id = Number(targetNoteId);

@@ -451,3 +451,56 @@ def test_extract_media_external_subtitle(test_db):
             ffprobe_args = mock_subrun.call_args_list[-2][0][0]  # The ffprobe command
             assert "/fake/path/Belle (2021).mkv" in ffprobe_args
 
+
+def test_export_ankiconnect_highlight(test_db):
+    """Test that export_ankiconnect highlights search terms correctly in a specific field."""
+    import json
+
+    mock_config = {
+        "ankiConnectUrl": "http://127.0.0.1:8765",
+        "deck": "Mining",
+        "noteType": "Lapis",
+        "sentenceField": "Sentence",
+        "sentenceHighlightedField": "SentenceWithHighlight"
+    }
+
+    with (
+        patch("exporter.extract_media") as mock_extract,
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("urllib.request.urlopen") as mock_urlopen,
+    ):
+        mock_extract.return_value = (
+            True,
+            "Success",
+            "/fake/out/audio.mp3",
+            "/fake/out/img.jpg",
+            "This is a cool test",
+        )
+
+        test_db.execute(
+            "UPDATE media SET show_title = ?, season = ?, episode = ?, episode_title = ? WHERE id = ?",
+            ("Conan", 1, 10, "The Case", 1)
+        )
+        sid = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()["id"]
+
+        class MockResponse:
+            def read(self):
+                return json.dumps({"result": [9999], "error": None}).encode("utf-8")
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+
+        mock_urlopen.return_value = MockResponse()
+
+        success, msg = exporter.export_ankiconnect(
+            sid, mock_config, "/fake/out", target_note_id=9999, search_query="cool test"
+        )
+        assert success is True
+
+        calls = mock_urlopen.call_args_list
+        update_call = next(c for c in calls if b'"action": "updateNoteFields"' in c[0][0].data)
+        data = json.loads(update_call[0][0].data.decode("utf-8"))
+        fields = data["params"]["note"]["fields"]
+
+        assert fields["Sentence"] == "This is a cool test"
+        assert fields["SentenceWithHighlight"] == "This is a <b>cool</b> <b>test</b>"
+
