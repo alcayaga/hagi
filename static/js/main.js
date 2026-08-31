@@ -876,9 +876,24 @@ async function applyTimelineExtraction() {
     const data = await response.json();
 
     if (data.success) {
-      document.getElementById("mediaImage").src = data.image_url + "?t=" + new Date().getTime();
-      document.getElementById("mediaAudio").src = data.audio_url + "?t=" + new Date().getTime();
-      document.getElementById("mediaAudio").play();
+      const mediaImage = document.getElementById("mediaImage");
+      const mediaAudio = document.getElementById("mediaAudio");
+
+      const imgLoadPromise = new Promise((resolve, reject) => {
+        mediaImage.onload = resolve;
+        mediaImage.onerror = () => reject(new Error("Failed to load image"));
+      });
+
+      const audioLoadPromise = new Promise((resolve, reject) => {
+        mediaAudio.oncanplaythrough = resolve;
+        mediaAudio.onerror = () => reject(new Error("Failed to load audio"));
+      });
+
+      mediaImage.src = data.image_url + "?t=" + new Date().getTime();
+      mediaAudio.src = data.audio_url + "?t=" + new Date().getTime();
+      mediaAudio.play().catch((e) => console.log(e));
+
+      await Promise.all([imgLoadPromise, audioLoadPromise]);
 
       const selStart = timelineData.selectedStart;
       const selEnd = timelineData.selectedEnd;
