@@ -484,10 +484,16 @@ def test_export_ankiconnect_highlight(test_db):
         sid = test_db.execute("SELECT id FROM sentences LIMIT 1").fetchone()["id"]
 
         class MockResponse:
+            """Mock urllib response."""
             def read(self):
+                """Return mocked JSON response bytes."""
                 return json.dumps({"result": [9999], "error": None}).encode("utf-8")
-            def __enter__(self): return self
-            def __exit__(self, *args): pass
+            def __enter__(self):
+                """Enter context."""
+                return self
+            def __exit__(self, *args):
+                """Exit context."""
+                pass
 
         mock_urlopen.return_value = MockResponse()
 

@@ -388,17 +388,23 @@ def export_ankiconnect(
             except ValueError:
                 tokens = search_query.split()
 
+            clean_tokens = []
             for token in tokens:
-                if token.startswith("-") or not token:
+                if token.startswith("-"):
                     continue
-                escaped_token = re.escape(token)
-                # Replace the token, ignoring matches that are inside an HTML tag
-                highlighted_text = re.sub(
-                    f"({escaped_token})(?![^<]*>)",
-                    r"<b>\1</b>",
-                    highlighted_text,
-                    flags=re.IGNORECASE
-                )
+                # Strip leading/trailing quotes (helps with malformed shlex fallback)
+                token = token.strip('"')
+                if token:
+                    clean_tokens.append(re.escape(token))
+
+            if clean_tokens:
+                pattern = re.compile(f"({'|'.join(clean_tokens)})", flags=re.IGNORECASE)
+                parts = re.split(r"(<[^>]*>)", highlighted_text)
+                for i in range(len(parts)):
+                    # Even indices are text segments, odd are HTML tags
+                    if i % 2 == 0:
+                        parts[i] = pattern.sub(r"<b>\1</b>", parts[i])
+                highlighted_text = "".join(parts)
 
         # Prepare fields
         fields_to_update = {}

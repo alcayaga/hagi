@@ -310,18 +310,27 @@ function highlightSearchTerms(text) {
   if (!query) return text;
 
   const tokens = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
-  let highlighted = text;
+  let cleanTokens = [];
 
   for (let t of tokens) {
     if (t.startsWith("-")) continue;
-    if (t.startsWith('"') && t.endsWith('"')) t = t.slice(1, -1);
-    if (!t) continue;
-
-    const escaped = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(${escaped})(?![^<]*>)`, "gi");
-    highlighted = highlighted.replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
+    t = t.replace(/^"+|"+$/g, "");
+    if (t) {
+      cleanTokens.push(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    }
   }
-  return highlighted;
+
+  if (cleanTokens.length === 0) return text;
+
+  const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
+  const parts = text.split(/(<[^>]*>)/g);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
+    }
+  }
+
+  return parts.join("");
 }
 
 let currentExtraction = { id: null, padStart: 0.5, padEnd: 0.5 };
