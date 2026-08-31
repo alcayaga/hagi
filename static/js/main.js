@@ -313,8 +313,8 @@ function highlightSearchTerms(text) {
   let cleanTokens = [];
 
   for (let t of tokens) {
-    if (t.startsWith("-")) continue;
     t = t.replace(/^"+|"+$/g, "");
+    if (t.startsWith("-")) continue;
     if (t) {
       cleanTokens.push(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
     }
@@ -323,7 +323,7 @@ function highlightSearchTerms(text) {
   if (cleanTokens.length === 0) return text;
 
   const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
-  const parts = text.split(/(<[^>]*>)/g);
+  const parts = text.split(/(<(?:[^>"']|"[^"]*"|'[^']*')*>)/g);
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 0) {
       parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
