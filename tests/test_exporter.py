@@ -60,6 +60,78 @@ def test_extract_media(test_db):
         assert audio_call_args[map_index + 1] == "0:a:0"
 
 
+@pytest.mark.parametrize(
+    "probe_stdout, expected_map_idx",
+    [
+        # Case 1: Explicit Japanese tag
+        (
+            '{"streams": [{"tags": {"language": "spa"}}, {"tags": {"language": "jpn"}}, '
+            '{"tags": {"language": "eng"}}]}',
+            "0:a:1"
+        ),
+        # Case 2: No tag, but default is 1 (Shaman King Flowers edge-case)
+        (
+            '{"streams": [{"tags": {"language": "spa"}}, '
+            '{"tags": {"language": "und"}, "disposition": {"default": 1}}, '
+            '{"tags": {"language": "por"}}]}',
+            "0:a:1"
+        ),
+        # Case 3: Default is English, so we don't pick it, but pick the undefined one
+        (
+            '{"streams": [{"tags": {"language": "eng"}, "disposition": {"default": 1}}, '
+            '{"tags": {"language": "und"}}]}',
+            "0:a:1"
+        ),
+        # Case 4: No tag, no default, pick undefined one
+        (
+            '{"streams": [{"tags": {"language": "spa"}}, {"tags": {"language": "und"}}]}',
+            "0:a:1"
+        ),
+        # Case 5: 'Japanese' in title
+        (
+            '{"streams": [{"tags": {"language": "und"}}, '
+            '{"tags": {"language": "und", "title": "Japanese audio"}}]}',
+            "0:a:1"
+        ),
+        # Case 6: Fallback to 0 if all else fails
+        (
+            '{"streams": [{"tags": {"language": "spa"}}, {"tags": {"language": "spa"}}]}',
+            "0:a:0"
+        ),
+    ]
+)
+def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_map_idx):
+    """Test that extract_media correctly selects the optimal audio track based on metadata."""
+
+    def mock_run_side_effect(cmd, *args, **kwargs):
+        mock_result = MagicMock()
+        if "ffprobe" in cmd:
+            mock_result.returncode = 0
+            mock_result.stdout = probe_stdout
+            return mock_result
+        else:
+            mock_result.returncode = 0
+            return mock_result
+
+    with (
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("os.path.exists", return_value=True),
+        patch("subprocess.run", side_effect=mock_run_side_effect) as mock_subrun,
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        success, _msg, _, _, _ = exporter.extract_media(sid, "/fake/out")
+        assert success is True
+
+        audio_call_args = mock_subrun.call_args_list[1][0][0]
+        assert "ffmpeg" in audio_call_args
+        assert "-map" in audio_call_args
+        map_index = audio_call_args.index("-map")
+        assert audio_call_args[map_index + 1] == expected_map_idx
+
+
 def test_export_anki(test_db):
     """Test that export_anki generates the correct TSV line."""
     with (
