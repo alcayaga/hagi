@@ -130,8 +130,8 @@ function populateDropdowns() {
 
   const uniqueSeasonEpCombos = new Set(showResults.filter((r) => r.episode != null).map((r) => `${r.season !== null ? r.season : ""}-${r.episode}`));
 
-  // Hide the dropdown if there is only 1 episode (e.g., a movie)
-  if (uniqueSeasonEpCombos.size <= 1) {
+  // Hide the dropdown if there is only 1 episode (e.g., a movie) and no useful season choices
+  if (uniqueSeasons.length <= 1 && uniqueSeasonEpCombos.size <= 1) {
     epWrapper.classList.add("hidden");
     // Ensure filters are reset if the dropdown is hidden
     activeSeason = null;
