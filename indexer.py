@@ -13,6 +13,7 @@ from db import add_media, add_sentences, get_db
 
 load_dotenv()
 
+
 def load_and_sanitize_subs(file_path, encoding="utf-8"):
     """Load a subtitle file and sanitize invalid negative timestamps.
 
@@ -44,6 +45,7 @@ def load_and_sanitize_subs(file_path, encoding="utf-8"):
 
     content = "".join(sanitized_lines)
     return pysubs2.SSAFile.from_string(content)
+
 
 plex = None
 plex_path_cache = {}
@@ -124,7 +126,6 @@ def get_plex_metadata(file_path):
         stripped = base_name.rsplit(".", 1)[0]
         info = plex_path_cache.get(stripped)
     return info or (None, None, None, None)
-
 
 
 def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown"):
@@ -222,9 +223,7 @@ def index_directory(directory_path: str):
             file_path = os.path.join(root, file)
 
             # Incremental indexing: skip if already in DB
-            row = conn.execute(
-                "SELECT id, show_title, episode_title FROM media WHERE path = ?", (file_path,)
-            ).fetchone()
+            row = conn.execute("SELECT id, show_title, episode_title FROM media WHERE path = ?", (file_path,)).fetchone()
             if row:
                 show_title, season, episode, episode_title = get_plex_metadata(file_path)
                 updated = False
@@ -235,9 +234,7 @@ def index_directory(directory_path: str):
                     )
                     updated = True
 
-                if (
-                    "episode_title" not in row.keys() or not row["episode_title"]
-                ) and episode_title:
+                if ("episode_title" not in row.keys() or not row["episode_title"]) and episode_title:
                     conn.execute(
                         "UPDATE media SET episode_title=? WHERE id=?",
                         (episode_title, row["id"]),
@@ -321,17 +318,13 @@ def index_directory(directory_path: str):
                             s
                             for s in stream_list
                             if not any(
-                                x in s.get("tags", {}).get("title", "").lower()
-                                for x in ["forced", "sdh", "dubtitle", "signs"]
+                                x in s.get("tags", {}).get("title", "").lower() for x in ["forced", "sdh", "dubtitle", "signs"]
                             )
                         ]
                         pool = clean if clean else stream_list
                         if is_spanish:
                             for s in pool:
-                                if any(
-                                    x in s.get("tags", {}).get("title", "").lower()
-                                    for x in ["latin", "latam"]
-                                ):
+                                if any(x in s.get("tags", {}).get("title", "").lower() for x in ["latin", "latam"]):
                                     return s
                         return pool[0]
 
@@ -392,9 +385,7 @@ def index_directory(directory_path: str):
                                 if final_lang not in ["eng", "spa", "jpn"]:
                                     continue  # Skip if the heuristic found it to be an unwanted language
 
-                                process_subs(
-                                    conn, file_path, subs, "mkv_embedded", language=final_lang
-                                )
+                                process_subs(conn, file_path, subs, "mkv_embedded", language=final_lang)
                                 processed_any = True
                             except Exception as parse_e:
                                 print(f"Error parsing track {i} in {file_path}: {parse_e}")

@@ -10,7 +10,7 @@ import json
 import db
 
 
-def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5):
+def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
     """Extract audio and image for a given sentence.
 
     Args:
@@ -39,7 +39,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
     ).fetchone()
 
     if not target:
-        return False, "Sentence not found", None, None, None
+        return False, "Sentence not found", None, None, None, False
 
     os.makedirs(out_dir, exist_ok=True)
 
@@ -74,11 +74,11 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
             mkv_path = os.path.join(dir_name, base_name + ".mkv")
 
     if not os.path.exists(mkv_path):
-        return False, f"Video file not found: {mkv_path}", None, None, None
+        return False, f"Video file not found: {mkv_path}", None, None, None, False
 
     # Timestamps
     if target["start_time"] is None or target["end_time"] is None:
-        return False, f"Missing timestamp data for sentence {sentence_id}", None, None, None
+        return False, f"Missing timestamp data for sentence {sentence_id}", None, None, None, False
 
     start = max(0, target["start_time"] - pad_start)
     end = target["end_time"] + pad_end
@@ -95,7 +95,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
           AND ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) <= ?
         ORDER BY ((COALESCE(start_time, 0) + COALESCE(end_time, start_time + 2.0)) / 2.0) ASC, id ASC
         """,
-        (target["media_id"], target["language"], start, end)
+        (target["media_id"], target["language"], start, end),
     ).fetchall()
 
     if overlapping_sentences:
@@ -123,16 +123,17 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
 
             if lang in ("jpn", "ja", "jp", "zho", "zh"):
                 prev_trimmed = combined_text.strip()
-                ends_sentence = bool(re.search(r'[だですまるかよねわぞ。！？]$', prev_trimmed))
+                ends_sentence = bool(re.search(r"[だですまるかよねわぞ。！？]$", prev_trimmed))
                 delimiter = "<br/>" if ends_sentence else ""
                 combined_text = combined_text + delimiter + text_val
             else:
                 prev_trimmed = combined_text.strip()
-                if prev_trimmed and not re.search(r'[.!?…,;:]$', prev_trimmed):
+                if prev_trimmed and not re.search(r"[.!?…,;:]$", prev_trimmed):
                     prev_trimmed += "."
                 combined_text = prev_trimmed + " " + text_val
     else:
         import re
+
         text_val = target["text"] if target["text"] else ""
         lang = target["language"]
         if lang in ("jpn", "ja", "jp", "zho", "zh"):
@@ -140,8 +141,18 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
         else:
             combined_text = re.sub(r"<br\s*/?>|[\r\n]+", " ", text_val, flags=re.IGNORECASE)
 
-    audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}.mp3")
-    image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
+    audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.mp3")
+    image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
+
+    is_cached = False
+    if os.path.exists(audio_out) and os.path.exists(image_out):
+        try:
+            os.utime(audio_out, None)
+            os.utime(image_out, None)
+            is_cached = True
+            return True, "Media returned from cache", audio_out, image_out, combined_text, is_cached
+        except Exception:
+            pass
 
     try:
         # Probe for the Japanese audio track
@@ -240,12 +251,13 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
             audio_out,
             image_out,
             combined_text,
+            False,
         )
     except Exception as e:
-        return False, str(e), None, None, None
+        return False, str(e), False, None, None, None, False
 
 
-def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end: float = 0.5):
+def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
     """Export a sentence and its media for Anki.
 
     Args:
@@ -259,11 +271,9 @@ def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end:
             - bool: Success status.
             - str: Status message.
     """
-    success, msg, audio_out, image_out, text = extract_media(
-        sentence_id, out_dir, pad_start, pad_end
-    )
+    success, msg, audio_out, image_out, text, is_cached = extract_media(sentence_id, out_dir, pad_start, pad_end)
     if not success:
-        return False, msg
+        return False, msg, False
 
     try:
         # Write to CSV
@@ -277,16 +287,15 @@ def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_end:
 
         return True, f"Exported to {out_dir}"
     except Exception as e:
-        return False, str(e)
-
+        return False, str(e), False
 
 
 def export_ankiconnect(
     sentence_id: int,
     config: dict,
     out_dir: str,
-    pad_start: float = 0.5,
-    pad_end: float = 0.5,
+    pad_start: float = 0.25,
+    pad_end: float = 0.0,
     target_note_id: int | None = None,
     base_url: str | None = None,
     search_query: str | None = None,
@@ -306,14 +315,12 @@ def export_ankiconnect(
     Returns:
         tuple: (bool, str) - Success status and message.
     """
-    success, msg, audio_out, image_out, text = extract_media(
-        sentence_id, out_dir, pad_start, pad_end
-    )
+    success, msg, audio_out, image_out, text, is_cached = extract_media(sentence_id, out_dir, pad_start, pad_end)
     if not success:
-        return False, msg
+        return False, msg, False
 
     if not isinstance(config, dict):
-        return False, "Invalid configuration format: expected a dictionary."
+        return False, "Invalid configuration format: expected a dictionary.", False
 
     anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
 
@@ -334,13 +341,13 @@ def export_ankiconnect(
         # Fetch metadata for source_info
         conn = db.get_db()
         meta = conn.execute(
-            '''
+            """
             SELECT m.show_title, m.season, m.episode, m.episode_title, s.start_time
             FROM sentences s
             JOIN media m ON s.media_id = m.id
             WHERE s.id = ?
-            ''',
-            (sentence_id,)
+            """,
+            (sentence_id,),
         ).fetchone()
 
         source_info = ""
@@ -383,6 +390,7 @@ def export_ankiconnect(
             source_info = " ".join(parts)
 
             import html
+
             # Wrap source_info in an HTML permalink
             if base_url:
                 link = f"{base_url.rstrip('/')}/sentence/{sentence_id}"
@@ -397,25 +405,32 @@ def export_ankiconnect(
             note_type = config.get("noteType", "")
 
             if not deck and not note_type:
-                return False, ("Refusing to query all Anki notes. Please provide "
-                               "'deck' or 'noteType' in config.json, or specify a target Note ID.")
+                return (
+                    False,
+                    (
+                        "Refusing to query all Anki notes. Please provide "
+                        "'deck' or 'noteType' in config.json, or specify a target Note ID."
+                    ),
+                    False,
+                )
 
             query_parts = []
             if deck:
-                query_parts.append(f"deck:\"{deck}\"")
+                query_parts.append(f'deck:"{deck}"')
             if note_type:
-                query_parts.append(f"note:\"{note_type}\"")
+                query_parts.append(f'note:"{note_type}"')
             query = " ".join(query_parts)
 
             notes = anki_request("findNotes", query=query)
             if not notes:
-                return False, "No notes found to update."
+                return False, "No notes found to update.", False
             target_note_id = max(notes)
 
         # Generate highlighted text if search query is provided
         highlighted_text = text
         if search_query:
             import re
+
             tokens = re.findall(r"(?:[^\s\"']+|\"[^\"]*\"|'[^']*')+", search_query)
 
             clean_tokens = []
@@ -447,13 +462,13 @@ def export_ankiconnect(
 
         if sentence_highlighted_field:
             if sentence_field == sentence_highlighted_field:
-                return False, "sentenceField and sentenceHighlightedField must not be the same field"
+                return False, "sentenceField and sentenceHighlightedField must not be the same field", False
             if source_field == sentence_highlighted_field:
-                return False, "sourceField and sentenceHighlightedField must not be the same field"
+                return False, "sourceField and sentenceHighlightedField must not be the same field", False
             if audio_field == sentence_highlighted_field:
-                return False, "audioField and sentenceHighlightedField must not be the same field"
+                return False, "audioField and sentenceHighlightedField must not be the same field", False
             if image_field == sentence_highlighted_field:
-                return False, "imageField and sentenceHighlightedField must not be the same field"
+                return False, "imageField and sentenceHighlightedField must not be the same field", False
 
         if sentence_field:
             fields_to_update[sentence_field] = text
@@ -462,19 +477,11 @@ def export_ankiconnect(
         if source_field and source_info:
             fields_to_update[source_field] = source_info
 
-        update_params = {
-            "note": {
-                "id": target_note_id,
-                "fields": fields_to_update
-            }
-        }
+        update_params = {"note": {"id": target_note_id, "fields": fields_to_update}}
 
         # Add media
         if audio_field and os.path.exists(audio_out):
-            store_params = {
-                "filename": os.path.basename(audio_out),
-                "deleteExisting": False
-            }
+            store_params = {"filename": os.path.basename(audio_out), "deleteExisting": False}
             if base_url:
                 store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(audio_out)}"
             else:
@@ -486,10 +493,7 @@ def export_ankiconnect(
                 fields_to_update[audio_field] = current + f"[sound:{actual_filename}]"
 
         if image_field and os.path.exists(image_out):
-            store_params = {
-                "filename": os.path.basename(image_out),
-                "deleteExisting": False
-            }
+            store_params = {"filename": os.path.basename(image_out), "deleteExisting": False}
             if base_url:
                 store_params["url"] = f"{base_url.rstrip('/')}/media/{os.path.basename(image_out)}"
             else:
@@ -508,7 +512,41 @@ def export_ankiconnect(
             tags_str = " ".join(tags)
             anki_request("addTags", notes=[target_note_id], tags=tags_str)
 
-        return True, f"Successfully updated note {target_note_id} in Anki."
+        return True, f"Successfully updated note {target_note_id} in Anki.", is_cached
 
     except Exception as e:
-        return False, str(e)
+        return False, str(e), False
+
+
+def cleanup_media_cache(out_dir: str, max_mb: int = 500):
+    """Cleans up old extracted media files if they exceed the size limit."""
+    if not os.path.exists(out_dir):
+        return
+
+    max_bytes = max_mb * 1024 * 1024
+    files = []
+    total_size = 0
+
+    try:
+        for entry in os.scandir(out_dir):
+            if entry.is_file() and (entry.name.startswith("hagi_audio_") or entry.name.startswith("hagi_img_")):
+                stat = entry.stat()
+                files.append((entry.path, stat.st_mtime, stat.st_size))
+                total_size += stat.st_size
+    except Exception:
+        return
+
+    if total_size <= max_bytes:
+        return
+
+    # Sort by mtime ascending (oldest first)
+    files.sort(key=lambda x: x[1])
+
+    for path, mtime, size in files:
+        if total_size <= max_bytes:
+            break
+        try:
+            os.remove(path)
+            total_size -= size
+        except Exception:
+            pass

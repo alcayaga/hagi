@@ -141,9 +141,7 @@ def test_plex_cache_unpacking(test_db):
             # This should not raise a ValueError
             indexer.process_subs(test_db, "/fake/path/episode1.srt", mock_subs, "subtitle", "eng")
 
-            row = test_db.execute(
-                "SELECT show_title, episode_title FROM media WHERE path = '/fake/path/episode1.srt'"
-            ).fetchone()
+            row = test_db.execute("SELECT show_title, episode_title FROM media WHERE path = '/fake/path/episode1.srt'").fetchone()
             assert row is not None
             assert row["show_title"] == "My Show"
             assert row["episode_title"] == "The Best Episode"
@@ -355,38 +353,15 @@ def test_incremental_indexing_removes_missing_files(test_db):
         indexer.index_directory("/fake/path")
 
     # The deleted file in /fake/path should be removed
-    assert (
-        test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (deleted_media_id,)).fetchone()[
-            0
-        ]
-        == 0
-    )
+    assert test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (deleted_media_id,)).fetchone()[0] == 0
     # Its sentences should be cascaded
-    assert (
-        test_db.execute(
-            "SELECT COUNT(*) FROM sentences WHERE media_id = ?", (deleted_media_id,)
-        ).fetchone()[0]
-        == 0
-    )
+    assert test_db.execute("SELECT COUNT(*) FROM sentences WHERE media_id = ?", (deleted_media_id,)).fetchone()[0] == 0
     # Its FTS should be cascaded (trigger)
-    assert (
-        test_db.execute(
-            "SELECT COUNT(*) FROM sentences_fts WHERE text = 'Deleted sentence'"
-        ).fetchone()[0]
-        == 0
-    )
+    assert test_db.execute("SELECT COUNT(*) FROM sentences_fts WHERE text = 'Deleted sentence'").fetchone()[0] == 0
 
     # The file in /other/path should still exist because we only indexed /fake/path
-    assert (
-        test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (other_media_id,)).fetchone()[0]
-        == 1
-    )
-    assert (
-        test_db.execute(
-            "SELECT COUNT(*) FROM sentences WHERE media_id = ?", (other_media_id,)
-        ).fetchone()[0]
-        == 1
-    )
+    assert test_db.execute("SELECT COUNT(*) FROM media WHERE id = ?", (other_media_id,)).fetchone()[0] == 1
+    assert test_db.execute("SELECT COUNT(*) FROM sentences WHERE media_id = ?", (other_media_id,)).fetchone()[0] == 1
 
 
 def test_get_plex_metadata_external_subtitles():

@@ -133,9 +133,7 @@ def test_no_results(test_db):
 def test_plex_metadata_filters(test_db):
     """Test searching with show_title and episode filters."""
     # Add a mock show to filter by
-    media_id = db.add_media(
-        test_db, "/mock/Shaman.mkv", "mkv_embedded", show_title="Shaman King", season=1, episode=5
-    )
+    media_id = db.add_media(test_db, "/mock/Shaman.mkv", "mkv_embedded", show_title="Shaman King", season=1, episode=5)
     db.add_sentences(test_db, media_id, [("jpn", 0, 1, "ハオ様")])
 
     # Search without filter should find it
@@ -163,15 +161,11 @@ def test_plex_metadata_filters(test_db):
 def test_translation_matching(test_db):
     """Test that search results automatically fetch closest translation."""
     # Add Japanese media
-    jp_id = db.add_media(
-        test_db, "/mock/Anime.ass", "ass", show_title="Dual Language Anime", season=1, episode=1
-    )
+    jp_id = db.add_media(test_db, "/mock/Anime.ass", "ass", show_title="Dual Language Anime", season=1, episode=1)
     db.add_sentences(test_db, jp_id, [("jpn", 10.0, 15.0, "これはテストです")])
 
     # Add English media for the exact same episode
-    en_id = db.add_media(
-        test_db, "/mock/Anime.mkv", "mkv", show_title="Dual Language Anime", season=1, episode=1
-    )
+    en_id = db.add_media(test_db, "/mock/Anime.mkv", "mkv", show_title="Dual Language Anime", season=1, episode=1)
     db.add_sentences(test_db, en_id, [("eng", 10.1, 14.9, "This is a test")])
 
     results = search_sentences(test_db, "テスト")
@@ -187,20 +181,14 @@ def test_translation_matching(test_db):
 
 def test_translation_language_priority(test_db):
     """Test that search results prioritize Spanish > English > Portuguese."""
-    jp_id = db.add_media(
-        test_db, "/mock/Anime_jp.mkv", "mkv", show_title="Priority Anime", season=1, episode=1
-    )
+    jp_id = db.add_media(test_db, "/mock/Anime_jp.mkv", "mkv", show_title="Priority Anime", season=1, episode=1)
     db.add_sentences(test_db, jp_id, [("jpn", 10.0, 15.0, "日本のテキスト")])
 
-    por_id = db.add_media(
-        test_db, "/mock/Anime_por.ass", "ass", show_title="Priority Anime", season=1, episode=1
-    )
+    por_id = db.add_media(test_db, "/mock/Anime_por.ass", "ass", show_title="Priority Anime", season=1, episode=1)
     # Portuguese is very close to the Japanese timestamp (diff = 0.1)
     db.add_sentences(test_db, por_id, [("por", 10.1, 15.1, "Portuguese text")])
 
-    spa_id = db.add_media(
-        test_db, "/mock/Anime_spa.ass", "ass", show_title="Priority Anime", season=1, episode=1
-    )
+    spa_id = db.add_media(test_db, "/mock/Anime_spa.ass", "ass", show_title="Priority Anime", season=1, episode=1)
     # Spanish is further away (diff = 2.0) but should take priority
     db.add_sentences(test_db, spa_id, [("spa", 12.0, 17.0, "Spanish text")])
 
@@ -213,14 +201,10 @@ def test_translation_language_priority(test_db):
 
 def test_search_foreign_returns_japanese_primary(test_db):
     """Test that searching for a foreign language word prioritizes the Japanese text as the primary result."""
-    jp_id = db.add_media(
-        test_db, "/mock/Anime_jp.mkv", "mkv", show_title="Priority Anime", season=1, episode=2
-    )
+    jp_id = db.add_media(test_db, "/mock/Anime_jp.mkv", "mkv", show_title="Priority Anime", season=1, episode=2)
     db.add_sentences(test_db, jp_id, [("jpn", 10.0, 15.0, "日本のテキスト")])
 
-    spa_id = db.add_media(
-        test_db, "/mock/Anime_spa.ass", "ass", show_title="Priority Anime", season=1, episode=2
-    )
+    spa_id = db.add_media(test_db, "/mock/Anime_spa.ass", "ass", show_title="Priority Anime", season=1, episode=2)
     db.add_sentences(test_db, spa_id, [("spa", 10.1, 15.1, "Palabra en español")])
 
     # Search for the Spanish word
