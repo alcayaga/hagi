@@ -161,11 +161,36 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.5, pad_en
         audio_stream_idx = 0
         if probe_res.returncode == 0:
             streams = json.loads(probe_res.stdout).get("streams", [])
+
+            jpn_idx = None
+            default_idx = None
+            und_idx = None
+
             for i, stream in enumerate(streams):
-                lang = stream.get("tags", {}).get("language", "").lower()
-                if lang in ("jpn", "ja", "jp"):
-                    audio_stream_idx = i
+                tags = stream.get("tags", {})
+                lang = tags.get("language", "").lower()
+                title = tags.get("title", "").lower()
+
+                if lang in ("jpn", "ja", "jp") or "japanese" in title:
+                    jpn_idx = i
                     break
+
+                if stream.get("disposition", {}).get("default", 0) == 1 and default_idx is None:
+                    default_idx = i
+
+                if lang in ("und", "unknown", "") and und_idx is None:
+                    und_idx = i
+
+            if jpn_idx is not None:
+                audio_stream_idx = jpn_idx
+            elif default_idx is not None:
+                def_lang = streams[default_idx].get("tags", {}).get("language", "").lower()
+                if def_lang in ("und", "unknown", ""):
+                    audio_stream_idx = default_idx
+                elif und_idx is not None:
+                    audio_stream_idx = und_idx
+            elif und_idx is not None:
+                audio_stream_idx = und_idx
 
         # Extract Audio using the detected stream index
         subprocess.run(
