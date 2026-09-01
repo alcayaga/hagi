@@ -210,6 +210,8 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
     if sentence_id is not None:
         conditions.append("s.id = ?")
         params.append(sentence_id)
+    else:
+        conditions.append("s.language != 'por'")
 
     if not conditions and sentence_id is None:
         return []
@@ -293,7 +295,7 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
                 ) as eng_text
             FROM sentences s
             JOIN media m ON s.media_id = m.id
-            WHERE {where_clause} AND s.language != 'por'
+            WHERE {where_clause}
         )
         GROUP BY {group_by}
         LIMIT 1000

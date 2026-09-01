@@ -90,6 +90,22 @@ def test_search_sentences_by_id(test_db):
     assert results[0]["language"] == "eng"
     assert results[0]["text"] == "English test"
 
+    # Test Portuguese exclusion
+    por_id = db.add_media(test_db, "/mock/Anime_por.mkv", "mkv", show_title="TestPor", season=1, episode=1)
+    db.add_sentences(test_db, por_id, [("por", 10.0, 15.0, "Portuguese test")])
+
+    # Normal search excludes por
+    assert len(search_sentences(test_db, "Portuguese test")) == 0
+
+    row = test_db.execute("SELECT id FROM sentences WHERE text = 'Portuguese test'").fetchone()
+    por_sentence_id = dict(row)["id"]
+
+    # Exact ID search retrieves por
+    results_por = search_sentences(test_db, "", sentence_id=por_sentence_id)
+    assert len(results_por) == 1
+    assert results_por[0]["language"] == "por"
+    assert results_por[0]["text"] == "Portuguese test"
+
     results = search_sentences(test_db, "", sentence_id=999)
     assert len(results) == 0
 
