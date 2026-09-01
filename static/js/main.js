@@ -300,6 +300,39 @@ function renderResults() {
   });
 }
 
+/**
+ * Highlights search terms in the given text, wrapping them in styling tags.
+ */
+function highlightSearchTerms(text) {
+  const searchInput = document.getElementById("searchInput");
+  if (!searchInput) return text;
+  const query = searchInput.value.trim();
+  if (!query) return text;
+
+  const tokens = query.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+  let cleanTokens = [];
+
+  for (let t of tokens) {
+    t = t.replace(/^["']+|["']+$/g, "");
+    if (t.startsWith("-")) continue;
+    if (t) {
+      cleanTokens.push(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+    }
+  }
+
+  if (cleanTokens.length === 0) return text;
+
+  const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
+  const parts = text.split(/(<[a-zA-Z/](?:[^>"']|"[^"]*"|'[^']*')*>)/g);
+  for (let i = 0; i < parts.length; i++) {
+    if (i % 2 === 0) {
+      parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
+    }
+  }
+
+  return parts.join("");
+}
+
 let currentExtraction = { id: null, padStart: 0.5, padEnd: 0.5 };
 
 /**
@@ -368,14 +401,15 @@ async function extractMedia(id, btnElement) {
     const data = await response.json();
 
     if (data.success) {
-      document.getElementById("mediaText").innerHTML = `` + (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
+      const extractedText = (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
+      document.getElementById("mediaText").innerHTML = highlightSearchTerms(extractedText);
 
       const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
       const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
       let transHtml = "";
       if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanSpa}</span></div>`;
       if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanEng}</span></div>`;
-      document.getElementById("mediaTranslations").innerHTML = transHtml;
+      document.getElementById("mediaTranslations").innerHTML = highlightSearchTerms(transHtml);
 
       document.getElementById("mediaImage").src = data.image_url + "?t=" + new Date().getTime();
       document.getElementById("mediaAudio").src = data.audio_url + "?t=" + new Date().getTime();
@@ -612,6 +646,8 @@ async function openExtractionTimeline(id) {
   timelineData.target = targetSentence;
   timelineData.selectedStart = Math.max(0, targetStart - currentExtraction.padStart);
   timelineData.selectedEnd = targetEnd + currentExtraction.padEnd;
+  timelineData.lastExtractedStart = timelineData.selectedStart;
+  timelineData.lastExtractedEnd = timelineData.selectedEnd;
 
   renderTimeline(contextData);
 }
@@ -785,6 +821,85 @@ function updateTimelineSelection() {
   if (unright) unright.style.width = `${rightPct}%`;
 
   document.getElementById("timelineDurationDisplay").innerText = `${(timelineData.selectedEnd - timelineData.selectedStart).toFixed(2)}s`;
+
+  updateEncompassedText();
+
+  const isStale = Math.abs(timelineData.selectedStart - timelineData.lastExtractedStart) > 0.01 || Math.abs(timelineData.selectedEnd - timelineData.lastExtractedEnd) > 0.01;
+
+  const btn = document.getElementById("btnReextract");
+  const overlay = document.getElementById("mediaStaleOverlay");
+  const playOverlay = document.getElementById("mediaPlayOverlay");
+  const img = document.getElementById("mediaImage");
+
+  if (isStale) {
+    btn.classList.add("bg-indigo-600", "hover:bg-indigo-700", "text-white", "animate-pulse");
+    btn.classList.remove("bg-gray-200", "dark:bg-gray-700", "text-gray-700", "dark:text-gray-300");
+    if (overlay) overlay.classList.remove("hidden");
+    if (playOverlay) playOverlay.classList.add("hidden");
+    if (img) img.classList.add("grayscale", "opacity-50");
+  } else {
+    btn.classList.remove("bg-indigo-600", "hover:bg-indigo-700", "text-white", "animate-pulse");
+    btn.classList.add("bg-gray-200", "dark:bg-gray-700", "text-gray-700", "dark:text-gray-300");
+    if (overlay) overlay.classList.add("hidden");
+    if (playOverlay) playOverlay.classList.remove("hidden");
+    if (img) img.classList.remove("grayscale", "opacity-50");
+  }
+}
+
+function updateEncompassedText() {
+  const selStart = timelineData.selectedStart;
+  const selEnd = timelineData.selectedEnd;
+
+  const sanitizeHTML = (str) => {
+    const temp = document.createElement("div");
+    temp.textContent = str;
+    return temp.innerHTML;
+  };
+
+  const cleanText = (text, lang) => {
+    let cleaned = (text || "").replace(/<br\s*\/?>/gi, "\n");
+    cleaned = sanitizeHTML(cleaned);
+    return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
+  };
+
+  const getEncompassed = (arr, lang) => {
+    if (!arr) return "";
+    const filtered = arr.filter((s) => {
+      const mid = ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
+      return mid >= selStart && mid <= selEnd;
+    });
+
+    return filtered
+      .map((s) => cleanText(s.text, lang))
+      .reduce((acc, text, i, array) => {
+        if (i === 0) return text;
+        if (lang === "jpn") {
+          const prev = array[i - 1];
+          const endsSentence = /[だですまるかよねわぞ。！？]$/.test(prev.trim());
+          return acc + (endsSentence ? "<br/>" : "") + text;
+        } else {
+          let prevText = acc.trim();
+          if (prevText.length > 0 && !prevText.match(/[.!?…,;:]$/)) {
+            prevText += ".";
+          }
+          return prevText + " " + text;
+        }
+      }, "");
+  };
+
+  const newTargetText = getEncompassed(timelineData.contextData.target_context, timelineData.contextData.target_lang);
+  const newSecondaryText = getEncompassed(timelineData.contextData.secondary_context, timelineData.contextData.secondary_lang);
+
+  const targetTextToSet = newTargetText || cleanText(timelineData.target.text, timelineData.contextData.target_lang);
+  document.getElementById("mediaText").innerHTML = highlightSearchTerms(targetTextToSet);
+
+  let transHtml = "";
+  if (newSecondaryText) {
+    const langLabel = (timelineData.contextData.secondary_lang || "sub").toUpperCase();
+    const c = getLangColors(timelineData.contextData.secondary_lang);
+    transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;
+  }
+  document.getElementById("mediaTranslations").innerHTML = highlightSearchTerms(transHtml);
 }
 
 /**
@@ -856,13 +971,18 @@ async function applyTimelineExtraction() {
     return;
   }
 
-  currentExtraction.padStart = targetStart - timelineData.selectedStart;
-  currentExtraction.padEnd = timelineData.selectedEnd - targetEnd;
+  const requestedStart = timelineData.selectedStart;
+  const requestedEnd = timelineData.selectedEnd;
+  const requestId = Date.now();
+  currentExtraction.activeRequestId = requestId;
+
+  currentExtraction.padStart = targetStart - requestedStart;
+  currentExtraction.padEnd = requestedEnd - targetEnd;
 
   document.getElementById("mediaModalLoading").classList.remove("hidden");
   const btn = document.getElementById("btnReextract");
   btn.disabled = true;
-  btn.innerText = "Extracting...";
+  btn.innerText = "Syncing...";
 
   try {
     const response = await fetch(`/api/extract/${currentExtraction.id}`, {
@@ -874,6 +994,10 @@ async function applyTimelineExtraction() {
       }),
     });
     const data = await response.json();
+
+    if (currentExtraction.activeRequestId !== requestId) {
+      return; // Superseded by a newer extraction
+    }
 
     if (data.success) {
       const mediaImage = document.getElementById("mediaImage");
@@ -894,66 +1018,23 @@ async function applyTimelineExtraction() {
       mediaAudio.play().catch((e) => console.log(e));
 
       await Promise.all([imgLoadPromise, audioLoadPromise]);
-
-      const selStart = timelineData.selectedStart;
-      const selEnd = timelineData.selectedEnd;
-
-      const cleanText = (text, lang) => {
-        let cleaned = (text || "").replace(/<br\s*\/?>/gi, lang === "jpn" ? "" : " ");
-        return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
-      };
-
-      const getEncompassed = (arr, lang) => {
-        if (!arr) return "";
-
-        const filtered = arr.filter((s) => {
-          const mid = ((s.start_time || 0) + (s.end_time || s.start_time + 2.0)) / 2.0;
-          return mid >= selStart && mid <= selEnd;
-        });
-
-        return filtered
-          .map((s) => cleanText(s.text, lang))
-          .reduce((acc, text, i, array) => {
-            if (i === 0) return text;
-
-            if (lang === "jpn") {
-              const prev = array[i - 1];
-              const endsSentence = /[だですまるかよねわぞ。！？]$/.test(prev.trim());
-              return acc + (endsSentence ? "<br/>" : "") + text;
-            } else {
-              let prevText = acc.trim();
-              if (prevText.length > 0 && !prevText.match(/[.!?…,;:]$/)) {
-                prevText += ".";
-              }
-              return prevText + " " + text;
-            }
-          }, "");
-      };
-
-      const newTargetText = getEncompassed(timelineData.contextData.target_context, timelineData.contextData.target_lang);
-      const newSecondaryText = getEncompassed(timelineData.contextData.secondary_context, timelineData.contextData.secondary_lang);
-
-      const targetTextToSet = newTargetText || cleanText(timelineData.target.text, timelineData.contextData.target_lang);
-      const cTarget = getLangColors(timelineData.contextData.target_lang);
-      const targetLabel = (timelineData.contextData.target_lang || "sub").toUpperCase();
-      document.getElementById("mediaText").innerHTML = targetTextToSet;
-
-      let transHtml = "";
-      if (newSecondaryText) {
-        const langLabel = (timelineData.contextData.secondary_lang || "sub").toUpperCase();
-        const c = getLangColors(timelineData.contextData.secondary_lang);
-        transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;
-      }
-      document.getElementById("mediaTranslations").innerHTML = transHtml;
+      timelineData.lastExtractedStart = requestedStart;
+      timelineData.lastExtractedEnd = requestedEnd;
+      updateTimelineSelection();
+      // Media fully loaded
     } else {
       alert("Extraction failed: " + data.detail);
     }
   } catch (error) {
-    alert("Error calling extraction API: " + error);
+    if (currentExtraction.activeRequestId === requestId) {
+      alert("Error calling extraction API: " + error);
+    }
   } finally {
-    document.getElementById("mediaModalLoading").classList.add("hidden");
-    btn.disabled = false;
-    btn.innerText = "Apply & Re-extract";
+    if (currentExtraction.activeRequestId === requestId) {
+      document.getElementById("mediaModalLoading").classList.add("hidden");
+      btn.disabled = false;
+      btn.innerText = "Sync Media";
+    }
   }
 }
 
@@ -961,6 +1042,14 @@ async function applyTimelineExtraction() {
  * Replays the audio from the beginning.
  */
 function replayAudio() {
+  const overlay = document.getElementById("mediaStaleOverlay");
+  const isStale = overlay && !overlay.classList.contains("hidden");
+
+  if (isStale) {
+    applyTimelineExtraction();
+    return;
+  }
+
   const audio = document.getElementById("mediaAudio");
   if (audio) {
     audio.currentTime = 0;
@@ -1030,6 +1119,7 @@ async function sendToAnki(btn, targetNoteId = null) {
     const payload = {
       pad_start: sendPadStart,
       pad_end: sendPadEnd,
+      search_query: document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim() : "",
     };
     if (targetNoteId) {
       payload.target_note_id = Number(targetNoteId);

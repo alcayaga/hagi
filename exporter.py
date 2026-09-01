@@ -264,6 +264,7 @@ def export_ankiconnect(
     pad_end: float = 0.5,
     target_note_id: int | None = None,
     base_url: str | None = None,
+    search_query: str | None = None,
 ):
     """Export sentence to AnkiConnect.
 
@@ -275,6 +276,7 @@ def export_ankiconnect(
         pad_end (float, optional): Seconds to pad after end.
         target_note_id (int, optional): Specific Note ID to update.
         base_url (str, optional): Base URL of the web UI to serve media from.
+        search_query (str, optional): Search query used to find the sentence, to highlight.
 
     Returns:
         tuple: (bool, str) - Success status and message.
@@ -376,13 +378,53 @@ def export_ankiconnect(
                 return False, "No notes found to update."
             target_note_id = max(notes)
 
+        # Generate highlighted text if search query is provided
+        highlighted_text = text
+        if search_query:
+            import re
+            tokens = re.findall(r"(?:[^\s\"']+|\"[^\"]*\"|'[^']*')+", search_query)
+
+            clean_tokens = []
+            for token in tokens:
+                # Strip leading/trailing quotes before checking for negative terms
+                token = token.strip("\"'")
+                if token.startswith("-"):
+                    continue
+                if token:
+                    clean_tokens.append(re.escape(token))
+
+            if clean_tokens:
+                pattern = re.compile(f"({'|'.join(clean_tokens)})", flags=re.IGNORECASE)
+                # Split by HTML tags, properly ignoring > inside quotes and requiring valid tag start
+                parts = re.split(r"(<[a-zA-Z/](?:[^>\"']|\"[^\"]*\"|'[^']*')*>)", highlighted_text)
+                for i in range(len(parts)):
+                    # Even indices are text segments, odd are HTML tags
+                    if i % 2 == 0:
+                        parts[i] = pattern.sub(r"<b>\1</b>", parts[i])
+                highlighted_text = "".join(parts)
+
         # Prepare fields
         fields_to_update = {}
         sentence_field = config.get("sentenceField")
+        sentence_highlighted_field = config.get("sentenceHighlightedField")
         source_field = config.get("sourceField")
+        audio_field = config.get("audioField")
+        image_field = config.get("imageField")
+
+        if sentence_highlighted_field:
+            if sentence_field == sentence_highlighted_field:
+                return False, "sentenceField and sentenceHighlightedField must not be the same field"
+            if source_field == sentence_highlighted_field:
+                return False, "sourceField and sentenceHighlightedField must not be the same field"
+            if audio_field == sentence_highlighted_field:
+                return False, "audioField and sentenceHighlightedField must not be the same field"
+            if image_field == sentence_highlighted_field:
+                return False, "imageField and sentenceHighlightedField must not be the same field"
 
         if sentence_field:
             fields_to_update[sentence_field] = text
+        if sentence_highlighted_field:
+            fields_to_update[sentence_highlighted_field] = highlighted_text
         if source_field and source_info:
             fields_to_update[source_field] = source_info
 
@@ -394,7 +436,6 @@ def export_ankiconnect(
         }
 
         # Add media
-        audio_field = config.get("audioField")
         if audio_field and os.path.exists(audio_out):
             store_params = {
                 "filename": os.path.basename(audio_out),
@@ -410,7 +451,6 @@ def export_ankiconnect(
                 current = fields_to_update.get(audio_field, "")
                 fields_to_update[audio_field] = current + f"[sound:{actual_filename}]"
 
-        image_field = config.get("imageField")
         if image_field and os.path.exists(image_out):
             store_params = {
                 "filename": os.path.basename(image_out),
