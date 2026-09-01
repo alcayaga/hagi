@@ -67,7 +67,11 @@ let activeEp = null;
  */
 function updateUrl(queryOverride) {
   const query = queryOverride !== undefined ? queryOverride : document.getElementById("searchInput").value;
-  if (!query.trim()) return;
+
+  if (!query.trim()) {
+    history.pushState(null, "", "/");
+    return;
+  }
 
   let url = `/search/${encodeURIComponent(query)}`;
   let params = new URLSearchParams();
@@ -490,10 +494,13 @@ async function extractMedia(id, btnElement) {
  * and the Japanese track, rendering them side-by-side.
  *
  * @param {number} id - The ID of the target sentence.
+ * @param {boolean} pushState - Whether to update the browser history.
  */
-async function viewContext(id) {
+async function viewContext(id, pushState = true) {
   document.getElementById("contextModal").classList.remove("hidden");
-  history.pushState(null, "", `/context/${id}`);
+  if (pushState) {
+    history.pushState(null, "", `/context/${id}`);
+  }
   const list = document.getElementById("contextList");
   const loading = document.getElementById("contextLoading");
 
@@ -1298,8 +1305,7 @@ window.addEventListener("DOMContentLoaded", async () => {
   } else if (path.startsWith("/context/")) {
     const id = path.split("/").pop();
     if (id) {
-      viewContext(parseInt(id));
-      history.pushState(null, "", `/context/${id}`);
+      viewContext(parseInt(id), false);
     }
   } else if (path.startsWith("/search/")) {
     const query = decodeURIComponent(path.split("/").slice(2).join("/"));
@@ -1320,18 +1326,28 @@ window.addEventListener("popstate", async (event) => {
   if (!document.getElementById("mediaModal").classList.contains("hidden")) {
     document.getElementById("mediaModal").classList.add("hidden");
     document.getElementById("mediaAudio").pause();
+    document.body.classList.remove("overflow-hidden");
   }
   if (!document.getElementById("contextModal").classList.contains("hidden")) {
     document.getElementById("contextModal").classList.add("hidden");
+    document.body.classList.remove("overflow-hidden");
   }
 
   if (path.startsWith("/search/")) {
     const query = decodeURIComponent(path.split("/").slice(2).join("/"));
-    document.getElementById("searchInput").value = query || "";
-    activeShow = urlParams.has("show") ? urlParams.get("show") : null;
-    activeSeason = urlParams.has("season") ? parseInt(urlParams.get("season")) : null;
-    activeEp = urlParams.has("episode") ? parseInt(urlParams.get("episode")) : null;
-    performSearch(false, false);
+    const targetShow = urlParams.has("show") ? urlParams.get("show") : null;
+    const targetSeason = urlParams.has("season") ? parseInt(urlParams.get("season")) : null;
+    const targetEp = urlParams.has("episode") ? parseInt(urlParams.get("episode")) : null;
+
+    const currentQuery = document.getElementById("searchInput").value;
+
+    if (currentQuery !== query || activeShow !== targetShow || activeSeason !== targetSeason || activeEp !== targetEp) {
+      document.getElementById("searchInput").value = query || "";
+      activeShow = targetShow;
+      activeSeason = targetSeason;
+      activeEp = targetEp;
+      performSearch(false, false);
+    }
   } else if (path === "/") {
     document.getElementById("searchInput").value = "";
     document.getElementById("resultsList").innerHTML = "";
@@ -1345,6 +1361,6 @@ window.addEventListener("popstate", async (event) => {
     }
   } else if (path.startsWith("/context/")) {
     const id = path.split("/").pop();
-    if (id) viewContext(parseInt(id));
+    if (id) viewContext(parseInt(id), false);
   }
 });

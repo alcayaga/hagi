@@ -33,6 +33,10 @@ def test_read_main():
     assert response.status_code == 200
     assert "Hagi Search" in response.text
 
+    response = client.get("/search/and/or")
+    assert response.status_code == 200
+    assert "Hagi Search" in response.text
+
     response = client.get("/sentence/1")
     assert response.status_code == 200
     assert "Hagi Search" in response.text

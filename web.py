@@ -67,7 +67,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
-@app.get("/search/{query}", response_class=HTMLResponse)
+@app.get("/search/{query:path}", response_class=HTMLResponse)
 @app.get("/sentence/{sentence_id}", response_class=HTMLResponse)
 @app.get("/context/{sentence_id}", response_class=HTMLResponse)
 async def get_ui(request: Request, query: str = None, sentence_id: int = None):

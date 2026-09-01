@@ -216,6 +216,8 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
 
     where_clause = " AND ".join(conditions)
 
+    group_by = "matched_id" if sentence_id is not None else "COALESCE(jpn_id, matched_id)"
+
     sql = f"""
         SELECT * FROM (
             SELECT
@@ -293,7 +295,7 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
             JOIN media m ON s.media_id = m.id
             WHERE {where_clause} AND s.language != 'por'
         )
-        GROUP BY COALESCE(jpn_id, matched_id)
+        GROUP BY {group_by}
         LIMIT 1000
     """
     rows = conn.execute(sql, params).fetchall()
@@ -302,9 +304,14 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
     for row in rows:
         row_dict = dict(row)
 
-        final_id = row_dict["jpn_id"] or row_dict["matched_id"]
-        final_text = row_dict["jpn_text"] or row_dict["matched_text"]
-        final_lang = "jpn" if row_dict["jpn_text"] else row_dict["matched_language"]
+        if sentence_id is not None:
+            final_id = row_dict["matched_id"]
+            final_text = row_dict["matched_text"]
+            final_lang = row_dict["matched_language"]
+        else:
+            final_id = row_dict["jpn_id"] or row_dict["matched_id"]
+            final_text = row_dict["jpn_text"] or row_dict["matched_text"]
+            final_lang = "jpn" if row_dict["jpn_text"] else row_dict["matched_language"]
 
         results.append(
             {
