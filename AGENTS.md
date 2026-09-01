@@ -48,18 +48,20 @@ When a user searches for a term, the engine doesn't just return the matching sen
   npx prettier --write static/js/main.js
   ```
 ## 🛠️ General Guidelines
-- Do not run commands using `python3` globally; always use the `hagi` conda environment.
+- **Always use the Conda Environment:** Execute all Python, `pytest`, and `ruff` commands strictly via the `hagi` conda environment (e.g., `conda run -n hagi pytest`). Running them globally will cause them to fail due to missing dependencies.
 - When generating SQL, prefer subqueries or joins on `sentences_fts` for text searching rather than raw `LIKE` on the `sentences` table. **However, note that FTS5 trigram indexes do not always work well with short Japanese words of 2 or fewer characters, so `LIKE` may be necessary in those edge cases.**
 - **Conventional Commits:** It is mandatory to use the Conventional Commits standard (e.g., `feat:`, `fix:`) for all commit messages. This standard must also be applied to branch naming (e.g., `feat/...`, `fix/...`).
 
 ## 🔄 GitHub PR & Review Loop
 When committing new features or fixes, you are expected to handle the entire PR lifecycle natively:
-1. **Testing is Mandatory:** You must run the full unit tests (`PYTHONPATH=. conda run -n hagi pytest`) and ensure they pass before making *any* commit.
+1. **Testing is Mandatory:** Existing tests must pass without regression (`PYTHONPATH=. conda run -n hagi pytest`). Furthermore, you **must write new tests** whenever adding new features, fixing bugs, or addressing user feedback. Ensure the full test suite passes before making *any* commit.
 2. Commit your changes and push the branch to origin. **Do NOT push multiple commits rapidly**, as this breaks or auto-pauses the CodeRabbit AI review process. Wait for the review to finish before pushing iterative fixes.
-3. Create the Pull Request using the GitHub CLI (`gh pr create`). It is required to fill out and follow the PR template provided by the repository.
-4. Monitor the pre-merge checks and wait for CodeRabbit AI's review to finish by running:
+3. **Ask for manual user feedback** so the user can test the changes locally before you create the Pull Request.
+4. Once the user approves the local test, create the Pull Request using the GitHub CLI (`gh pr create`). You **MUST** format the PR body using the `.github/pull_request_template.md`. When filling out the pre-merge checklist, you must actually validate each checkbox and not just mark it for the sake of it.
+5. Monitor the pre-merge GitHub Actions checks by running `gh pr checks <pr_number> --watch --interval 60`. 
+6. **Trigger CodeRabbit Manually:** Because this OSS repository is limited to 1 CodeRabbit review per hour, you must **NOT** waste it on failing builds. Only after the standard GitHub Actions tests pass, trigger the CodeRabbit review by running:
    ```bash
-   gh pr checks <pr_number> --watch --interval 60 && gh pr view <pr_number> --comments
+   gh pr comment <pr_number> --body "@coderabbitai review"
    ```
-5. **Do NOT ask the user for feedback** until the `gh pr checks` command definitively reports that the CodeRabbit review has passed and you have checked for new comments.
-6. Address any actionable review comments from CodeRabbit. Ensure all tests and coverage checks pass before merging via `gh pr merge <pr_number> --squash --delete-branch`.
+7. Monitor the PR comments for CodeRabbit's reply and wait for the review to definitively finish. 
+8. Address any actionable review comments from CodeRabbit. Ensure all tests and coverage checks pass before merging via `gh pr merge <pr_number> --squash --delete-branch`.
