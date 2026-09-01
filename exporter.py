@@ -409,6 +409,9 @@ def export_ankiconnect(
         sentence_highlighted_field = config.get("sentenceHighlightedField")
         source_field = config.get("sourceField")
 
+        if sentence_field and sentence_field == sentence_highlighted_field:
+            return False, "sentenceField and sentenceHighlightedField must not be the same field"
+
         if sentence_field:
             fields_to_update[sentence_field] = text
         if sentence_highlighted_field:
