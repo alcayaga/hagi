@@ -29,6 +29,29 @@ def test_read_main():
     assert "text/html" in response.headers["content-type"]
     assert "Hagi Search" in response.text
 
+    response = client.get("/search/web")
+    assert response.status_code == 200
+    assert "Hagi Search" in response.text
+
+    response = client.get("/sentence/1")
+    assert response.status_code == 200
+    assert "Hagi Search" in response.text
+
+    response = client.get("/context/1")
+    assert response.status_code == 200
+    assert "Hagi Search" in response.text
+
+def test_api_sentence(test_db):
+    """Test function."""
+    with patch("web.db.get_db", return_value=test_db):
+        response = client.get("/api/sentence/1")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["text"] == "Hello web test"
+
+        response = client.get("/api/sentence/999")
+        assert response.status_code == 404
+
 
 def test_api_search(test_db):
     """Test function."""

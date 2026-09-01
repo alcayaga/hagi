@@ -161,7 +161,7 @@ def add_sentences(conn, media_id, sentences):
     )
 
 
-def search_sentences(conn, query, show_title=None, season=None, episode=None):
+def search_sentences(conn, query, show_title=None, season=None, episode=None, sentence_id=None):
     """Search for sentences using a query string.
 
     Args:
@@ -170,6 +170,7 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None):
         show_title (str, optional): Exact show title to filter by.
         season (int, optional): Exact season number to filter by.
         episode (int, optional): Exact episode number to filter by.
+        sentence_id (int, optional): Exact sentence ID to fetch.
 
     Returns:
         list: List of matching sentence rows.
@@ -190,8 +191,9 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None):
                 conditions.append("s.text NOT LIKE ?")
                 params.append(f"%{term}%")
         else:
-            conditions.append("s.text LIKE ?")
-            params.append(f"%{token}%")
+            if token:
+                conditions.append("s.text LIKE ?")
+                params.append(f"%{token}%")
 
     if show_title:
         conditions.append("m.show_title = ?")
@@ -205,7 +207,11 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None):
         conditions.append("m.episode = ?")
         params.append(episode)
 
-    if not conditions:
+    if sentence_id is not None:
+        conditions.append("s.id = ?")
+        params.append(sentence_id)
+
+    if not conditions and sentence_id is None:
         return []
 
     where_clause = " AND ".join(conditions)

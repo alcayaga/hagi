@@ -357,6 +357,14 @@ def export_ankiconnect(
 
             source_info = " ".join(parts)
 
+            # Wrap source_info in an HTML permalink
+            if base_url:
+                link = f"{base_url.rstrip('/')}/sentence/{sentence_id}"
+            else:
+                link = f"http://localhost:8000/sentence/{sentence_id}"
+
+            source_info = f'<a href="{link}">{source_info}</a>'
+
         # Resolve note ID
         if not target_note_id:
             deck = config.get("deck", "")

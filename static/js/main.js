@@ -61,6 +61,25 @@ let activeSeason = null;
 let activeEp = null;
 
 /**
+ * Updates the browser URL to reflect the current search query and filters.
+ *
+ * @param {string} [queryOverride] - Optional query string to use instead of the input value.
+ */
+function updateUrl(queryOverride) {
+  const query = queryOverride !== undefined ? queryOverride : document.getElementById("searchInput").value;
+  if (!query.trim()) return;
+
+  let url = `/search/${encodeURIComponent(query)}`;
+  let params = new URLSearchParams();
+  if (activeShow) params.append("show", activeShow);
+  if (activeSeason !== null) params.append("season", activeSeason);
+  if (activeEp !== null) params.append("episode", activeEp);
+  const qs = params.toString();
+  if (qs) url += `?${qs}`;
+  history.pushState(null, "", url);
+}
+
+/**
  * Handles the selection of a specific Show from the unified filters.
  * Resets the underlying season/episode states and refreshes the UI.
  */
@@ -69,6 +88,7 @@ function onShowChange() {
   activeSeason = null;
   activeEp = null;
   populateDropdowns();
+  updateUrl();
   renderResults();
 }
 
@@ -92,6 +112,7 @@ function onEpisodeChange() {
     activeSeason = null;
     activeEp = parseInt(val.replace("e", ""));
   }
+  updateUrl();
   renderResults();
 }
 
@@ -178,8 +199,11 @@ function populateDropdowns() {
 /**
  * Fetches all search results matching the query string from the backend API.
  * Populates the local results cache and updates the UI filters.
+ *
+ * @param {boolean} pushState - Whether to push the new state to the browser history.
+ * @param {boolean} resetFilters - Whether to reset UI filters before searching.
  */
-async function performSearch() {
+async function performSearch(pushState = true, resetFilters = true) {
   const query = document.getElementById("searchInput").value;
   const loading = document.getElementById("loading");
   const container = document.getElementById("resultsList");
@@ -189,13 +213,17 @@ async function performSearch() {
   loading.classList.remove("hidden");
   container.innerHTML = "";
 
-  // Reset filters
-  activeShow = null;
-  activeSeason = null;
-  activeEp = null;
-  document.getElementById("filterShow").innerHTML = '<option value="">All Shows</option>';
+  if (resetFilters) {
+    activeShow = null;
+    activeSeason = null;
+    activeEp = null;
+    document.getElementById("filterShow").innerHTML = '<option value="">All Shows</option>';
+  }
 
   try {
+    if (pushState) {
+      updateUrl(query);
+    }
     const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     allSearchResults = await response.json();
 
@@ -371,7 +399,11 @@ async function extractMedia(id, btnElement) {
   currentExtraction.padStart = padStart;
   currentExtraction.padEnd = padEnd;
 
-  const originalText = btnElement.innerText;
+  const originalText = btnElement ? btnElement.innerText : "";
+
+  if (btnElement) {
+    history.pushState(null, "", `/sentence/${id}`);
+  }
 
   const r = allSearchResults.find((x) => x.id === id);
   if (r) {
@@ -407,9 +439,11 @@ async function extractMedia(id, btnElement) {
 
     document.getElementById("mediaTimestampBadge").innerText = timeStr;
   }
-  btnElement.innerText = "Wait...";
-  btnElement.disabled = true;
-  btnElement.classList.add("opacity-50");
+  if (btnElement) {
+    btnElement.innerText = "Wait...";
+    btnElement.disabled = true;
+    btnElement.classList.add("opacity-50");
+  }
 
   try {
     const response = await fetch(`/api/extract/${id}`, {
@@ -442,9 +476,11 @@ async function extractMedia(id, btnElement) {
   } catch (error) {
     alert("Error calling extraction API: " + error);
   } finally {
-    btnElement.innerText = originalText;
-    btnElement.disabled = false;
-    btnElement.classList.remove("opacity-50");
+    if (btnElement) {
+      btnElement.innerText = originalText;
+      btnElement.disabled = false;
+      btnElement.classList.remove("opacity-50");
+    }
   }
 }
 
@@ -457,6 +493,7 @@ async function extractMedia(id, btnElement) {
  */
 async function viewContext(id) {
   document.getElementById("contextModal").classList.remove("hidden");
+  history.pushState(null, "", `/context/${id}`);
   const list = document.getElementById("contextList");
   const loading = document.getElementById("contextLoading");
 
@@ -585,6 +622,7 @@ function closeModal(modalId, audioId = null) {
   if (modalId === "mediaModal") {
     toggleModalView("mediaExtractView");
   }
+  updateUrl();
 }
 
 /**
@@ -998,6 +1036,10 @@ async function applyTimelineExtraction() {
   currentExtraction.padStart = targetStart - requestedStart;
   currentExtraction.padEnd = requestedEnd - targetEnd;
 
+  // Silently update the URL with the new slider values
+  const url = `/sentence/${currentExtraction.id}?padStart=${currentExtraction.padStart.toFixed(3)}&padEnd=${currentExtraction.padEnd.toFixed(3)}`;
+  history.replaceState(null, "", url);
+
   document.getElementById("mediaModalLoading").classList.remove("hidden");
   const btn = document.getElementById("btnReextract");
   btn.disabled = true;
@@ -1225,3 +1267,84 @@ function toggleModalView(viewName) {
     }, 300);
   }
 }
+
+window.addEventListener("DOMContentLoaded", async () => {
+  const path = window.location.pathname;
+  const urlParams = new URLSearchParams(window.location.search);
+
+  if (path.startsWith("/sentence/")) {
+    const id = path.split("/").pop();
+    if (id) {
+      try {
+        const response = await fetch(`/api/sentence/${id}`);
+        if (response.ok) {
+          const sentence = await response.json();
+          allSearchResults = [sentence];
+          activeShow = sentence.show_title || sentence.path.split("/").pop();
+          activeSeason = sentence.season;
+          activeEp = sentence.episode;
+          populateDropdowns();
+          renderResults();
+
+          if (urlParams.has("padStart")) document.getElementById("padStart").value = urlParams.get("padStart");
+          if (urlParams.has("padEnd")) document.getElementById("padEnd").value = urlParams.get("padEnd");
+
+          extractMedia(parseInt(id), null);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  } else if (path.startsWith("/context/")) {
+    const id = path.split("/").pop();
+    if (id) {
+      viewContext(parseInt(id));
+      history.pushState(null, "", `/context/${id}`);
+    }
+  } else if (path.startsWith("/search/")) {
+    const query = decodeURIComponent(path.split("/").slice(2).join("/"));
+    if (query) {
+      document.getElementById("searchInput").value = query;
+      if (urlParams.has("show")) activeShow = urlParams.get("show");
+      if (urlParams.has("season")) activeSeason = parseInt(urlParams.get("season"));
+      if (urlParams.has("episode")) activeEp = parseInt(urlParams.get("episode"));
+      performSearch(false, false);
+    }
+  }
+});
+
+window.addEventListener("popstate", async (event) => {
+  const path = window.location.pathname;
+  const urlParams = new URLSearchParams(window.location.search);
+
+  if (!document.getElementById("mediaModal").classList.contains("hidden")) {
+    document.getElementById("mediaModal").classList.add("hidden");
+    document.getElementById("mediaAudio").pause();
+  }
+  if (!document.getElementById("contextModal").classList.contains("hidden")) {
+    document.getElementById("contextModal").classList.add("hidden");
+  }
+
+  if (path.startsWith("/search/")) {
+    const query = decodeURIComponent(path.split("/").slice(2).join("/"));
+    document.getElementById("searchInput").value = query || "";
+    activeShow = urlParams.has("show") ? urlParams.get("show") : null;
+    activeSeason = urlParams.has("season") ? parseInt(urlParams.get("season")) : null;
+    activeEp = urlParams.has("episode") ? parseInt(urlParams.get("episode")) : null;
+    performSearch(false, false);
+  } else if (path === "/") {
+    document.getElementById("searchInput").value = "";
+    document.getElementById("resultsList").innerHTML = "";
+    document.getElementById("filtersAndControlsWrapper").classList.add("hidden");
+  } else if (path.startsWith("/sentence/")) {
+    const id = path.split("/").pop();
+    if (id) {
+      if (urlParams.has("padStart")) document.getElementById("padStart").value = urlParams.get("padStart");
+      if (urlParams.has("padEnd")) document.getElementById("padEnd").value = urlParams.get("padEnd");
+      extractMedia(parseInt(id), null);
+    }
+  } else if (path.startsWith("/context/")) {
+    const id = path.split("/").pop();
+    if (id) viewContext(parseInt(id));
+  }
+});

@@ -58,6 +58,23 @@ def test_exclusive_search(test_db):
     assert "私 平気" not in texts
 
 
+def test_search_sentences_quotes(test_db):
+    """Test function."""
+    results = search_sentences(test_db, '"私 平気"')
+    assert len(results) == 1
+    assert results[0]["id"] == 2
+
+
+def test_search_sentences_by_id(test_db):
+    """Test function."""
+    results = search_sentences(test_db, "", sentence_id=2)
+    assert len(results) == 1
+    assert results[0]["id"] == 2
+
+    results = search_sentences(test_db, "", sentence_id=999)
+    assert len(results) == 0
+
+
 def test_multiple_terms_search(test_db):
     """Test function."""
     results = search_sentences(test_db, "憂 ごめん")

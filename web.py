@@ -67,7 +67,10 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
-async def get_ui(request: Request):
+@app.get("/search/{query}", response_class=HTMLResponse)
+@app.get("/sentence/{sentence_id}", response_class=HTMLResponse)
+@app.get("/context/{sentence_id}", response_class=HTMLResponse)
+async def get_ui(request: Request, query: str = None, sentence_id: int = None):
     """Render the main UI page."""
     return templates.TemplateResponse(request=request, name="index.html")
 
@@ -83,6 +86,16 @@ def search(q: str = "", show: str = None, season: int = None, episode: int = Non
         conn, q, show_title=show, season=season, episode=episode
     )
     return [dict(r) for r in results]
+
+
+@app.get("/api/sentence/{sentence_id}")
+def get_sentence(sentence_id: int):
+    """Fetch a single sentence by ID using rich search format."""
+    conn = db.get_db()
+    results = db.search_sentences(conn, "", sentence_id=sentence_id)
+    if not results:
+        raise HTTPException(status_code=404, detail="Sentence not found")
+    return dict(results[0])
 
 
 @app.get("/api/context/{sentence_id}")
