@@ -111,7 +111,7 @@
                 <img id="mediaImage" src="" alt="Snapshot" class="w-full object-contain bg-black block" />
   
                 <!-- Play Button Overlay -->
-                <div class="absolute inset-0 flex justify-center items-center opacity-0 group-hover:opacity-100 transition duration-200 bg-black bg-opacity-20">
+                <div id="mediaPlayOverlay" class="absolute inset-0 flex justify-center items-center opacity-0 group-hover:opacity-100 transition duration-200 bg-black bg-opacity-20 z-10">
                   <div class="bg-black bg-opacity-60 text-white rounded-full p-3 backdrop-blur-sm shadow-lg transform transition group-hover:scale-110 group-active:scale-95">
                     <svg class="w-8 h-8 ml-1" fill="currentColor" viewBox="0 0 24 24">
                       <path d="M8 5v14l11-7z" />
@@ -122,7 +122,17 @@
                 <!-- Timestamp Overlay -->
                 <div id="mediaTimestampBadge" class="absolute bottom-2 right-2 bg-black bg-opacity-75 text-white text-xs font-mono px-1.5 py-0.5 rounded shadow z-10"></div>
   
-                <div id="mediaModalLoading" class="hidden absolute inset-0 bg-black bg-opacity-50 flex justify-center items-center">
+                <!-- Out of Sync Overlay -->
+                <div id="mediaStaleOverlay" class="hidden absolute inset-0 flex flex-col justify-center items-center bg-gray-900 bg-opacity-60 backdrop-blur-[2px] z-20 pointer-events-none transition-all duration-300 group-hover:bg-opacity-70">
+                  <div class="transform transition-transform duration-300 group-hover:scale-110 flex flex-col items-center">
+                    <svg class="w-10 h-10 text-white opacity-80 mb-2 transition-opacity duration-300 group-hover:opacity-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    <span class="text-white text-xs font-semibold tracking-wide uppercase opacity-90 transition-opacity duration-300 group-hover:opacity-100">Click to Sync Preview</span>
+                  </div>
+                </div>
+  
+                <div id="mediaModalLoading" class="hidden absolute inset-0 bg-black bg-opacity-70 flex justify-center items-center z-30 backdrop-blur-sm">
                   <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
                 </div>
               </div>
@@ -151,7 +161,7 @@
                   <div class="flex gap-2 items-center text-[10px] text-gray-400" id="timelineLegend">
                     <!-- JS will populate this -->
                   </div>
-                  <button id="btnReextract" onclick="applyTimelineExtraction()" class="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">Apply & Re-extract</button>
+                  <button id="btnReextract" onclick="applyTimelineExtraction()" class="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm text-sm font-semibold">Sync Media</button>
                 </div>
               </div>
   
