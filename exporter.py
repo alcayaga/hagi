@@ -408,9 +408,18 @@ def export_ankiconnect(
         sentence_field = config.get("sentenceField")
         sentence_highlighted_field = config.get("sentenceHighlightedField")
         source_field = config.get("sourceField")
+        audio_field = config.get("audioField")
+        image_field = config.get("imageField")
 
-        if sentence_field and sentence_field == sentence_highlighted_field:
-            return False, "sentenceField and sentenceHighlightedField must not be the same field"
+        if sentence_highlighted_field:
+            if sentence_field == sentence_highlighted_field:
+                return False, "sentenceField and sentenceHighlightedField must not be the same field"
+            if source_field == sentence_highlighted_field:
+                return False, "sourceField and sentenceHighlightedField must not be the same field"
+            if audio_field == sentence_highlighted_field:
+                return False, "audioField and sentenceHighlightedField must not be the same field"
+            if image_field == sentence_highlighted_field:
+                return False, "imageField and sentenceHighlightedField must not be the same field"
 
         if sentence_field:
             fields_to_update[sentence_field] = text
@@ -427,7 +436,6 @@ def export_ankiconnect(
         }
 
         # Add media
-        audio_field = config.get("audioField")
         if audio_field and os.path.exists(audio_out):
             store_params = {
                 "filename": os.path.basename(audio_out),
@@ -443,7 +451,6 @@ def export_ankiconnect(
                 current = fields_to_update.get(audio_field, "")
                 fields_to_update[audio_field] = current + f"[sound:{actual_filename}]"
 
-        image_field = config.get("imageField")
         if image_field and os.path.exists(image_out):
             store_params = {
                 "filename": os.path.basename(image_out),
