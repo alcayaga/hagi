@@ -131,7 +131,7 @@ def test_export_ankiconnect(test_db):
         # We also need to add show info to the test_db to test source_info logic
         test_db.execute(
             "UPDATE media SET show_title = ?, season = ?, episode = ?, episode_title = ? WHERE id = ?",
-            ("Conan", 1, 10, "The Case", 1)
+            ("Conan", 1, 10, "The Case <&>", 1)
         )
 
         mock_response = MagicMock()
@@ -183,8 +183,8 @@ def test_export_ankiconnect(test_db):
         assert params["id"] == 10002 # max id
         assert params["fields"]["Sentence"] == "Test Text"
 
-        # 10.0 start time = 10s = [00:10]
-        assert params["fields"]["MiscInfo"] == "Conan S01E10 - The Case [00:10]"
+        expected = '<a href="http://localhost:8000/sentence/1">Conan S01E10 - The Case &lt;&amp;&gt; [00:10]</a>'
+        assert params["fields"]["MiscInfo"] == expected
         assert params["fields"]["SentenceAudio"] == "[sound:audio.mp3]"
         assert params["fields"]["Picture"] == '<img src="img.jpg">'
 

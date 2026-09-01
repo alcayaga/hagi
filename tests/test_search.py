@@ -58,6 +58,58 @@ def test_exclusive_search(test_db):
     assert "私 平気" not in texts
 
 
+def test_search_sentences_quotes(test_db):
+    """Test function."""
+    results = search_sentences(test_db, '"私 平気"')
+    assert len(results) == 1
+    assert results[0]["id"] == 2
+
+
+def test_search_sentences_by_id(test_db):
+    """Test function."""
+    results = search_sentences(test_db, "", sentence_id=2)
+    assert len(results) == 1
+    assert results[0]["id"] == 2
+
+    # Test that querying a foreign ID returns that exact ID instead of normalizing it
+    # First, insert a paired EN/JPN sentence
+    en_id = db.add_media(test_db, "/mock/Anime_en.mkv", "mkv", show_title="Test2", season=1, episode=1)
+    jp_id = db.add_media(test_db, "/mock/Anime_jp.mkv", "mkv", show_title="Test2", season=1, episode=1)
+
+    db.add_sentences(test_db, en_id, [("eng", 10.0, 15.0, "English test")])
+    db.add_sentences(test_db, jp_id, [("jpn", 10.0, 15.0, "Japanese test")])
+
+    # Get the ID of the english sentence directly from the database
+    row = test_db.execute("SELECT id FROM sentences WHERE text = 'English test'").fetchone()
+    en_sentence_id = dict(row)["id"]
+
+    # Look it up by ID
+    results = search_sentences(test_db, "", sentence_id=en_sentence_id)
+    assert len(results) == 1
+    assert results[0]["id"] == en_sentence_id
+    assert results[0]["language"] == "eng"
+    assert results[0]["text"] == "English test"
+
+    # Test Portuguese exclusion
+    por_id = db.add_media(test_db, "/mock/Anime_por.mkv", "mkv", show_title="TestPor", season=1, episode=1)
+    db.add_sentences(test_db, por_id, [("por", 10.0, 15.0, "Portuguese test")])
+
+    # Normal search excludes por
+    assert len(search_sentences(test_db, "Portuguese test")) == 0
+
+    row = test_db.execute("SELECT id FROM sentences WHERE text = 'Portuguese test'").fetchone()
+    por_sentence_id = dict(row)["id"]
+
+    # Exact ID search retrieves por
+    results_por = search_sentences(test_db, "", sentence_id=por_sentence_id)
+    assert len(results_por) == 1
+    assert results_por[0]["language"] == "por"
+    assert results_por[0]["text"] == "Portuguese test"
+
+    results = search_sentences(test_db, "", sentence_id=999)
+    assert len(results) == 0
+
+
 def test_multiple_terms_search(test_db):
     """Test function."""
     results = search_sentences(test_db, "憂 ごめん")
