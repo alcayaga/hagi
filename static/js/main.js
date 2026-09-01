@@ -309,11 +309,11 @@ function highlightSearchTerms(text) {
   const query = searchInput.value.trim();
   if (!query) return text;
 
-  const tokens = query.match(/(?:[^\s"]+|"[^"]*")+/g) || [];
+  const tokens = query.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
   let cleanTokens = [];
 
   for (let t of tokens) {
-    t = t.replace(/^"+|"+$/g, "");
+    t = t.replace(/^["']+|["']+$/g, "");
     if (t.startsWith("-")) continue;
     if (t) {
       cleanTokens.push(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
@@ -323,7 +323,7 @@ function highlightSearchTerms(text) {
   if (cleanTokens.length === 0) return text;
 
   const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
-  const parts = text.split(/(<(?:[^>"']|"[^"]*"|'[^']*')*>)/g);
+  const parts = text.split(/(<[a-zA-Z/](?:[^>"']|"[^"]*"|'[^']*')*>)/g);
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 0) {
       parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
@@ -850,8 +850,15 @@ function updateEncompassedText() {
   const selStart = timelineData.selectedStart;
   const selEnd = timelineData.selectedEnd;
 
+  const sanitizeHTML = (str) => {
+    const temp = document.createElement("div");
+    temp.textContent = str;
+    return temp.innerHTML;
+  };
+
   const cleanText = (text, lang) => {
-    let cleaned = (text || "").replace(/<br\s*\/?>/gi, lang === "jpn" ? "" : " ");
+    let cleaned = (text || "").replace(/<br\s*\/?>/gi, "\n");
+    cleaned = sanitizeHTML(cleaned);
     return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
   };
 
@@ -964,8 +971,13 @@ async function applyTimelineExtraction() {
     return;
   }
 
-  currentExtraction.padStart = targetStart - timelineData.selectedStart;
-  currentExtraction.padEnd = timelineData.selectedEnd - targetEnd;
+  const requestedStart = timelineData.selectedStart;
+  const requestedEnd = timelineData.selectedEnd;
+  const requestId = Date.now();
+  currentExtraction.activeRequestId = requestId;
+
+  currentExtraction.padStart = targetStart - requestedStart;
+  currentExtraction.padEnd = requestedEnd - targetEnd;
 
   document.getElementById("mediaModalLoading").classList.remove("hidden");
   const btn = document.getElementById("btnReextract");
@@ -982,6 +994,10 @@ async function applyTimelineExtraction() {
       }),
     });
     const data = await response.json();
+
+    if (currentExtraction.activeRequestId !== requestId) {
+      return; // Superseded by a newer extraction
+    }
 
     if (data.success) {
       const mediaImage = document.getElementById("mediaImage");
@@ -1002,19 +1018,23 @@ async function applyTimelineExtraction() {
       mediaAudio.play().catch((e) => console.log(e));
 
       await Promise.all([imgLoadPromise, audioLoadPromise]);
-      timelineData.lastExtractedStart = timelineData.selectedStart;
-      timelineData.lastExtractedEnd = timelineData.selectedEnd;
+      timelineData.lastExtractedStart = requestedStart;
+      timelineData.lastExtractedEnd = requestedEnd;
       updateTimelineSelection();
       // Media fully loaded
     } else {
       alert("Extraction failed: " + data.detail);
     }
   } catch (error) {
-    alert("Error calling extraction API: " + error);
+    if (currentExtraction.activeRequestId === requestId) {
+      alert("Error calling extraction API: " + error);
+    }
   } finally {
-    document.getElementById("mediaModalLoading").classList.add("hidden");
-    btn.disabled = false;
-    btn.innerText = "Sync Media";
+    if (currentExtraction.activeRequestId === requestId) {
+      document.getElementById("mediaModalLoading").classList.add("hidden");
+      btn.disabled = false;
+      btn.innerText = "Sync Media";
+    }
   }
 }
 

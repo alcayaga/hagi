@@ -381,17 +381,13 @@ def export_ankiconnect(
         # Generate highlighted text if search query is provided
         highlighted_text = text
         if search_query:
-            import shlex
             import re
-            try:
-                tokens = shlex.split(search_query)
-            except ValueError:
-                tokens = search_query.split()
+            tokens = re.findall(r"(?:[^\s\"']+|\"[^\"]*\"|'[^']*')+", search_query)
 
             clean_tokens = []
             for token in tokens:
                 # Strip leading/trailing quotes before checking for negative terms
-                token = token.strip('"')
+                token = token.strip("\"'")
                 if token.startswith("-"):
                     continue
                 if token:
@@ -399,8 +395,8 @@ def export_ankiconnect(
 
             if clean_tokens:
                 pattern = re.compile(f"({'|'.join(clean_tokens)})", flags=re.IGNORECASE)
-                # Split by HTML tags, properly ignoring > inside quotes
-                parts = re.split(r"(<(?:[^>\"']|\"[^\"]*\"|'[^']*')*>)", highlighted_text)
+                # Split by HTML tags, properly ignoring > inside quotes and requiring valid tag start
+                parts = re.split(r"(<[a-zA-Z/](?:[^>\"']|\"[^\"]*\"|'[^']*')*>)", highlighted_text)
                 for i in range(len(parts)):
                     # Even indices are text segments, odd are HTML tags
                     if i % 2 == 0:
