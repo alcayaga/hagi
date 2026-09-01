@@ -128,6 +128,17 @@ function populateDropdowns() {
     return;
   }
 
+  const uniqueSeasonEpCombos = new Set(showResults.filter((r) => r.episode != null).map((r) => `${r.season !== null ? r.season : ""}-${r.episode}`));
+
+  // Hide the dropdown if there is only 1 episode (e.g., a movie)
+  if (uniqueSeasonEpCombos.size <= 1) {
+    epWrapper.classList.add("hidden");
+    // Ensure filters are reset if the dropdown is hidden
+    activeSeason = null;
+    activeEp = null;
+    return;
+  }
+
   epWrapper.classList.remove("hidden");
   epSelect.innerHTML = '<option value="">All Episodes</option>';
 
@@ -139,14 +150,22 @@ function populateDropdowns() {
 
       const seasonEps = [...new Set(showResults.filter((r) => r.season == s && r.episode != null).map((r) => r.episode))].sort((a, b) => a - b);
       seasonEps.forEach((e) => {
-        optGroup.appendChild(new Option(`S${s} E${e}`, `s${s}e${e}`));
+        const match = showResults.find((r) => r.season == s && r.episode == e && r.episode_title);
+        const title = match ? match.episode_title : null;
+        const epNumStr = e.toString().padStart(2, "0");
+        const label = title ? `${epNumStr}. ${title}` : `Episode ${epNumStr}`;
+        optGroup.appendChild(new Option(label, `s${s}e${e}`));
       });
       epSelect.appendChild(optGroup);
     });
   } else {
     const uniqueEps = [...new Set(showResults.filter((r) => r.episode != null).map((r) => r.episode))].sort((a, b) => a - b);
     uniqueEps.forEach((e) => {
-      epSelect.add(new Option(`Episode ${e}`, `e${e}`));
+      const match = showResults.find((r) => r.episode == e && r.episode_title);
+      const title = match ? match.episode_title : null;
+      const epNumStr = e.toString().padStart(2, "0");
+      const label = title ? `${epNumStr}. ${title}` : `Episode ${epNumStr}`;
+      epSelect.add(new Option(label, `e${e}`));
     });
   }
 
