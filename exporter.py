@@ -149,8 +149,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
 
     _tmp_id = uuid.uuid4().hex
-    audio_tmp = audio_out + f".{_tmp_id}.tmp"
-    image_tmp = image_out + f".{_tmp_id}.tmp"
+    audio_tmp = os.path.join(out_dir, f".hagi_audio_tmp_{_tmp_id}.mp3")
+    image_tmp = os.path.join(out_dir, f".hagi_img_tmp_{_tmp_id}.jpg")
 
     is_cached = False
     if os.path.exists(audio_out) and os.path.exists(image_out):
@@ -253,8 +253,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             check=True,
         )
 
-        os.rename(audio_tmp, audio_out)
-        os.rename(image_tmp, image_out)
+        os.replace(audio_tmp, audio_out)
+        os.replace(image_tmp, image_out)
 
         return (
             True,
