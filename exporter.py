@@ -3,6 +3,7 @@
 import csv
 import os
 import subprocess
+import uuid
 import urllib.request
 import urllib.error
 import json
@@ -147,6 +148,10 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
 
+    _tmp_id = uuid.uuid4().hex
+    audio_tmp = audio_out + f".{_tmp_id}.tmp"
+    image_tmp = image_out + f".{_tmp_id}.tmp"
+
     is_cached = False
     if os.path.exists(audio_out) and os.path.exists(image_out):
         try:
@@ -221,7 +226,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 "0",
                 "-map",
                 f"0:a:{audio_stream_idx}",
-                audio_out,
+                audio_tmp,
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -241,12 +246,15 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 "1",
                 "-q:v",
                 "2",
-                image_out,
+                image_tmp,
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             check=True,
         )
+
+        os.rename(audio_tmp, audio_out)
+        os.rename(image_tmp, image_out)
 
         return (
             True,
@@ -257,6 +265,17 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             False,
         )
     except Exception as e:
+        print(f"EXCEPTION: {e}")
+        if "audio_tmp" in locals() and os.path.exists(audio_tmp):
+            try:
+                os.remove(audio_tmp)
+            except Exception:
+                pass
+        if "image_tmp" in locals() and os.path.exists(image_tmp):
+            try:
+                os.remove(image_tmp)
+            except Exception:
+                pass
         return False, str(e), None, None, None, False
 
 

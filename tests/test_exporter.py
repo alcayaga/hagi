@@ -29,6 +29,7 @@ def test_extract_media(test_db):
         patch("os.makedirs"),
         patch("exporter.os.path.exists", return_value=True),
         patch("subprocess.run") as mock_subrun,
+        patch("os.rename"),
     ):
         # Get the ID of the mock sentence
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
@@ -100,6 +101,7 @@ def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_ma
         patch("os.makedirs"),
         patch("exporter.os.path.exists", return_value=True),
         patch("subprocess.run", side_effect=mock_run_side_effect) as mock_subrun,
+        patch("os.rename"),
     ):
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
@@ -408,6 +410,7 @@ def test_extract_media_concatenation(test_db):
         patch("os.makedirs"),
         patch("exporter.os.path.exists", return_value=True),
         patch("subprocess.run"),
+        patch("os.rename"),
     ):
         # Bounding box will be [8.5, 16.5] for all tests since pad_start=1.5, pad_end=1.5 on target [10.0, 15.0]
         # 1. Japanese (No Punctuation)
@@ -469,6 +472,7 @@ def test_extract_media_external_subtitle(test_db):
         patch("exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
         patch("subprocess.run") as mock_subrun,
+        patch("os.rename"),
     ):
         # Create an external subtitle media
         m_id = db.add_media(test_db, "/fake/path/Belle (2021).en.srt", "subtitle")
