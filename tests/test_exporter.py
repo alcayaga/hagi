@@ -645,6 +645,7 @@ def test_cache_and_cleanup(test_db):
 
             # Check if utime was updated
             assert os.stat(a_out2).st_mtime > old_time
+            assert os.stat(i_out2).st_mtime > old_time
 
         # Test 3: Cleanup
         # Create a large dummy file
@@ -658,3 +659,4 @@ def test_cache_and_cleanup(test_db):
         # The 6MB file should be deleted because 6MB > 5MB, leaving the newer cached files intact
         assert not os.path.exists(dummy)
         assert os.path.exists(a_out)
+        assert os.path.exists(i_out)
