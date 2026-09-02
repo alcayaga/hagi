@@ -380,22 +380,22 @@ function renderResults() {
     const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
 
     const card = document.createElement("div");
-    card.className = "bg-white/60 dark:bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-white/20 dark:border-gray-700/50 hover:bg-white/80 dark:hover:bg-gray-800/60 transition-all duration-300 p-5 flex flex-col md:flex-row gap-5 justify-between group";
+    card.className = "bg-white/60 dark:bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-white/20 dark:border-gray-700/50 hover:bg-white/80 dark:hover:bg-gray-800/60 transition-all duration-300 p-4 md:p-5 flex flex-col md:flex-row gap-4 md:gap-5 justify-between group";
 
     card.innerHTML = `
       <!-- Left: Content -->
       <div class="flex flex-col gap-2 flex-grow">
         <!-- Top Metadata -->
-        <div class="flex flex-wrap items-center gap-2 text-[0.7rem] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+        <div class="flex flex-wrap items-center gap-1.5 md:gap-2 text-[0.65rem] md:text-[0.7rem] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
           <span class="text-gray-700 dark:text-gray-200 font-bold">${sourceDisplay}</span>
           ${subParts.length > 0 ? `<span class="opacity-50">&bull;</span><span>${subParts.join(" ")}</span>` : ""}
           ${r.episode_title ? `<span class="opacity-50">&bull;</span><span class="italic">"${r.episode_title}"</span>` : ""}
           <span class="opacity-50">&bull;</span>
-          <span class="font-mono bg-gray-500/10 dark:bg-gray-400/10 px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-300">${timeStr}</span>
+          <span class="font-mono bg-gray-500/10 dark:bg-gray-400/10 px-1.5 md:px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-300">${timeStr}</span>
         </div>
         
         <!-- Primary Text -->
-        <div class="text-2xl font-medium tracking-tight text-gray-900 dark:text-gray-50 mt-1 mb-2">${highlightText(cleanText)}</div>
+        <div class="text-xl md:text-2xl font-medium tracking-tight text-gray-900 dark:text-gray-50 mt-1 mb-2">${highlightText(cleanText)}</div>
         
         <!-- Translations -->
         <div class="flex flex-col gap-2">
@@ -405,9 +405,9 @@ function renderResults() {
       </div>
 
       <!-- Right: Actions -->
-      <div class="flex flex-row md:flex-col gap-3 justify-start md:justify-center flex-shrink-0 pt-4 md:pt-0 mt-2 md:mt-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
-         <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none md:w-28 bg-white/50 dark:bg-gray-700/30 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl hover:bg-white dark:hover:bg-gray-600/50 border border-gray-200 dark:border-gray-600/50 font-medium text-sm transition-all shadow-sm backdrop-blur-sm">Context</button>
-         <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none md:w-28 bg-indigo-600/90 text-white px-4 py-2.5 rounded-xl hover:bg-indigo-500 border border-indigo-500/50 font-medium text-sm transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] backdrop-blur-sm">Extract</button>
+      <div class="flex flex-row md:flex-col gap-2 md:gap-3 justify-start md:justify-center flex-shrink-0 pt-3 md:pt-0 mt-1 md:mt-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
+         <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none md:w-28 bg-white/50 dark:bg-gray-700/30 text-gray-700 dark:text-gray-200 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl hover:bg-white dark:hover:bg-gray-600/50 border border-gray-200 dark:border-gray-600/50 font-medium text-xs md:text-sm transition-all shadow-sm backdrop-blur-sm">Context</button>
+         <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none md:w-28 bg-indigo-600/90 text-white px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl hover:bg-indigo-500 border border-indigo-500/50 font-medium text-xs md:text-sm transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] backdrop-blur-sm">Extract</button>
       </div>
     `;
     container.appendChild(card);
