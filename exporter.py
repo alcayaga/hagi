@@ -28,6 +28,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             - str: The sentence text.
             - bool: Whether the media was served from cache.
     """
+    pad_start = round(pad_start, 3)
+    pad_end = round(pad_end, 3)
     conn = db.get_db()
     target = conn.execute(
         """

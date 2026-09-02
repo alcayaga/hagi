@@ -161,7 +161,7 @@ def export(
 ):
     """Export sentence context (audio, image, text) for Anki."""
     console.print(f"Exporting sentence {sentence_id} to Anki format...")
-    success, msg = exporter.export_anki(sentence_id, out_dir, pad_start, pad_end)
+    success, msg, _ = exporter.export_anki(sentence_id, out_dir, pad_start, pad_end)
     if success:
         console.print(f"[green]{msg}[/green]")
     else:
