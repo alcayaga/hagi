@@ -133,7 +133,7 @@ def test_export_anki(test_db):
         mock_writer_instance = MagicMock()
         mock_csv_writer.return_value = mock_writer_instance
 
-        success, msg = exporter.export_anki(1, "/fake/out")
+        success, msg, is_cached = exporter.export_anki(1, "/fake/out")
 
         assert success is True
 

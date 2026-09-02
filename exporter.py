@@ -16,8 +16,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     Args:
         sentence_id (int): ID of the sentence to extract.
         out_dir (str): Output directory for the extracted media.
-        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.5.
-        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.5.
+        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.25.
+        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.0.
 
     Returns:
         tuple: A tuple containing:
@@ -26,6 +26,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             - str: Path to the extracted audio file.
             - str: Path to the extracted image file.
             - str: The sentence text.
+            - bool: Whether the media was served from cache.
     """
     conn = db.get_db()
     target = conn.execute(
@@ -254,7 +255,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             False,
         )
     except Exception as e:
-        return False, str(e), False, None, None, None, False
+        return False, str(e), None, None, None, False
 
 
 def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
@@ -263,8 +264,8 @@ def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end
     Args:
         sentence_id (int): ID of the sentence to export.
         out_dir (str): Output directory for the exported media and CSV.
-        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.5.
-        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.5.
+        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.25.
+        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.0.
 
     Returns:
         tuple: A tuple containing:
@@ -285,7 +286,7 @@ def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end
             img_tag = f"<img src='{os.path.basename(image_out)}'>"
             writer.writerow([text, audio_tag, img_tag])
 
-        return True, f"Exported to {out_dir}"
+        return True, f"Exported to {out_dir}", is_cached
     except Exception as e:
         return False, str(e), False
 
@@ -313,7 +314,7 @@ def export_ankiconnect(
         search_query (str, optional): Search query used to find the sentence, to highlight.
 
     Returns:
-        tuple: (bool, str) - Success status and message.
+        tuple: (bool, str, bool) - Success status, message, and cache status.
     """
     success, msg, audio_out, image_out, text, is_cached = extract_media(sentence_id, out_dir, pad_start, pad_end)
     if not success:

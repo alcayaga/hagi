@@ -268,11 +268,11 @@ def extract(sentence_id: int, config: ExtractConfig, background_tasks: Backgroun
     success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(
         sentence_id, "./media", config.pad_start, config.pad_end
     )
-    if not success:
-        raise HTTPException(status_code=500, detail=msg)
-
     if not is_cached:
         background_tasks.add_task(exporter.cleanup_media_cache, "./media")
+
+    if not success:
+        raise HTTPException(status_code=500, detail=msg)
 
     # Return relative URLs that map to the mounted StaticFiles
     return {
@@ -312,10 +312,10 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig, background_tas
         base_url=media_base_url,
         search_query=config.search_query,
     )
-    if not success:
-        raise HTTPException(status_code=500, detail=msg)
-
     if not is_cached:
         background_tasks.add_task(exporter.cleanup_media_cache, "./media")
+
+    if not success:
+        raise HTTPException(status_code=500, detail=msg)
 
     return {"success": True, "message": msg}
