@@ -245,10 +245,14 @@ async function performSearch(pushState = true, resetFilters = true) {
   }
 }
 
+let currentNadeshikoSearchId = 0;
+
 async function performNadeshikoSearch(query) {
   const wrapper = document.getElementById("nadeshikoResultsWrapper");
   const loading = document.getElementById("nadeshikoLoading");
   const list = document.getElementById("nadeshikoResultsList");
+
+  const searchId = ++currentNadeshikoSearchId;
 
   // Always show wrapper and loading initially
   wrapper.classList.remove("hidden");
@@ -258,6 +262,8 @@ async function performNadeshikoSearch(query) {
   try {
     const response = await fetch(`/api/nadeshiko/search?q=${encodeURIComponent(query)}`);
     const results = await response.json();
+
+    if (searchId !== currentNadeshikoSearchId) return; // Ignore stale request
 
     if (!results || results.length === 0) {
       wrapper.classList.add("hidden");
@@ -297,10 +303,14 @@ async function performNadeshikoSearch(query) {
       list.appendChild(card);
     });
   } catch (error) {
-    console.error("Error fetching Nadeshiko results:", error);
-    wrapper.classList.add("hidden");
+    if (searchId === currentNadeshikoSearchId) {
+      console.error("Error fetching Nadeshiko results:", error);
+      wrapper.classList.add("hidden");
+    }
   } finally {
-    loading.classList.add("hidden");
+    if (searchId === currentNadeshikoSearchId) {
+      loading.classList.add("hidden");
+    }
   }
 }
 

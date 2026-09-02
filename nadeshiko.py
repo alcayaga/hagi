@@ -10,6 +10,10 @@ _FAVORITE_MEDIA_CACHE = (0, [])
 CACHE_TTL = 3600  # 1 hour
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None  # Explicitly prevent following redirects to protect Authorization header
+
 def _make_request(url, api_key, method="GET", data=None):
     """Helper to make urllib requests to Nadeshiko API."""
     headers = {
@@ -21,9 +25,11 @@ def _make_request(url, api_key, method="GET", data=None):
 
     req_data = json.dumps(data).encode("utf-8") if data else None
     req = urllib.request.Request(url, data=req_data, headers=headers, method=method)
+    
+    opener = urllib.request.build_opener(NoRedirectHandler)
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with opener.open(req, timeout=10) as response:
             return json.loads(response.read().decode("utf-8")), None
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8")
