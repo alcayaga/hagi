@@ -11,8 +11,11 @@ CACHE_TTL = 3600  # 1 hour
 
 
 class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Custom HTTP redirect handler that explicitly prevents following redirects."""
+
     def redirect_request(self, req, fp, code, msg, headers, newurl):
-        return None  # Explicitly prevent following redirects to protect Authorization header
+        """Prevent redirects to protect the Authorization header."""
+        return None  # Explicitly prevent following redirects
 
 def _make_request(url, api_key, method="GET", data=None):
     """Helper to make urllib requests to Nadeshiko API."""
@@ -25,7 +28,7 @@ def _make_request(url, api_key, method="GET", data=None):
 
     req_data = json.dumps(data).encode("utf-8") if data else None
     req = urllib.request.Request(url, data=req_data, headers=headers, method=method)
-    
+
     opener = urllib.request.build_opener(NoRedirectHandler)
 
     try:
