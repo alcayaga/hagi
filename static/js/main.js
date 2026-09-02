@@ -384,7 +384,7 @@ function highlightSearchTerms(text) {
   return parts.join("");
 }
 
-let currentExtraction = { id: null, padStart: 0.5, padEnd: 0.5 };
+let currentExtraction = { id: null, padStart: 0.25, padEnd: 0.0 };
 
 /**
  * Calls the backend API to extract audio and snapshot images for a specific sentence.
@@ -396,8 +396,8 @@ let currentExtraction = { id: null, padStart: 0.5, padEnd: 0.5 };
 async function extractMedia(id, btnElement) {
   const sStart = parseFloat(document.getElementById("padStart").value);
   const sEnd = parseFloat(document.getElementById("padEnd").value);
-  const padStart = isNaN(sStart) ? 0.5 : sStart;
-  const padEnd = isNaN(sEnd) ? 0.5 : sEnd;
+  const padStart = isNaN(sStart) ? 0.25 : sStart;
+  const padEnd = isNaN(sEnd) ? 0.0 : sEnd;
 
   currentExtraction.id = id;
   currentExtraction.padStart = padStart;

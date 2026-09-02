@@ -44,22 +44,16 @@ def index(directory: Optional[str] = typer.Argument(None)):
                     raise typer.Exit(code=1)
 
         if not directories_to_index:
-            console.print(
-                "[red]Error: Please provide a directory argument or specify 'directories' in config.json.[/red]"
-            )
+            console.print("[red]Error: Please provide a directory argument or specify 'directories' in config.json.[/red]")
             raise typer.Exit(code=1)
 
     for dir_path in directories_to_index:
         if not os.path.isdir(dir_path):
             if directory:
-                console.print(
-                    f"[red]Error: Directory '{dir_path}' does not exist or is not a directory.[/red]"
-                )
+                console.print(f"[red]Error: Directory '{dir_path}' does not exist or is not a directory.[/red]")
                 raise typer.Exit(code=1)
             else:
-                console.print(
-                    f"[yellow]Warning: Directory '{dir_path}' does not exist or is not a directory. Skipping.[/yellow]"
-                )
+                console.print(f"[yellow]Warning: Directory '{dir_path}' does not exist or is not a directory. Skipping.[/yellow]")
                 continue
 
         console.print(f"Indexing directory: [bold]{dir_path}[/bold]...")
@@ -101,9 +95,7 @@ def context(sentence_id: int):
     """View surrounding sentences for context."""
     conn = db.get_db()
 
-    target = conn.execute(
-        "SELECT media_id, start_time FROM sentences WHERE id = ?", (sentence_id,)
-    ).fetchone()
+    target = conn.execute("SELECT media_id, start_time FROM sentences WHERE id = ?", (sentence_id,)).fetchone()
     if not target:
         console.print(f"[red]Sentence ID {sentence_id} not found.[/red]")
         return
@@ -146,18 +138,12 @@ def context(sentence_id: int):
 def extract(
     sentence_id: int,
     out_dir: str = "./media",
-    pad_start: float = typer.Option(
-        0.5, "--pad-start", "-ps", help="Seconds to pad before the sentence"
-    ),
-    pad_end: float = typer.Option(
-        0.5, "--pad-end", "-pe", help="Seconds to pad after the sentence"
-    ),
+    pad_start: float = typer.Option(0.25, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Extract raw audio and image for a sentence without Anki formatting."""
     console.print(f"Extracting media for sentence {sentence_id}...")
-    success, msg, audio_out, image_out, text = exporter.extract_media(
-        sentence_id, out_dir, pad_start, pad_end
-    )
+    success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(sentence_id, out_dir, pad_start, pad_end)
     if success:
         console.print(f"[green]Extracted audio to: {audio_out}[/green]")
         console.print(f"[green]Extracted image to: {image_out}[/green]")
@@ -170,21 +156,16 @@ def extract(
 def export(
     sentence_id: int,
     out_dir: str = "./anki_deck",
-    pad_start: float = typer.Option(
-        0.5, "--pad-start", "-ps", help="Seconds to pad before the sentence"
-    ),
-    pad_end: float = typer.Option(
-        0.5, "--pad-end", "-pe", help="Seconds to pad after the sentence"
-    ),
+    pad_start: float = typer.Option(0.25, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Export sentence context (audio, image, text) for Anki."""
     console.print(f"Exporting sentence {sentence_id} to Anki format...")
-    success, msg = exporter.export_anki(sentence_id, out_dir, pad_start, pad_end)
+    success, msg, _ = exporter.export_anki(sentence_id, out_dir, pad_start, pad_end)
     if success:
         console.print(f"[green]{msg}[/green]")
     else:
         console.print(f"[red]Error: {msg}[/red]")
-
 
 
 @app.command()
@@ -193,12 +174,8 @@ def anki(
     note_id: Optional[int] = typer.Option(
         None, "--note-id", "-n", help="Target specific Anki Note ID. Defaults to last created note."
     ),
-    pad_start: float = typer.Option(
-        0.5, "--pad-start", "-ps", help="Seconds to pad before the sentence"
-    ),
-    pad_end: float = typer.Option(
-        0.5, "--pad-end", "-pe", help="Seconds to pad after the sentence"
-    ),
+    pad_start: float = typer.Option(0.25, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Export sentence directly to Anki via AnkiConnect."""
     if not os.path.exists("config.json"):
@@ -216,7 +193,7 @@ def anki(
 
     # We use the standard media directory for the extracted files
     out_dir = "./media"
-    success, msg = exporter.export_ankiconnect(
+    success, msg, is_cached = exporter.export_ankiconnect(
         sentence_id, config, out_dir, pad_start, pad_end, target_note_id=note_id
     )
     if success:

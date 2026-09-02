@@ -45,6 +45,7 @@ def test_read_main():
     assert response.status_code == 200
     assert "Hagi Search" in response.text
 
+
 def test_api_sentence(test_db):
     """Test function."""
     with patch("web.db.get_db", return_value=test_db):
@@ -81,6 +82,7 @@ def test_api_extract(test_db):
             "/fake/media/audio.mp3",
             "/fake/media/img.jpg",
             "Hello web test",
+            False,
         )
 
         # We assume the sentence ID is 1 since it's the first inserted in the memory DB
@@ -126,6 +128,7 @@ def test_api_context_dual_audio(dual_audio_db):
         assert data["secondary_context"][0]["text"] == "English translation"
         assert data["secondary_context"][0]["end_time"] == 15.0
 
+
 def test_export_anki_endpoint(test_db):
     """Test the POST /api/anki endpoint."""
     import json
@@ -141,6 +144,7 @@ def test_export_anki_endpoint(test_db):
         """Mock open()."""
         if path == "config.json":
             from io import StringIO
+
             return StringIO(json.dumps({"ankiConnectUrl": "mock"}))
         return open(path, mode, *args, **kwargs)
 
@@ -148,9 +152,9 @@ def test_export_anki_endpoint(test_db):
         patch("web.db.get_db", return_value=test_db),
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
-        patch("web.exporter.export_ankiconnect") as mock_ankiconnect
+        patch("web.exporter.export_ankiconnect") as mock_ankiconnect,
     ):
-        mock_ankiconnect.return_value = (True, "Successfully updated note")
+        mock_ankiconnect.return_value = (True, "Successfully updated note", False)
 
         response = client.post(
             "/api/anki/1",
@@ -169,6 +173,7 @@ def test_export_anki_endpoint(test_db):
         assert args[4] == 0.8  # pad_end
         assert mock_ankiconnect.call_args.kwargs["base_url"] == "http://localhost:8000"
 
+
 def test_export_anki_endpoint_with_nid(test_db):
     """Test the POST /api/anki endpoint when target_note_id is provided."""
     import json
@@ -181,6 +186,7 @@ def test_export_anki_endpoint_with_nid(test_db):
         """Mock open()."""
         if path == "config.json":
             from io import StringIO
+
             return StringIO(json.dumps({"ankiConnectUrl": "mock"}))
         return open(path, mode, *args, **kwargs)
 
@@ -188,9 +194,9 @@ def test_export_anki_endpoint_with_nid(test_db):
         patch("web.db.get_db", return_value=test_db),
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
-        patch("web.exporter.export_ankiconnect") as mock_ankiconnect
+        patch("web.exporter.export_ankiconnect") as mock_ankiconnect,
     ):
-        mock_ankiconnect.return_value = (True, "Successfully updated note")
+        mock_ankiconnect.return_value = (True, "Successfully updated note", False)
 
         response = client.post(
             "/api/anki/1",
@@ -201,6 +207,7 @@ def test_export_anki_endpoint_with_nid(test_db):
 
         mock_ankiconnect.assert_called_once()
         assert mock_ankiconnect.call_args.kwargs["target_note_id"] == 12345
+
 
 def test_export_anki_endpoint_invalid_nid(test_db):
     """Test the POST /api/anki endpoint when target_note_id is invalid (e.g. 0 or string)."""
@@ -225,6 +232,7 @@ def test_export_anki_endpoint_invalid_nid(test_db):
     )
     assert response.status_code == 422
 
+
 def test_export_anki_endpoint_invalid_config(test_db):
     """Test the POST /api/anki endpoint with invalid config (e.g. array)."""
     import json
@@ -239,6 +247,7 @@ def test_export_anki_endpoint_invalid_config(test_db):
         """Mock open()."""
         if path == "config.json":
             from io import StringIO
+
             return StringIO(json.dumps([]))
         return open(path, mode, *args, **kwargs)
 
@@ -246,11 +255,9 @@ def test_export_anki_endpoint_invalid_config(test_db):
         patch("web.db.get_db", return_value=test_db),
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
-        patch("web.exporter.extract_media") as mock_extract
+        patch("web.exporter.extract_media") as mock_extract,
     ):
-        mock_extract.return_value = (
-            True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text"
-        )
+        mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text", False)
 
         response = client.post(
             "/api/anki/1",
@@ -263,31 +270,33 @@ def test_export_anki_endpoint_invalid_config(test_db):
 def test_export_anki_endpoint_invalid_media_urls():
     """Test that malformed mediaBaseUrl config triggers the localhost fallback."""
     invalid_urls = [
-        "http://:8000",            # Missing host
-        "http://localhost:abc",    # Invalid port
-        "http://",                 # Missing host
-        "http://example.com/?q=1", # Has query
-        "http://example.com/#frag", # Has fragment
-        "http://example.com/?",    # Bare query delimiter
-        "http://example.com/#"     # Bare fragment delimiter
+        "http://:8000",  # Missing host
+        "http://localhost:abc",  # Invalid port
+        "http://",  # Missing host
+        "http://example.com/?q=1",  # Has query
+        "http://example.com/#frag",  # Has fragment
+        "http://example.com/?",  # Bare query delimiter
+        "http://example.com/#",  # Bare fragment delimiter
     ]
 
     for url in invalid_urls:
+
         def mock_exists(path):
             return path == "config.json"
 
         def mock_open(*args, url=url, **kwargs):
             from io import StringIO
             import json
+
             return StringIO(json.dumps({"mediaBaseUrl": url, "deck": "Default", "noteType": "Basic"}))
 
         with (
             patch("os.path.exists", mock_exists),
             patch("builtins.open", mock_open),
             patch("web.exporter.export_ankiconnect") as mock_anki,
-            patch("web.exporter.extract_media") as mock_extract
+            patch("web.exporter.extract_media") as mock_extract,
         ):
-            mock_anki.return_value = (True, "Success")
-            mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text")
+            mock_anki.return_value = (True, "Success", False)
+            mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text", False)
             client.post("/api/anki/1", json={"pad_start": 0.2, "pad_end": 0.8})
             assert mock_anki.call_args.kwargs["base_url"] == "http://localhost:8000"

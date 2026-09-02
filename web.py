@@ -3,7 +3,7 @@
 import os
 import urllib.parse
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -36,6 +36,7 @@ def _get_normalized_media_url(config_obj: dict) -> str | None:
                 pass
     return None
 
+
 app = FastAPI(title="Hagi Local UI")
 
 # Startup warnings
@@ -43,6 +44,7 @@ _has_media_base_url = False
 if os.path.exists("config.json"):
     try:
         import json
+
         with open("config.json", "r") as _f:
             _has_media_base_url = bool(_get_normalized_media_url(json.load(_f)))
     except Exception:
@@ -53,7 +55,7 @@ if not _has_media_base_url:
         "Warning: 'mediaBaseUrl' not found in config.json. Defaulting to "
         "http://localhost:8000 for Anki media exports. Remote Anki "
         "instances will fail to download media.",
-        flush=True
+        flush=True,
     )
 
 # Ensure templates directory exists
@@ -82,9 +84,7 @@ def search(q: str = "", show: str = None, season: int = None, episode: int = Non
         return []
 
     conn = db.get_db()
-    results = db.search_sentences(
-        conn, q, show_title=show, season=season, episode=episode
-    )
+    results = db.search_sentences(conn, q, show_title=show, season=season, episode=episode)
     return [dict(r) for r in results]
 
 
@@ -256,18 +256,21 @@ def get_context(sentence_id: int):
 class ExtractConfig(BaseModel):
     """Configuration for media extraction."""
 
-    pad_start: float = 0.5
-    pad_end: float = 0.5
+    pad_start: float = 0.25
+    pad_end: float = 0.0
     target_note_id: int | None = Field(default=None, gt=0)
     search_query: str | None = None
 
 
 @app.post("/api/extract/{sentence_id}")
-def extract(sentence_id: int, config: ExtractConfig):
+def extract(sentence_id: int, config: ExtractConfig, background_tasks: BackgroundTasks):
     """Extract audio and image for a given sentence."""
-    success, msg, audio_out, image_out, text = exporter.extract_media(
+    success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(
         sentence_id, "./media", config.pad_start, config.pad_end
     )
+    if not is_cached:
+        background_tasks.add_task(exporter.cleanup_media_cache, "./media")
+
     if not success:
         raise HTTPException(status_code=500, detail=msg)
 
@@ -282,13 +285,14 @@ def extract(sentence_id: int, config: ExtractConfig):
 
 
 @app.post("/api/anki/{sentence_id}")
-def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
+def export_anki_endpoint(sentence_id: int, config: ExtractConfig, background_tasks: BackgroundTasks):
     """Export a sentence to AnkiConnect using the existing local config."""
     if not os.path.exists("config.json"):
         raise HTTPException(status_code=500, detail="config.json not found.")
 
     try:
         import json
+
         with open("config.json", "r") as f:
             app_config = json.load(f)
     except Exception as e:
@@ -298,7 +302,7 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
     if not media_base_url:
         media_base_url = "http://localhost:8000"
 
-    success, msg = exporter.export_ankiconnect(
+    success, msg, is_cached = exporter.export_ankiconnect(
         sentence_id,
         app_config,
         "./media",
@@ -306,9 +310,12 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig):
         config.pad_end,
         target_note_id=config.target_note_id,
         base_url=media_base_url,
-        search_query=config.search_query
+        search_query=config.search_query,
     )
+    if not is_cached:
+        background_tasks.add_task(exporter.cleanup_media_cache, "./media")
+
     if not success:
-         raise HTTPException(status_code=500, detail=msg)
+        raise HTTPException(status_code=500, detail=msg)
 
     return {"success": True, "message": msg}
