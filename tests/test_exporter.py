@@ -27,7 +27,7 @@ def test_extract_media(test_db):
     with (
         patch("exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("exporter.os.path.exists", return_value=True),
+        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
         patch("subprocess.run") as mock_subrun,
         patch("os.replace"),
     ):
@@ -38,6 +38,7 @@ def test_extract_media(test_db):
         success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
 
         assert success is True
+        assert is_cached is False
         assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}_0.250_0.000.mp3"
         assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.250_0.000.jpg"
 
@@ -99,15 +100,16 @@ def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_ma
     with (
         patch("exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("exporter.os.path.exists", return_value=True),
+        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
         patch("subprocess.run", side_effect=mock_run_side_effect) as mock_subrun,
         patch("os.replace"),
     ):
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
-        success, _msg, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
+        success, _msg, _, _, _, is_cached = exporter.extract_media(sid, "/fake/out")
         assert success is True
+        assert is_cached is False
 
         audio_call_args = mock_subrun.call_args_list[1][0][0]
         assert "ffmpeg" in audio_call_args
@@ -408,7 +410,7 @@ def test_extract_media_concatenation(test_db):
     with (
         patch("exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("exporter.os.path.exists", return_value=True),
+        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
         patch("subprocess.run"),
         patch("os.replace"),
     ):
@@ -428,7 +430,8 @@ def test_extract_media_concatenation(test_db):
         )
         res = test_db.execute("SELECT id FROM sentences WHERE text = '生産工場の完成記念スペシャルゲストとして'").fetchone()
         sid_jpn_no_punct = res["id"]
-        _, _, _, _, text1, _ = exporter.extract_media(sid_jpn_no_punct, "/fake/out", pad_start=1.5, pad_end=1.5)
+        _, _, _, _, text1, is_cached = exporter.extract_media(sid_jpn_no_punct, "/fake/out", pad_start=1.5, pad_end=1.5)
+        assert is_cached is False
         assert text1 == "冷凍メンチ冷凍コロッケの生産工場の完成記念スペシャルゲストとして来ていただきとても光栄です。"
 
         # 2. Japanese (With Punctuation)
@@ -593,7 +596,7 @@ def test_cache_and_cleanup(test_db):
         # Test 1: First extraction
         with (
             patch("exporter.db.get_db", return_value=test_db),
-            patch("exporter.os.path.exists", return_value=True),
+            patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
             patch("subprocess.run") as mock_run,
         ):
             # Make sure ffprobe succeeds
