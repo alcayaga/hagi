@@ -284,22 +284,35 @@ async function performNadeshikoSearch(query) {
         : ``;
 
       let coverHtml = "";
-      if (item.coverUrl) {
-        coverHtml = `<img src="${item.coverUrl}" alt="${item.title}" class="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105">`;
+      if (item.coverUrl && (item.coverUrl.startsWith("http://") || item.coverUrl.startsWith("https://"))) {
+        const tempDiv = document.createElement("div");
+        const img = document.createElement("img");
+        img.src = item.coverUrl;
+        img.className = "w-full h-full object-cover transition-transform duration-300 group-hover:scale-105";
+        tempDiv.appendChild(img);
+        coverHtml = tempDiv.innerHTML;
       } else {
         coverHtml = `<div class="w-full h-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-gray-400 transition-transform duration-300 group-hover:scale-105">
                       <svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                      </div>`;
       }
 
-      card.innerHTML = `
-        <div class="relative w-full aspect-[2/3] mb-2 rounded-lg overflow-hidden shadow-md dark:border dark:border-gray-700">
-          ${coverHtml}
-          ${starHtml}
-        </div>
-        <h3 class="text-sm font-bold text-gray-900 dark:text-gray-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition" title="${item.title}">${item.title}</h3>
-        <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">${item.matchCount} hit${item.matchCount !== 1 ? "s" : ""}</p>
-      `;
+      const imgWrapper = document.createElement("div");
+      imgWrapper.className = "relative w-full aspect-[2/3] mb-2 rounded-lg overflow-hidden shadow-md dark:border dark:border-gray-700";
+      imgWrapper.innerHTML = coverHtml + starHtml;
+
+      const titleEl = document.createElement("h3");
+      titleEl.className = "text-sm font-bold text-gray-900 dark:text-gray-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition";
+      titleEl.textContent = item.title;
+      titleEl.title = item.title;
+
+      const hitsEl = document.createElement("p");
+      hitsEl.className = "text-xs text-gray-500 dark:text-gray-400 mt-0.5";
+      hitsEl.textContent = `${item.matchCount} hit${item.matchCount !== 1 ? "s" : ""}`;
+
+      card.appendChild(imgWrapper);
+      card.appendChild(titleEl);
+      card.appendChild(hitsEl);
       list.appendChild(card);
     });
   } catch (error) {

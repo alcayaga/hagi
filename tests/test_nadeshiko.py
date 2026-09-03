@@ -84,3 +84,16 @@ def test_search_global_stats():
         assert results[2]["publicId"] == "media2"
         assert results[2]["isStarred"] is False
         assert results[2]["matchCount"] == 50
+
+def test_no_redirect_handler():
+    """Test that NoRedirectHandler explicitly returns None to block redirects."""
+    import urllib.request
+    handler = nadeshiko.NoRedirectHandler()
+    req = urllib.request.Request("https://api.nadeshiko.co/v1/search/stats", headers={"Authorization": "Bearer secret"})
+
+    # Verify that redirect_request returns None to block the redirect
+    result_http = handler.redirect_request(req, None, 301, "Moved", None, "http://malicious.com")
+    result_https = handler.redirect_request(req, None, 302, "Found", None, "https://malicious.com")
+
+    assert result_http is None
+    assert result_https is None
