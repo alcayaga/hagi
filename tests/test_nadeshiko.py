@@ -19,10 +19,12 @@ def test_get_favorite_media_success():
         ]
     }
 
-    with mock.patch("urllib.request.OpenerDirector.open") as mock_urlopen:
+    with mock.patch("urllib.request.build_opener") as mock_build_opener:
+        mock_opener = mock.MagicMock()
         cm = mock.MagicMock()
         cm.read.return_value = json.dumps(mock_resp).encode("utf-8")
-        mock_urlopen.return_value.__enter__.return_value = cm
+        mock_opener.open.return_value.__enter__.return_value = cm
+        mock_build_opener.return_value = mock_opener
 
         favorites = nadeshiko.get_favorite_media("dummy_key")
 
@@ -35,8 +37,10 @@ def test_get_favorite_media_error():
     """Test fetching favorite media with an error."""
     nadeshiko._FAVORITE_MEDIA_CACHE = (0, [])
 
-    with mock.patch("urllib.request.OpenerDirector.open") as mock_urlopen:
-        mock_urlopen.side_effect = Exception("Network error")
+    with mock.patch("urllib.request.build_opener") as mock_build_opener:
+        mock_opener = mock.MagicMock()
+        mock_opener.open.side_effect = Exception("Network error")
+        mock_build_opener.return_value = mock_opener
 
         favorites = nadeshiko.get_favorite_media("dummy_key")
 
@@ -63,10 +67,12 @@ def test_search_global_stats():
         }
     }
 
-    with mock.patch("urllib.request.OpenerDirector.open") as mock_urlopen:
+    with mock.patch("urllib.request.build_opener") as mock_build_opener:
+        mock_opener = mock.MagicMock()
         cm = mock.MagicMock()
         cm.read.return_value = json.dumps(mock_resp).encode("utf-8")
-        mock_urlopen.return_value.__enter__.return_value = cm
+        mock_opener.open.return_value.__enter__.return_value = cm
+        mock_build_opener.return_value = mock_opener
 
         results = nadeshiko.search_global_stats("dummy_key", "test")
 
