@@ -350,5 +350,6 @@ def nadeshiko_search(q: str = ""):
         print("Nadeshiko API key is missing in config.json", flush=True)
         return []
 
-    results = nadeshiko.search_global_stats(api_key, q)
+    title_language = nadeshiko_config.get("titleLanguage", "romaji")
+    results = nadeshiko.search_global_stats(api_key, q, title_language=title_language)
     return results

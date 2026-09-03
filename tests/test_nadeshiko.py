@@ -103,3 +103,29 @@ def test_no_redirect_handler():
 
     assert result_http is None
     assert result_https is None
+
+
+def test_get_title():
+    """Test title resolution with different language preferences and fallbacks."""
+    media_info = {
+        "nameJa": "日本語",
+        "nameRomaji": "Romaji",
+        "nameEn": "English"
+    }
+
+    # Test explicit preferences
+    assert nadeshiko._get_title(media_info, "japanese") == "日本語"
+    assert nadeshiko._get_title(media_info, "romaji") == "Romaji"
+    assert nadeshiko._get_title(media_info, "english") == "English"
+
+    # Test fallback for japanese
+    assert nadeshiko._get_title({"nameRomaji": "Romaji"}, "japanese") == "Romaji"
+    assert nadeshiko._get_title({"nameEn": "English"}, "japanese") == "English"
+
+    # Test fallback for english
+    assert nadeshiko._get_title({"nameRomaji": "Romaji"}, "english") == "Romaji"
+    assert nadeshiko._get_title({"nameJa": "日本語"}, "english") == "日本語"
+
+    # Test default fallback
+    assert nadeshiko._get_title({}, "romaji") == "Unknown Title"
+    assert nadeshiko._get_title({}, "unknown_lang") == "Unknown Title"
