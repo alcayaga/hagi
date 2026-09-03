@@ -660,3 +660,24 @@ def test_cache_and_cleanup(test_db):
         assert not os.path.exists(dummy)
         assert os.path.exists(a_out)
         assert os.path.exists(i_out)
+
+
+def test_extract_media_path_injection(test_db):
+    """Test that extract_media rejects path traversal payloads by enforcing integer conversion."""
+    with pytest.raises(ValueError):
+        # A malicious path string like "../../../etc/passwd" will fail int() conversion
+        exporter.extract_media("../../../etc/passwd", "/fake/out")
+
+
+def test_extract_media_exception_exposure(test_db):
+    """Test that extract_media masks raw exception stack traces with a generic message."""
+    with (
+        patch("exporter.db.get_db", return_value=test_db),
+        patch("exporter.os.makedirs"),
+        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("exporter.subprocess.run", side_effect=Exception("Secret Database Connection String Leaked")),
+    ):
+        success, msg, _, _, _, _ = exporter.extract_media(1, "/fake/out")
+        assert success is False
+        assert msg == "An internal error occurred during extraction."
+        assert "Secret" not in msg

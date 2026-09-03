@@ -239,7 +239,11 @@ async function performSearch(pushState = true, resetFilters = true) {
     populateDropdowns();
     renderResults();
   } catch (error) {
-    container.innerHTML = `<div class="px-6 py-4 text-center text-red-500">Error fetching results: ${error}</div>`;
+    container.innerHTML = "";
+    const errorDiv = document.createElement("div");
+    errorDiv.className = "px-6 py-4 text-center text-red-500";
+    errorDiv.textContent = `Error fetching results: ${error}`;
+    container.appendChild(errorDiv);
   } finally {
     loading.classList.add("hidden");
   }
@@ -695,7 +699,11 @@ async function viewContext(id, pushState = true) {
       }
     }
   } catch (error) {
-    list.innerHTML = `<p class="text-red-500">Error fetching context: ${error}</p>`;
+    list.innerHTML = "";
+    const errorMsg = document.createElement("p");
+    errorMsg.className = "text-red-500";
+    errorMsg.textContent = `Error fetching context: ${error}`;
+    list.appendChild(errorMsg);
   } finally {
     loading.classList.add("hidden");
   }

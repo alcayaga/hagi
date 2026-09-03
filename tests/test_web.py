@@ -300,3 +300,14 @@ def test_export_anki_endpoint_invalid_media_urls():
             mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text", False)
             client.post("/api/anki/1", json={"pad_start": 0.2, "pad_end": 0.8})
             assert mock_anki.call_args.kwargs["base_url"] == "http://localhost:8000"
+
+
+def test_api_extract_exception_exposure(test_db):
+    """Test that POST /api/extract returns generic 500 errors."""
+    with patch("web.db.get_db", return_value=test_db), patch("web.exporter.extract_media") as mock_extract:
+        # Mock exporter returning a generic string
+        mock_extract.return_value = (False, "An internal error occurred during extraction.", None, None, None, False)
+
+        response = client.post("/api/extract/1", json={"pad_start": 0.5, "pad_end": 0.5})
+        assert response.status_code == 500
+        assert response.json()["detail"] == "An internal error occurred during extraction."
