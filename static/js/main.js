@@ -228,6 +228,10 @@ async function performSearch(pushState = true, resetFilters = true) {
     if (pushState) {
       updateUrl(query);
     }
+
+    // Kick off Nadeshiko search concurrently (it handles its own UI/loading state)
+    performNadeshikoSearch(query);
+
     const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
     allSearchResults = await response.json();
 
@@ -238,6 +242,88 @@ async function performSearch(pushState = true, resetFilters = true) {
     container.innerHTML = `<div class="px-6 py-4 text-center text-red-500">Error fetching results: ${error}</div>`;
   } finally {
     loading.classList.add("hidden");
+  }
+}
+
+let currentNadeshikoSearchId = 0;
+
+async function performNadeshikoSearch(query) {
+  const wrapper = document.getElementById("nadeshikoResultsWrapper");
+  const loading = document.getElementById("nadeshikoLoading");
+  const list = document.getElementById("nadeshikoResultsList");
+
+  const searchId = ++currentNadeshikoSearchId;
+
+  // Always show wrapper and loading initially
+  wrapper.classList.remove("hidden");
+  loading.classList.remove("hidden");
+  list.innerHTML = "";
+
+  try {
+    const response = await fetch(`/api/nadeshiko/search?q=${encodeURIComponent(query)}`);
+    const results = await response.json();
+
+    if (searchId !== currentNadeshikoSearchId) return; // Ignore stale request
+
+    if (!results || results.length === 0) {
+      wrapper.classList.add("hidden");
+      return;
+    }
+
+    results.forEach((item) => {
+      const card = document.createElement("a");
+      card.href = `https://nadeshiko.co/en/search/${encodeURIComponent(query)}?media=${encodeURIComponent(item.publicId)}`;
+      card.target = "_blank";
+      card.rel = "noopener noreferrer";
+      card.className = "flex-shrink-0 w-28 md:w-32 flex flex-col group cursor-pointer";
+
+      let starHtml = item.isStarred
+        ? `<div class="absolute top-2 right-2 bg-black/60 rounded-full p-1 shadow-sm backdrop-blur-md">
+             <svg class="w-4 h-4 text-yellow-400" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+           </div>`
+        : ``;
+
+      let coverHtml = "";
+      if (item.coverUrl && (item.coverUrl.startsWith("http://") || item.coverUrl.startsWith("https://"))) {
+        const tempDiv = document.createElement("div");
+        const img = document.createElement("img");
+        img.src = item.coverUrl;
+        img.className = "w-full h-full object-cover transition-transform duration-300 group-hover:scale-105";
+        tempDiv.appendChild(img);
+        coverHtml = tempDiv.innerHTML;
+      } else {
+        coverHtml = `<div class="w-full h-full bg-gray-200 dark:bg-gray-800 flex items-center justify-center text-gray-400 transition-transform duration-300 group-hover:scale-105">
+                      <svg class="w-8 h-8 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                     </div>`;
+      }
+
+      const imgWrapper = document.createElement("div");
+      imgWrapper.className = "relative w-full aspect-[2/3] mb-2 rounded-lg overflow-hidden shadow-md dark:border dark:border-gray-700";
+      imgWrapper.innerHTML = coverHtml + starHtml;
+
+      const titleEl = document.createElement("h3");
+      titleEl.className = "text-sm font-bold text-gray-900 dark:text-gray-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition";
+      titleEl.textContent = item.title;
+      titleEl.title = item.title;
+
+      const hitsEl = document.createElement("p");
+      hitsEl.className = "text-xs text-gray-500 dark:text-gray-400 mt-0.5";
+      hitsEl.textContent = `${item.matchCount} hit${item.matchCount !== 1 ? "s" : ""}`;
+
+      card.appendChild(imgWrapper);
+      card.appendChild(titleEl);
+      card.appendChild(hitsEl);
+      list.appendChild(card);
+    });
+  } catch (error) {
+    if (searchId === currentNadeshikoSearchId) {
+      console.error("Error fetching Nadeshiko results:", error);
+      wrapper.classList.add("hidden");
+    }
+  } finally {
+    if (searchId === currentNadeshikoSearchId) {
+      loading.classList.add("hidden");
+    }
   }
 }
 
@@ -317,34 +403,34 @@ function renderResults() {
     const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
 
     const card = document.createElement("div");
-    card.className = "bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 hover:shadow-md transition-shadow p-4 md:p-5 flex flex-col md:flex-row gap-4 justify-between group";
+    card.className = "bg-white/60 dark:bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-white/20 dark:border-gray-700/50 hover:bg-white/80 dark:hover:bg-gray-800/60 transition-all duration-300 p-4 md:p-5 flex flex-col md:flex-row gap-4 md:gap-5 justify-between group";
 
     card.innerHTML = `
       <!-- Left: Content -->
-      <div class="flex flex-col gap-1.5 flex-grow">
+      <div class="flex flex-col gap-2 flex-grow">
         <!-- Top Metadata -->
-        <div class="flex flex-wrap items-center gap-2 text-[0.7rem] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
-          <span>${sourceDisplay}</span>
-          ${subParts.length > 0 ? `<span>&bull;</span><span>${subParts.join(" ")}</span>` : ""}
-          ${r.episode_title ? `<span>&bull;</span><span class="italic text-gray-400 dark:text-gray-500">"${r.episode_title}"</span>` : ""}
-          <span>&bull;</span>
-          <span class="font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-600 dark:text-gray-300 shadow-sm">${timeStr}</span>
+        <div class="flex flex-wrap items-center gap-1.5 md:gap-2 text-[0.65rem] md:text-[0.7rem] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+          <span class="text-gray-700 dark:text-gray-200 font-bold">${sourceDisplay}</span>
+          ${subParts.length > 0 ? `<span class="opacity-50">&bull;</span><span>${subParts.join(" ")}</span>` : ""}
+          ${r.episode_title ? `<span class="opacity-50">&bull;</span><span class="italic">"${r.episode_title}"</span>` : ""}
+          <span class="opacity-50">&bull;</span>
+          <span class="font-mono bg-gray-500/10 dark:bg-gray-400/10 px-1.5 md:px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-300">${timeStr}</span>
         </div>
         
         <!-- Primary Text -->
-        <div class="text-xl font-bold text-gray-900 dark:text-gray-100 mt-1">${highlightText(cleanText)}</div>
+        <div class="text-xl md:text-2xl font-medium tracking-tight text-gray-900 dark:text-gray-50 mt-1 mb-2">${highlightText(cleanText)}</div>
         
         <!-- Translations -->
-        <div class="flex flex-col gap-1.5 mt-1.5">
-          ${cleanSpa ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span>&nbsp;<span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanSpa)}</span></div>` : ""}
-          ${cleanEng ? `<div class="text-sm leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span>&nbsp;<span class="text-gray-500 dark:text-gray-400 italic align-middle">${highlightText(cleanEng)}</span></div>` : ""}
+        <div class="flex flex-col gap-2">
+          ${cleanSpa ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed">${highlightText(cleanSpa)}</span></div>` : ""}
+          ${cleanEng ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed">${highlightText(cleanEng)}</span></div>` : ""}
         </div>
       </div>
 
       <!-- Right: Actions -->
-      <div class="flex flex-row md:flex-col gap-2 justify-start md:justify-center flex-shrink-0 border-t md:border-t-0 md:border-l border-gray-100 dark:border-gray-700 pt-4 md:pt-0 md:pl-5 mt-2 md:mt-0">
-         <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none md:w-24 bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-3 py-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 font-bold text-sm transition shadow-sm">Context</button>
-         <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none md:w-24 bg-indigo-600 text-white dark:bg-indigo-600 dark:text-white px-3 py-2 rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-500 font-bold text-sm transition shadow-sm">Extract</button>
+      <div class="flex flex-row md:flex-col gap-2 md:gap-3 justify-start md:justify-center flex-shrink-0 pt-3 md:pt-0 mt-1 md:mt-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
+         <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none md:w-28 bg-white/50 dark:bg-gray-700/30 text-gray-700 dark:text-gray-200 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl hover:bg-white dark:hover:bg-gray-600/50 border border-gray-200 dark:border-gray-600/50 font-medium text-xs md:text-sm transition-all shadow-sm backdrop-blur-sm">Context</button>
+         <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none md:w-28 bg-indigo-600/90 text-white px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl hover:bg-indigo-500 border border-indigo-500/50 font-medium text-xs md:text-sm transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] backdrop-blur-sm">Extract</button>
       </div>
     `;
     container.appendChild(card);
@@ -1316,6 +1402,59 @@ window.addEventListener("DOMContentLoaded", async () => {
       if (urlParams.has("episode")) activeEp = parseInt(urlParams.get("episode"));
       performSearch(false, false);
     }
+  }
+});
+
+// Manage Nadeshiko horizontal scroll buttons
+document.addEventListener("DOMContentLoaded", () => {
+  const nadeshikoList = document.getElementById("nadeshikoResultsList");
+  const scrollLeftBtn = document.getElementById("nadeshikoScrollLeft");
+  const scrollRightBtn = document.getElementById("nadeshikoScrollRight");
+
+  if (nadeshikoList && scrollLeftBtn && scrollRightBtn) {
+    const updateButtons = () => {
+      if (nadeshikoList.scrollWidth <= nadeshikoList.clientWidth) {
+        scrollLeftBtn.classList.add("hidden");
+        scrollRightBtn.classList.add("hidden");
+        return;
+      }
+
+      if (nadeshikoList.scrollLeft <= 0) {
+        scrollLeftBtn.classList.add("hidden");
+      } else {
+        scrollLeftBtn.classList.remove("hidden");
+      }
+
+      if (nadeshikoList.scrollLeft + nadeshikoList.clientWidth >= nadeshikoList.scrollWidth - 1) {
+        scrollRightBtn.classList.add("hidden");
+      } else {
+        scrollRightBtn.classList.remove("hidden");
+      }
+    };
+
+    nadeshikoList.addEventListener("scroll", updateButtons);
+    window.addEventListener("resize", updateButtons);
+
+    const observer = new MutationObserver(updateButtons);
+    observer.observe(nadeshikoList, { childList: true });
+
+    const scrollByVisibleItems = (direction) => {
+      if (!nadeshikoList.firstElementChild) return;
+      const gap = 16; // 1rem gap
+      const itemWidth = nadeshikoList.firstElementChild.offsetWidth + gap;
+      const visibleItems = Math.max(1, Math.floor(nadeshikoList.clientWidth / itemWidth));
+      nadeshikoList.scrollBy({ left: direction * visibleItems * itemWidth, behavior: "smooth" });
+    };
+
+    scrollLeftBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      scrollByVisibleItems(-1);
+    });
+
+    scrollRightBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      scrollByVisibleItems(1);
+    });
   }
 });
 

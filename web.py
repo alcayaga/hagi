@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 
 import db
 import exporter
+import nadeshiko
 
 
 def _get_normalized_media_url(config_obj: dict) -> str | None:
@@ -319,3 +320,35 @@ def export_anki_endpoint(sentence_id: int, config: ExtractConfig, background_tas
         raise HTTPException(status_code=500, detail=msg)
 
     return {"success": True, "message": msg}
+
+
+@app.get("/api/nadeshiko/search")
+def nadeshiko_search(q: str = ""):
+    """Search global stats from Nadeshiko."""
+    if not q:
+        return []
+
+    if not os.path.exists("config.json"):
+        print("config.json not found", flush=True)
+        return []
+
+    try:
+        import json
+        with open("config.json", "r") as f:
+            app_config = json.load(f)
+    except Exception as e:
+        print(f"Failed to load config.json: {e}", flush=True)
+        return []
+
+    nadeshiko_config = app_config.get("nadeshiko", {})
+    if not nadeshiko_config.get("enabled"):
+        print("Nadeshiko integration is not enabled in config.json", flush=True)
+        return []
+
+    api_key = nadeshiko_config.get("apiKey")
+    if not api_key:
+        print("Nadeshiko API key is missing in config.json", flush=True)
+        return []
+
+    results = nadeshiko.search_global_stats(api_key, q)
+    return results
