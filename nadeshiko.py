@@ -61,7 +61,18 @@ def get_favorite_media(api_key: str) -> list[str]:
     return favorites
 
 
-def search_global_stats(api_key: str, query: str) -> list[dict]:
+def _get_title(media_info: dict, title_language: str) -> str:
+    """Get the title of a media based on the preferred language with fallbacks."""
+    if title_language == "japanese":
+        return media_info.get("nameJa") or media_info.get("nameRomaji") or media_info.get("nameEn") or "Unknown Title"
+    if title_language == "english":
+        return media_info.get("nameEn") or media_info.get("nameRomaji") or media_info.get("nameJa") or "Unknown Title"
+
+    # Default to romaji
+    return media_info.get("nameRomaji") or media_info.get("nameEn") or media_info.get("nameJa") or "Unknown Title"
+
+
+def search_global_stats(api_key: str, query: str, title_language: str = "romaji") -> list[dict]:
     """Search for a word and return matching media ordered by favorite status."""
     url = "https://api.nadeshiko.co/v1/search/stats"
     data = {
@@ -94,7 +105,7 @@ def search_global_stats(api_key: str, query: str) -> list[dict]:
         results.append({
             "publicId": public_id,
             "slug": media_info.get("slug", ""),
-            "title": media_info.get("nameRomaji") or media_info.get("nameEn") or media_info.get("nameJa", "Unknown Title"),
+            "title": _get_title(media_info, title_language),
             "coverUrl": media_info.get("coverUrl", ""),
             "matchCount": stat.get("matchCount", 0),
             "isStarred": is_starred
