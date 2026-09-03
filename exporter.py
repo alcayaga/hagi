@@ -265,8 +265,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             combined_text,
             False,
         )
-    except Exception as e:
-        print(f"EXCEPTION: {e}")
+    except Exception:
+        print("EXCEPTION: An internal error occurred.")
         if "audio_tmp" in locals() and os.path.exists(audio_tmp):
             try:
                 os.remove(audio_tmp)
@@ -538,8 +538,8 @@ def export_ankiconnect(
 
         return True, f"Successfully updated note {target_note_id} in Anki.", is_cached
 
-    except Exception as e:
-        print(f"EXCEPTION: {e}")
+    except Exception:
+        print("EXCEPTION: An internal error occurred.")
         return False, "An error occurred during AnkiConnect export.", False
 
 
