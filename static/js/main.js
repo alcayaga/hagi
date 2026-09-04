@@ -1667,7 +1667,7 @@ async function searchAnkiCards() {
 
       const selectBadge = document.createElement("button");
       selectBadge.type = "button";
-      selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1 z-10 relative cursor-pointer";
+      selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 z-10 relative cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300";
       selectBadge.textContent = "Update";
 
       selectBadge.onclick = (e) => {
