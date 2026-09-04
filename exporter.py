@@ -29,6 +29,10 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             - str: The sentence text.
             - bool: Whether the media was served from cache.
     """
+    sentence_id = int(sentence_id)
+    if not (-9223372036854775808 <= sentence_id <= 9223372036854775807):
+        return False, "Sentence not found", None, None, None, False
+
     pad_start = round(pad_start, 3)
     pad_end = round(pad_end, 3)
     conn = db.get_db()
@@ -264,8 +268,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             combined_text,
             False,
         )
-    except Exception as e:
-        print(f"EXCEPTION: {e}")
+    except Exception:
+        print("EXCEPTION: An internal error occurred.")
         if "audio_tmp" in locals() and os.path.exists(audio_tmp):
             try:
                 os.remove(audio_tmp)
@@ -276,7 +280,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 os.remove(image_tmp)
             except Exception:
                 pass
-        return False, str(e), None, None, None, False
+        return False, "An internal error occurred during extraction.", None, None, None, False
 
 
 def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
@@ -337,6 +341,7 @@ def export_ankiconnect(
     Returns:
         tuple: (bool, str, bool) - Success status, message, and cache status.
     """
+    sentence_id = int(sentence_id)
     success, msg, audio_out, image_out, text, is_cached = extract_media(sentence_id, out_dir, pad_start, pad_end)
     if not success:
         return False, msg, False
@@ -536,8 +541,9 @@ def export_ankiconnect(
 
         return True, f"Successfully updated note {target_note_id} in Anki.", is_cached
 
-    except Exception as e:
-        return False, str(e), False
+    except Exception:
+        print("EXCEPTION: An internal error occurred.")
+        return False, "An error occurred during AnkiConnect export.", False
 
 
 def cleanup_media_cache(out_dir: str, max_mb: int = 500):
