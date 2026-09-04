@@ -1335,10 +1335,14 @@ function toggleModalView(viewName) {
   const extractView = document.getElementById("mediaExtractView");
   const searchView = document.getElementById("mediaAnkiSearchView");
   const backBtn = document.getElementById("mediaModalBackButton");
+  const container = document.getElementById("mediaModalContentContainer");
 
   if (!extractView || !searchView || !backBtn) return;
 
   if (viewName === "mediaAnkiSearchView") {
+    if (container) {
+      container.style.minHeight = "min(60vh, 600px)";
+    }
     extractView.classList.add("-translate-x-full");
     extractView.setAttribute("inert", "");
     searchView.classList.remove("invisible", "translate-x-full");
@@ -1360,6 +1364,9 @@ function toggleModalView(viewName) {
       }
     }, 300);
   } else {
+    if (container) {
+      container.style.minHeight = "";
+    }
     extractView.classList.remove("-translate-x-full");
     extractView.removeAttribute("inert");
     searchView.classList.add("translate-x-full");

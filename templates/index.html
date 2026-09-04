@@ -125,9 +125,9 @@
             </svg>
           </button>
         </div>
-        <div class="relative overflow-hidden flex-grow flex flex-col">
+        <div id="mediaModalContentContainer" class="relative overflow-hidden flex-grow flex flex-col transition-[min-height] duration-300">
           <!-- View 1: Extract -->
-          <div id="mediaExtractView" class="p-4 md:p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6 md:gap-8 transition-transform duration-300 w-full">
+          <div id="mediaExtractView" class="p-4 md:p-6 overflow-y-auto flex-grow flex flex-col md:flex-row gap-6 md:gap-8 transition-transform duration-300 w-full h-full">
             <!-- Left Column -->
             <div class="w-full md:w-2/5 flex flex-col gap-4 justify-center">
               <div class="relative w-full cursor-pointer group rounded-lg overflow-hidden border border-gray-200 dark:border-gray-600 shadow-sm" onclick="replayAudio()">
