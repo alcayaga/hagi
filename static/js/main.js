@@ -489,16 +489,11 @@ function highlightSearchTerms(text, queryToUse = null, escapeFunc = null) {
   if (escapeFunc) {
     const subParts = text.split(regex);
     for (let j = 0; j < subParts.length; j++) {
-      subParts[j] =
-        j % 2 === 0
-          ? escapeFunc(subParts[j])
-          : '<b class="text-indigo-600 dark:text-indigo-400">' +
-            escapeFunc(subParts[j]) +
-            "</b>";
+      subParts[j] = j % 2 === 0 ? escapeFunc(subParts[j]) : '<b class="text-indigo-600 dark:text-indigo-400">' + escapeFunc(subParts[j]) + "</b>";
     }
     return subParts.join("");
   }
-  
+
   const parts = text.split(/(<[a-zA-Z/](?:[^>"']|"[^"]*"|'[^']*')*>)/g);
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 0) {
@@ -1374,7 +1369,7 @@ function toggleModalView(viewName) {
     // Auto-search using original query
     const mainQuery = document.getElementById("searchInput")?.value.trim() || "";
     const ankiSearchInput = document.getElementById("ankiCardSearchInput");
-    if (ankiSearchInput && mainQuery) {
+    if (ankiSearchInput) {
       ankiSearchInput.value = mainQuery;
       searchAnkiCards();
     }
