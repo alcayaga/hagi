@@ -1335,6 +1335,10 @@ async function sendToAnki(btn, targetNoteId = null) {
     delete btn.dataset.confirming;
     delete btn.dataset.origText;
     delete btn.dataset.origClass;
+    if (btn.dataset.confirmTimer) {
+      clearTimeout(Number(btn.dataset.confirmTimer));
+      delete btn.dataset.confirmTimer;
+    }
     btn.disabled = false;
     btn.classList.remove("opacity-70");
   }
@@ -1704,6 +1708,14 @@ async function searchAnkiCards() {
 
         if (selectBadge.dataset.confirming === "true") {
           selectBadge.dataset.confirming = "sending";
+          if (!currentExtraction.id) {
+            selectBadge.className = selectBadge.dataset.origClass;
+            selectBadge.textContent = selectBadge.dataset.origText;
+            delete selectBadge.dataset.confirming;
+            delete selectBadge.dataset.origText;
+            delete selectBadge.dataset.origClass;
+            return;
+          }
           sendToAnki(selectBadge, note.noteId);
         } else {
           selectBadge.dataset.confirming = "true";

@@ -677,7 +677,8 @@ def test_extract_media_exception_exposure(test_db):
         patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
         patch("exporter.subprocess.run", side_effect=Exception("Secret Database Connection String Leaked")),
     ):
-        success, msg, _, _, _, _ = exporter.extract_media(1, "/fake/out")
+        sid = test_db.execute("SELECT id FROM sentences").fetchone()["id"]
+        success, msg, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
         assert success is False
         assert msg == "An internal error occurred during extraction."
         assert "Secret" not in msg

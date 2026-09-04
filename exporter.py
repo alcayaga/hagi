@@ -20,11 +20,11 @@ def anki_request(anki_url, action, timeout=10.0, **params):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
             res = json.loads(response.read().decode("utf-8"))
-            if res.get("error"):
-                raise Exception(res["error"])
-            return res.get("result")
     except Exception as e:
         raise Exception(f"AnkiConnect error: {e}")
+    if res.get("error"):
+        raise Exception(f"AnkiConnect error: {res['error']}")
+    return res.get("result")
 
 
 def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):

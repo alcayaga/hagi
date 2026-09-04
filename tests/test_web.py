@@ -312,59 +312,44 @@ def test_api_extract_exception_exposure(test_db):
         assert response.status_code == 500
         assert response.json()["detail"] == "An internal error occurred during extraction."
 
-def test_search_anki_endpoint():
-    """Test the POST /api/anki/search endpoint."""
+@pytest.fixture
+def mock_config(monkeypatch):
+    """Fixture to mock config.json existence and reading."""
     def mock_exists(path):
-        """Mock os.path.exists to return true for config.json."""
         return path == "config.json"
 
     _real_open = open
-
     def mock_open(path, mode="r", *args, **kwargs):
-        """Mock builtins.open to return a string buffer for config.json."""
         if path == "config.json":
             from io import StringIO
             import json
             return StringIO(json.dumps({"deck": "Mining"}))
         return _real_open(path, mode, *args, **kwargs)
 
+    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("builtins.open", mock_open)
+
+
+def test_search_anki_endpoint(mock_config):
+    """Test the POST /api/anki/search endpoint."""
     with patch("web.exporter.search_anki_notes") as mock_search:
         mock_search.return_value = (True, "Success", [{"noteId": 10002, "fields": {}}])
 
-        with patch("os.path.exists", mock_exists), \
-             patch("builtins.open", mock_open):
+        response = client.post("/api/anki/search", json={"query": "真ん中"})
 
-            response = client.post("/api/anki/search", json={"query": "真ん中"})
+        assert response.status_code == 200
+        data = response.json()
+        assert "notes" in data
+        assert data["notes"][0]["noteId"] == 10002
+        mock_search.assert_called_once_with({"deck": "Mining"}, "真ん中", limit=20)
 
-            assert response.status_code == 200
-            data = response.json()
-            assert "notes" in data
-            assert data["notes"][0]["noteId"] == 10002
-            mock_search.assert_called_once_with({"deck": "Mining"}, "真ん中", limit=20)
 
-def test_search_anki_endpoint_failure():
+def test_search_anki_endpoint_failure(mock_config):
     """Test the POST /api/anki/search endpoint when exporter fails."""
-    def mock_exists(path):
-        """Mock os.path.exists to return true for config.json."""
-        return path == "config.json"
-
-    _real_open = open
-
-    def mock_open(path, mode="r", *args, **kwargs):
-        """Mock builtins.open to return a string buffer for config.json."""
-        if path == "config.json":
-            from io import StringIO
-            import json
-            return StringIO(json.dumps({"deck": "Mining"}))
-        return _real_open(path, mode, *args, **kwargs)
-
     with patch("web.exporter.search_anki_notes") as mock_search:
         mock_search.return_value = (False, "Search Failed", [])
 
-        with patch("os.path.exists", mock_exists), \
-             patch("builtins.open", mock_open):
+        response = client.post("/api/anki/search", json={"query": "fail"})
 
-            response = client.post("/api/anki/search", json={"query": "fail"})
-
-            assert response.status_code == 500
-            assert response.json()["detail"] == "Search Failed"
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Search Failed"
