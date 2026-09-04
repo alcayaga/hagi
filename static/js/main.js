@@ -463,10 +463,13 @@ function renderResults() {
 /**
  * Highlights search terms in the given text, wrapping them in styling tags.
  */
-function highlightSearchTerms(text) {
-  const searchInput = document.getElementById("searchInput");
-  if (!searchInput) return text;
-  const query = searchInput.value.trim();
+function highlightSearchTerms(text, queryToUse = null) {
+  let query = queryToUse;
+  if (query === null) {
+    const searchInput = document.getElementById("searchInput");
+    if (!searchInput) return text;
+    query = searchInput.value.trim();
+  }
   if (!query) return text;
 
   const tokens = query.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
@@ -1618,14 +1621,15 @@ async function searchAnkiCards() {
         return tmp.textContent || tmp.innerText || "";
       };
 
-      tier1 = highlightSearchTerms(escapeHtml(stripHtml(tier1)));
-      tier2 = highlightSearchTerms(escapeHtml(stripHtml(tier2)));
-      tier3 = highlightSearchTerms(escapeHtml(stripHtml(tier3)));
+      const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
+      tier1 = highlightSearchTerms(escapeHtml(stripHtml(tier1)), currentQuery);
+      tier2 = highlightSearchTerms(escapeHtml(stripHtml(tier2)), currentQuery);
+      tier3 = highlightSearchTerms(escapeHtml(stripHtml(tier3)), currentQuery);
 
       const el = document.createElement("button");
       el.type = "button";
-      el.className = "w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/50 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex justify-between items-center group relative overflow-hidden";
-      el.innerHTML = `<div class="absolute inset-y-0 left-0 w-1 bg-indigo-500 transform scale-y-0 group-hover:scale-y-100 transition-transform origin-center duration-200"></div>`;
+      el.className = "shrink-0 w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/50 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex justify-between items-center group relative overflow-hidden";
+      el.innerHTML = `<div class="absolute inset-y-0 left-0 w-1 bg-indigo-500 transform scale-y-0 group-hover:scale-y-100 transition-transform origin-center duration-200 z-0"></div>`;
 
       el.onclick = (e) => {
         const badge = e.currentTarget.querySelector(".update-badge");
