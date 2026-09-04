@@ -605,6 +605,9 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
             base_filters.append(f'note:"{note_type}"')
 
         base_query_str = " ".join(base_filters)
+
+        if not base_query_str:
+            return False, "Target Anki deck or note type must be configured.", []
         safe_query = query.replace('\\', '\\\\').replace('"', '\\"') if query else ""
 
         unique_ids = []

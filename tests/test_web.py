@@ -318,13 +318,15 @@ def test_search_anki_endpoint():
         """Mock os.path.exists to return true for config.json."""
         return path == "config.json"
 
+    _real_open = open
+
     def mock_open(path, mode="r", *args, **kwargs):
         """Mock builtins.open to return a string buffer for config.json."""
         if path == "config.json":
             from io import StringIO
             import json
             return StringIO(json.dumps({"deck": "Mining"}))
-        return open(path, mode, *args, **kwargs)
+        return _real_open(path, mode, *args, **kwargs)
 
     with patch("web.exporter.search_anki_notes") as mock_search:
         mock_search.return_value = (True, "Success", [{"noteId": 10002, "fields": {}}])
@@ -346,13 +348,15 @@ def test_search_anki_endpoint_failure():
         """Mock os.path.exists to return true for config.json."""
         return path == "config.json"
 
+    _real_open = open
+
     def mock_open(path, mode="r", *args, **kwargs):
         """Mock builtins.open to return a string buffer for config.json."""
         if path == "config.json":
             from io import StringIO
             import json
             return StringIO(json.dumps({"deck": "Mining"}))
-        return open(path, mode, *args, **kwargs)
+        return _real_open(path, mode, *args, **kwargs)
 
     with patch("web.exporter.search_anki_notes") as mock_search:
         mock_search.return_value = (False, "Search Failed", [])

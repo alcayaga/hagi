@@ -10,10 +10,14 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
 import json
+import logging
 
 import db
 import exporter
 import nadeshiko
+
+
+logger = logging.getLogger(__name__)
 
 
 def _load_config():
@@ -23,8 +27,9 @@ def _load_config():
     try:
         with open("config.json", "r") as f:
             return json.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
+    except Exception:
+        logger.exception("Failed to load config.json")
+        raise HTTPException(status_code=500, detail="An error occurred while loading the configuration.")
 
 
 def _get_normalized_media_url(config_obj: dict) -> str | None:
@@ -300,7 +305,7 @@ def extract(sentence_id: int, config: ExtractConfig, background_tasks: Backgroun
 
 class AnkiSearchRequest(BaseModel):
     """Payload for searching Anki notes."""
-    query: str
+    query: str = Field(..., max_length=200)
 
 
 @app.post("/api/anki/search")
