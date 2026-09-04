@@ -1622,25 +1622,9 @@ async function searchAnkiCards() {
       };
 
       const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
-
-      const markSearchTerms = (text) => {
-        if (!currentQuery) return escapeHtml(text);
-        const escaped = escapeHtml(text);
-        const tokens = currentQuery.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
-        let cleanTokens = [];
-        for (let t of tokens) {
-          t = t.replace(/^["']+|["']+$/g, "");
-          if (t.startsWith("-")) continue;
-          if (t) cleanTokens.push(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-        }
-        if (cleanTokens.length === 0) return escaped;
-        const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
-        return escaped.replace(regex, `<mark class="bg-yellow-200 dark:bg-yellow-900/50 text-inherit font-medium rounded-sm px-0.5">$1</mark>`);
-      };
-
-      tier1 = markSearchTerms(stripHtml(tier1));
-      tier2 = markSearchTerms(stripHtml(tier2));
-      tier3 = markSearchTerms(stripHtml(tier3));
+      tier1 = highlightSearchTerms(escapeHtml(stripHtml(tier1)), currentQuery);
+      tier2 = highlightSearchTerms(escapeHtml(stripHtml(tier2)), currentQuery);
+      tier3 = highlightSearchTerms(escapeHtml(stripHtml(tier3)), currentQuery);
 
       const el = document.createElement("div");
       el.className = "shrink-0 w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center group relative overflow-hidden";
