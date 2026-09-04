@@ -1622,46 +1622,28 @@ async function searchAnkiCards() {
       };
 
       const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
-      tier1 = highlightSearchTerms(escapeHtml(stripHtml(tier1)), currentQuery);
-      tier2 = highlightSearchTerms(escapeHtml(stripHtml(tier2)), currentQuery);
-      tier3 = highlightSearchTerms(escapeHtml(stripHtml(tier3)), currentQuery);
 
-      const el = document.createElement("button");
-      el.type = "button";
-      el.className = "shrink-0 w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/50 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex justify-between items-center group relative overflow-hidden";
-      el.innerHTML = `<div class="absolute inset-y-0 left-0 w-1 bg-indigo-500 transform scale-y-0 group-hover:scale-y-100 transition-transform origin-center duration-200 z-0"></div>`;
-
-      el.onclick = (e) => {
-        const badge = e.currentTarget.querySelector(".update-badge");
-        if (!badge) {
-          sendToAnki(e.currentTarget, note.noteId);
-          return;
+      const markSearchTerms = (text) => {
+        if (!currentQuery) return escapeHtml(text);
+        const escaped = escapeHtml(text);
+        const tokens = currentQuery.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
+        let cleanTokens = [];
+        for (let t of tokens) {
+          t = t.replace(/^["']+|["']+$/g, "");
+          if (t.startsWith("-")) continue;
+          if (t) cleanTokens.push(t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
         }
-
-        if (e.currentTarget.dataset.confirming === "true") {
-          e.currentTarget.dataset.confirming = "sending";
-          e.currentTarget.classList.remove("ring-2", "ring-red-500", "dark:ring-red-600");
-          sendToAnki(badge, note.noteId);
-        } else {
-          e.currentTarget.dataset.confirming = "true";
-          const originalText = badge.textContent;
-          const originalClass = badge.className;
-
-          badge.className = "update-badge ml-2 px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-md shadow-md flex items-center gap-1 z-10 relative animate-pulse";
-          badge.textContent = "Confirm?";
-
-          e.currentTarget.classList.add("ring-2", "ring-red-500", "dark:ring-red-600");
-
-          setTimeout(() => {
-            if (e.currentTarget.dataset.confirming === "true") {
-              e.currentTarget.dataset.confirming = "false";
-              badge.className = originalClass;
-              badge.textContent = originalText;
-              e.currentTarget.classList.remove("ring-2", "ring-red-500", "dark:ring-red-600");
-            }
-          }, 3000);
-        }
+        if (cleanTokens.length === 0) return escaped;
+        const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
+        return escaped.replace(regex, `<mark class="bg-yellow-200 dark:bg-yellow-900/50 text-inherit font-medium rounded-sm px-0.5">$1</mark>`);
       };
+
+      tier1 = markSearchTerms(stripHtml(tier1));
+      tier2 = markSearchTerms(stripHtml(tier2));
+      tier3 = markSearchTerms(stripHtml(tier3));
+
+      const el = document.createElement("div");
+      el.className = "shrink-0 w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center group relative overflow-hidden";
 
       const contentDiv = document.createElement("div");
       contentDiv.className = "flex-1 overflow-hidden pr-2 z-10 pl-1";
@@ -1687,9 +1669,16 @@ async function searchAnkiCards() {
         contentDiv.appendChild(t3);
       }
 
-      const selectBadge = document.createElement("div");
-      selectBadge.className = "update-badge ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm flex items-center gap-1 z-10 relative";
+      const selectBadge = document.createElement("button");
+      selectBadge.type = "button";
+      selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1 z-10 relative cursor-pointer";
       selectBadge.textContent = "Update";
+      selectBadge.onclick = (e) => {
+        e.stopPropagation();
+        if (confirm("Are you sure you want to overwrite this Anki card's media? This cannot be undone.")) {
+          sendToAnki(selectBadge, note.noteId);
+        }
+      };
 
       el.appendChild(contentDiv);
       el.appendChild(selectBadge);
