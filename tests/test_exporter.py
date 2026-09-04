@@ -681,3 +681,39 @@ def test_extract_media_exception_exposure(test_db):
         assert success is False
         assert msg == "An internal error occurred during extraction."
         assert "Secret" not in msg
+
+def test_search_anki_notes():
+    """Test that search_anki_notes prioritizes wordField matches and deduplicates."""
+    import json
+
+    mock_config = {"deck": "Mining", "noteType": "Lapis", "wordField": "Expression"}
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"result": [10002], "error": None}).encode("utf-8"), # Pass 1
+            json.dumps({"result": [10001, 10002, 10003], "error": None}).encode("utf-8"), # Pass 2
+            json.dumps({ # notesInfo
+                "result": [
+                    {"noteId": 10002, "fields": {"Expression": {"value": "真ん中"}}},
+                    {"noteId": 10001, "fields": {"Expression": {"value": "Other"}}},
+                    {"noteId": 10003, "fields": {"Expression": {"value": "Another"}}}
+                ], "error": None
+            }).encode("utf-8"),
+        ]
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        success, msg, notes = exporter.search_anki_notes(mock_config, "真ん中", limit=20)
+
+        assert success is True
+        assert len(notes) == 3
+
+        # KEY ASSERTION: Verify deduplication and that 10002 was floated to the top!
+        assert notes[0]["noteId"] == 10002
+        assert notes[1]["noteId"] == 10001
+
+        # Verify the target query was sent correctly
+        req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
+        assert req1["action"] == "findNotes"
+        assert 'Expression:"*真ん中*"' in req1["params"]["query"]

@@ -578,3 +578,71 @@ def cleanup_media_cache(out_dir: str, max_mb: int = 500):
             total_size -= size
         except Exception:
             pass
+
+def search_anki_notes(config: dict, query: str, limit: int = 20):
+    """Search AnkiConnect for notes matching the query dynamically."""
+    if not isinstance(config, dict):
+        return False, "Invalid configuration format.", []
+
+    anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
+
+    def anki_request(action, **params):
+        req_data = json.dumps({"action": action, "version": 6, "params": params}).encode("utf-8")
+        req = urllib.request.Request(anki_url, req_data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, timeout=5.0) as response:
+                res = json.loads(response.read().decode("utf-8"))
+                if res.get("error"):
+                    raise Exception(res["error"])
+                return res.get("result")
+        except Exception as e:
+            raise Exception(f"AnkiConnect error: {e}")
+
+    try:
+        deck = config.get("deck", "")
+        note_type = config.get("noteType", "")
+        word_field = config.get("wordField", "")
+
+        base_filters = []
+        if deck:
+            base_filters.append(f'deck:"{deck}"')
+        if note_type:
+            base_filters.append(f'note:"{note_type}"')
+
+        base_query_str = " ".join(base_filters)
+        safe_query = query.replace('"', '\\"') if query else ""
+
+        unique_ids = []
+
+        if safe_query:
+            # Pass 1: Prioritize matches in the user-defined wordField (if it exists)
+            if word_field:
+                query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
+                ids_expr = anki_request("findNotes", query=query_expr.strip())
+                if ids_expr:
+                    unique_ids.extend(ids_expr)
+
+            # Pass 2: Broad search across all fields
+            query_broad = f'{base_query_str} "{safe_query}"'
+            ids_broad = anki_request("findNotes", query=query_broad.strip())
+            if ids_broad:
+                for nid in ids_broad:
+                    if nid not in unique_ids:
+                        unique_ids.append(nid)
+        else:
+            ids_broad = anki_request("findNotes", query=base_query_str)
+            if ids_broad:
+                unique_ids.extend(ids_broad)
+
+        unique_ids = unique_ids[:limit]
+        if not unique_ids:
+            return True, "No notes found.", []
+
+        notes_info = anki_request("notesInfo", notes=unique_ids)
+        order_map = {nid: i for i, nid in enumerate(unique_ids)}
+        notes_info.sort(key=lambda n: order_map.get(n["noteId"], 999))
+
+        return True, "Success", notes_info
+
+    except Exception as e:
+        return False, str(e), []

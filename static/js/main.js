@@ -1345,9 +1345,18 @@ function toggleModalView(viewName) {
     searchView.removeAttribute("inert");
     backBtn.classList.remove("opacity-0", "pointer-events-none");
     backBtn.removeAttribute("tabindex");
+
+    // Auto-search using original query
+    const mainQuery = document.getElementById("searchInput")?.value.trim() || "";
+    const ankiSearchInput = document.getElementById("ankiCardSearchInput");
+    if (ankiSearchInput && mainQuery && ankiSearchInput.value !== mainQuery) {
+      ankiSearchInput.value = mainQuery;
+      searchAnkiCards();
+    }
+
     setTimeout(() => {
       if (!document.getElementById("mediaModal").classList.contains("hidden") && extractView.classList.contains("-translate-x-full")) {
-        document.getElementById("ankiTargetNid")?.focus();
+        ankiSearchInput?.focus();
       }
     }, 300);
   } else {
@@ -1511,3 +1520,109 @@ window.addEventListener("popstate", async (event) => {
     if (id) viewContext(parseInt(id), false);
   }
 });
+
+async function searchAnkiCards() {
+  const input = document.getElementById("ankiCardSearchInput");
+  const query = input.value.trim();
+  const resultsContainer = document.getElementById("ankiSearchResults");
+
+  if (!query) {
+    resultsContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Please enter a search query.</div>';
+    return;
+  }
+
+  resultsContainer.innerHTML = '<div class="flex justify-center mt-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
+
+  try {
+    const res = await fetch("/api/anki/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: query }),
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Search failed");
+    }
+
+    const data = await res.json();
+    const notes = data.notes;
+    const config = data.config || {};
+
+    if (!notes || notes.length === 0) {
+      resultsContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500 text-sm">No cards found matching your query.</div>';
+      return;
+    }
+
+    resultsContainer.innerHTML = "";
+
+    const wordField = config.wordField || "";
+    const definitionField = config.definitionField || "";
+    const sentenceField = config.sentenceHighlightedField || "Sentence";
+
+    notes.forEach((note) => {
+      const fields = Object.keys(note.fields);
+      if (fields.length === 0) return;
+
+      let tier1 = "";
+      let tier2 = "";
+      let tier3 = "";
+
+      // Determine Tier 1 (Word)
+      if (wordField && note.fields[wordField]) {
+        tier1 = note.fields[wordField].value;
+      } else {
+        tier1 = note.fields[fields[0]].value;
+      }
+
+      // Determine Tier 2 (Definition)
+      if (definitionField && note.fields[definitionField]) {
+        tier2 = note.fields[definitionField].value;
+      } else if (fields.length > 1) {
+        tier2 = note.fields[fields[1]].value;
+      }
+
+      // Determine Tier 3 (Sentence)
+      if (sentenceField && note.fields[sentenceField]) {
+        tier3 = note.fields[sentenceField].value;
+      }
+
+      // Strip HTML function
+      const stripHtml = (html) => {
+        if (!html) return "";
+        const tmp = document.createElement("DIV");
+        tmp.innerHTML = html.replace(/\[sound:[^\]]+\]/g, ""); // also remove sound tags
+        return tmp.textContent || tmp.innerText || "";
+      };
+
+      tier1 = stripHtml(tier1);
+      tier2 = stripHtml(tier2);
+      tier3 = stripHtml(tier3);
+
+      const el = document.createElement("div");
+      el.className = "p-3 border rounded-lg dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition flex justify-between items-center group shadow-sm";
+      el.onclick = () => {
+        const nidInput = document.getElementById("ankiTargetNid");
+        nidInput.value = note.noteId;
+        // Highlight selection
+        const siblings = resultsContainer.children;
+        for (let i = 0; i < siblings.length; i++) {
+          siblings[i].classList.remove("ring-2", "ring-indigo-500");
+        }
+        el.classList.add("ring-2", "ring-indigo-500");
+      };
+
+      let innerHTML = `<div class="flex-1 overflow-hidden pr-2">`;
+      if (tier1) innerHTML += `<div class="font-bold text-gray-800 dark:text-gray-200 truncate">${tier1}</div>`;
+      if (tier2) innerHTML += `<div class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">${tier2}</div>`;
+      if (tier3) innerHTML += `<div class="text-[11px] text-gray-400 dark:text-gray-500 italic truncate mt-1 border-l-2 border-gray-300 dark:border-gray-600 pl-2">${tier3}</div>`;
+      innerHTML += `</div>`;
+      innerHTML += `<div class="ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm">Select</div>`;
+
+      el.innerHTML = innerHTML;
+      resultsContainer.appendChild(el);
+    });
+  } catch (err) {
+    resultsContainer.innerHTML = `<div class="flex items-center justify-center h-full text-red-500 text-sm">Error: ${err.message}</div>`;
+  }
+}
