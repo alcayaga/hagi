@@ -613,6 +613,7 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
         safe_query = query.replace('"', '\\"') if query else ""
 
         unique_ids = []
+        seen = set()
 
         if safe_query:
             # Pass 1: Prioritize matches in the user-defined wordField (if it exists)
@@ -620,21 +621,33 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
                 query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
                 ids_expr = anki_request("findNotes", query=query_expr.strip())
                 if ids_expr:
-                    unique_ids.extend(ids_expr)
+                    for nid in ids_expr:
+                        if nid not in seen:
+                            seen.add(nid)
+                            unique_ids.append(nid)
+                            if len(unique_ids) >= limit:
+                                break
 
-            # Pass 2: Broad search across all fields
-            query_broad = f'{base_query_str} "{safe_query}"'
-            ids_broad = anki_request("findNotes", query=query_broad.strip())
-            if ids_broad:
-                for nid in ids_broad:
-                    if nid not in unique_ids:
-                        unique_ids.append(nid)
+            # Pass 2: Broad search across all fields (only if limit not reached)
+            if len(unique_ids) < limit:
+                query_broad = f'{base_query_str} "{safe_query}"'
+                ids_broad = anki_request("findNotes", query=query_broad.strip())
+                if ids_broad:
+                    for nid in ids_broad:
+                        if nid not in seen:
+                            seen.add(nid)
+                            unique_ids.append(nid)
+                            if len(unique_ids) >= limit:
+                                break
         else:
             ids_broad = anki_request("findNotes", query=base_query_str)
             if ids_broad:
-                unique_ids.extend(ids_broad)
-
-        unique_ids = unique_ids[:limit]
+                for nid in ids_broad:
+                    if nid not in seen:
+                        seen.add(nid)
+                        unique_ids.append(nid)
+                        if len(unique_ids) >= limit:
+                            break
         if not unique_ids:
             return True, "No notes found.", []
 

@@ -1529,6 +1529,10 @@ async function searchAnkiCards() {
   const resultsContainer = document.getElementById("ankiSearchResults");
 
   if (!query) {
+    if (searchAnkiCardsAbortController) {
+      searchAnkiCardsAbortController.abort();
+      searchAnkiCardsAbortController = null;
+    }
     resultsContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Please enter a search query.</div>';
     return;
   }
