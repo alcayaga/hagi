@@ -693,11 +693,11 @@ def test_search_anki_notes():
         mock_response.read.side_effect = [
             json.dumps({"result": [10002], "error": None}).encode("utf-8"), # Pass 1
             json.dumps({"result": [10001, 10002, 10003], "error": None}).encode("utf-8"), # Pass 2
-            json.dumps({ # notesInfo
+            json.dumps({ # notesInfo (out of expected order to test sorting)
                 "result": [
-                    {"noteId": 10002, "fields": {"Expression": {"value": "真ん中"}}},
+                    {"noteId": 10003, "fields": {"Expression": {"value": "Another"}}},
                     {"noteId": 10001, "fields": {"Expression": {"value": "Other"}}},
-                    {"noteId": 10003, "fields": {"Expression": {"value": "Another"}}}
+                    {"noteId": 10002, "fields": {"Expression": {"value": "真ん中"}}}
                 ], "error": None
             }).encode("utf-8"),
         ]
@@ -713,7 +713,12 @@ def test_search_anki_notes():
         assert notes[0]["noteId"] == 10002
         assert notes[1]["noteId"] == 10001
 
-        # Verify the target query was sent correctly
+        # Verify the target queries were sent correctly
         req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
         assert req1["action"] == "findNotes"
         assert 'Expression:"*真ん中*"' in req1["params"]["query"]
+
+        # Verify notesInfo requested deduplicated IDs
+        req3 = json.loads(mock_urlopen.call_args_list[2][0][0].data.decode("utf-8"))
+        assert req3["action"] == "notesInfo"
+        assert req3["params"]["notes"] == [10002, 10001, 10003]

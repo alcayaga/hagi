@@ -463,14 +463,14 @@ function renderResults() {
 /**
  * Highlights search terms in the given text, wrapping them in styling tags.
  */
-function highlightSearchTerms(text, queryToUse = null) {
+function highlightSearchTerms(text, queryToUse = null, escapeFunc = null) {
   let query = queryToUse;
   if (query === null) {
     const searchInput = document.getElementById("searchInput");
-    if (!searchInput) return text;
+    if (!searchInput) return escapeFunc ? escapeFunc(text) : text;
     query = searchInput.value.trim();
   }
-  if (!query) return text;
+  if (!query) return escapeFunc ? escapeFunc(text) : text;
 
   const tokens = query.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
   let cleanTokens = [];
@@ -483,13 +483,25 @@ function highlightSearchTerms(text, queryToUse = null) {
     }
   }
 
-  if (cleanTokens.length === 0) return text;
+  if (cleanTokens.length === 0) return escapeFunc ? escapeFunc(text) : text;
 
   const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
   const parts = text.split(/(<[a-zA-Z/](?:[^>"']|"[^"]*"|'[^']*')*>)/g);
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 0) {
-      parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
+      if (escapeFunc) {
+        const subParts = parts[i].split(regex);
+        for (let j = 0; j < subParts.length; j++) {
+          if (j % 2 === 0) {
+            subParts[j] = escapeFunc(subParts[j]);
+          } else {
+            subParts[j] = '<b class="text-indigo-600 dark:text-indigo-400">' + escapeFunc(subParts[j]) + '</b>';
+          }
+        }
+        parts[i] = subParts.join("");
+      } else {
+        parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
+      }
     }
   }
 
@@ -1581,7 +1593,7 @@ async function searchAnkiCards() {
     const data = await res.json();
 
     // Ignore stale responses
-    if (signal !== searchAnkiCardsAbortController.signal) return;
+    if (currentController !== searchAnkiCardsAbortController) return;
 
     const notes = data.notes;
     const config = data.config || {};
@@ -1650,9 +1662,9 @@ async function searchAnkiCards() {
       };
 
       const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
-      tier1 = highlightSearchTerms(escapeHtml(stripHtml(tier1)), currentQuery);
-      tier2 = highlightSearchTerms(escapeHtml(stripHtml(tier2)), currentQuery);
-      tier3 = highlightSearchTerms(escapeHtml(stripHtml(tier3)), currentQuery);
+      tier1 = highlightSearchTerms(stripHtml(tier1), currentQuery, escapeHtml);
+      tier2 = highlightSearchTerms(stripHtml(tier2), currentQuery, escapeHtml);
+      tier3 = highlightSearchTerms(stripHtml(tier3), currentQuery, escapeHtml);
 
       const el = document.createElement("div");
       el.className = "shrink-0 w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center group relative overflow-hidden";
