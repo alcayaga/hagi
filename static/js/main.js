@@ -486,22 +486,23 @@ function highlightSearchTerms(text, queryToUse = null, escapeFunc = null) {
   if (cleanTokens.length === 0) return escapeFunc ? escapeFunc(text) : text;
 
   const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
+  if (escapeFunc) {
+    const subParts = text.split(regex);
+    for (let j = 0; j < subParts.length; j++) {
+      subParts[j] =
+        j % 2 === 0
+          ? escapeFunc(subParts[j])
+          : '<b class="text-indigo-600 dark:text-indigo-400">' +
+            escapeFunc(subParts[j]) +
+            "</b>";
+    }
+    return subParts.join("");
+  }
+  
   const parts = text.split(/(<[a-zA-Z/](?:[^>"']|"[^"]*"|'[^']*')*>)/g);
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 0) {
-      if (escapeFunc) {
-        const subParts = parts[i].split(regex);
-        for (let j = 0; j < subParts.length; j++) {
-          if (j % 2 === 0) {
-            subParts[j] = escapeFunc(subParts[j]);
-          } else {
-            subParts[j] = '<b class="text-indigo-600 dark:text-indigo-400">' + escapeFunc(subParts[j]) + '</b>';
-          }
-        }
-        parts[i] = subParts.join("");
-      } else {
-        parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
-      }
+      parts[i] = parts[i].replace(regex, '<b class="text-indigo-600 dark:text-indigo-400">$1</b>');
     }
   }
 
@@ -1373,7 +1374,7 @@ function toggleModalView(viewName) {
     // Auto-search using original query
     const mainQuery = document.getElementById("searchInput")?.value.trim() || "";
     const ankiSearchInput = document.getElementById("ankiCardSearchInput");
-    if (ankiSearchInput && mainQuery && ankiSearchInput.value !== mainQuery) {
+    if (ankiSearchInput && mainQuery) {
       ankiSearchInput.value = mainQuery;
       searchAnkiCards();
     }
@@ -1607,7 +1608,7 @@ async function searchAnkiCards() {
 
     const wordField = config.wordField || "";
     const definitionField = config.definitionField || "";
-    const sentenceField = config.sentenceHighlightedField || "Sentence";
+    const sentenceField = config.sentenceHighlightedField || "";
 
     notes.forEach((note) => {
       if (!note.fields) return;

@@ -8,6 +8,8 @@ import urllib.request
 import urllib.error
 import json
 
+import logging
+
 import db
 
 
@@ -283,7 +285,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             False,
         )
     except Exception:
-        print("EXCEPTION: An internal error occurred.")
+        logging.exception("Media extraction failed for sentence %s", sentence_id)
         if "audio_tmp" in locals() and os.path.exists(audio_tmp):
             try:
                 os.remove(audio_tmp)
@@ -545,7 +547,7 @@ def export_ankiconnect(
         return True, f"Successfully updated note {target_note_id} in Anki.", is_cached
 
     except Exception:
-        print("EXCEPTION: An internal error occurred.")
+        logging.exception("An error occurred during AnkiConnect export for sentence %s", sentence_id)
         return False, "An error occurred during AnkiConnect export.", False
 
 
@@ -603,7 +605,7 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
             base_filters.append(f'note:"{note_type}"')
 
         base_query_str = " ".join(base_filters)
-        safe_query = query.replace('"', '\\"') if query else ""
+        safe_query = query.replace('\\', '\\\\').replace('"', '\\"') if query else ""
 
         unique_ids = []
         seen = set()
@@ -657,5 +659,6 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
 
         return True, "Success", notes_info
 
-    except Exception as e:
-        return False, str(e), []
+    except Exception:
+        logging.exception("Anki note search failed")
+        return False, "An error occurred while searching Anki.", []
