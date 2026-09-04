@@ -1320,7 +1320,13 @@ async function sendToAnki(btn, targetNoteId = null) {
     console.error("Error sending to Anki:", err);
     showToast("Error connecting to server.", "error");
   } finally {
-    btn.innerHTML = originalHtml;
+    btn.innerHTML = btn.dataset.origText || originalHtml;
+    if (btn.dataset.origClass) {
+      btn.className = btn.dataset.origClass;
+    }
+    delete btn.dataset.confirming;
+    delete btn.dataset.origText;
+    delete btn.dataset.origClass;
     btn.disabled = false;
     btn.classList.remove("opacity-70");
   }
@@ -1549,8 +1555,9 @@ async function searchAnkiCards() {
   if (searchAnkiCardsAbortController) {
     searchAnkiCardsAbortController.abort();
   }
-  searchAnkiCardsAbortController = new AbortController();
-  const signal = searchAnkiCardsAbortController.signal;
+  const currentController = new AbortController();
+  searchAnkiCardsAbortController = currentController;
+  const signal = currentController.signal;
 
   resultsContainer.innerHTML = '<div class="flex justify-center mt-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
 
@@ -1678,19 +1685,20 @@ async function searchAnkiCards() {
           sendToAnki(selectBadge, note.noteId);
         } else {
           selectBadge.dataset.confirming = "true";
-          const originalText = selectBadge.textContent;
-          const originalClass = selectBadge.className;
+          selectBadge.dataset.origText = selectBadge.textContent;
+          selectBadge.dataset.origClass = selectBadge.className;
 
           selectBadge.className = "update-badge ml-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1 z-10 relative cursor-pointer animate-pulse";
           selectBadge.textContent = "Confirm?";
 
-          // Use closure variable 'selectBadge' safely inside the timeout,
-          // avoiding the 'e.currentTarget' bug that caused it to fail previously
+          // Use closure variable 'selectBadge' safely inside the timeout
           setTimeout(() => {
             if (selectBadge.dataset.confirming === "true") {
-              selectBadge.dataset.confirming = "false";
-              selectBadge.className = originalClass;
-              selectBadge.textContent = originalText;
+              selectBadge.className = selectBadge.dataset.origClass;
+              selectBadge.textContent = selectBadge.dataset.origText;
+              delete selectBadge.dataset.confirming;
+              delete selectBadge.dataset.origText;
+              delete selectBadge.dataset.origClass;
             }
           }, 3000);
         }
@@ -1703,7 +1711,7 @@ async function searchAnkiCards() {
     });
   } catch (err) {
     if (err.name !== "AbortError") {
-      if (signal !== searchAnkiCardsAbortController.signal) return;
+      if (currentController !== searchAnkiCardsAbortController) return;
       const errorElement = document.createElement("div");
       errorElement.className = "flex items-center justify-center h-full text-red-500 text-sm";
       errorElement.textContent = `Error: ${err.message}`;
