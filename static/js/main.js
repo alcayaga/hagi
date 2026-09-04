@@ -1673,10 +1673,30 @@ async function searchAnkiCards() {
       selectBadge.type = "button";
       selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1 z-10 relative cursor-pointer";
       selectBadge.textContent = "Update";
+
       selectBadge.onclick = (e) => {
         e.stopPropagation();
-        if (confirm("Are you sure you want to overwrite this Anki card's media? This cannot be undone.")) {
+
+        if (selectBadge.dataset.confirming === "true") {
+          selectBadge.dataset.confirming = "sending";
           sendToAnki(selectBadge, note.noteId);
+        } else {
+          selectBadge.dataset.confirming = "true";
+          const originalText = selectBadge.textContent;
+          const originalClass = selectBadge.className;
+
+          selectBadge.className = "update-badge ml-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1 z-10 relative cursor-pointer animate-pulse";
+          selectBadge.textContent = "Confirm?";
+
+          // Use closure variable 'selectBadge' safely inside the timeout,
+          // avoiding the 'e.currentTarget' bug that caused it to fail previously
+          setTimeout(() => {
+            if (selectBadge.dataset.confirming === "true") {
+              selectBadge.dataset.confirming = "false";
+              selectBadge.className = originalClass;
+              selectBadge.textContent = originalText;
+            }
+          }, 3000);
         }
       };
 
