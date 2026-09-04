@@ -1616,9 +1616,21 @@ async function searchAnkiCards() {
       // Strip HTML function
       const stripHtml = (html) => {
         if (!html) return "";
+        let clean = html.replace(/\[sound:[^\]]+\]/g, ""); // remove sound tags
+        // Add commas for line breaks and list items so words don't merge
+        clean = clean.replace(/<br\s*\/?>/gi, ", ");
+        clean = clean.replace(/<\/li>/gi, ", </li>");
+        clean = clean.replace(/<\/(div|p|h[1-6])>/gi, " </$1>");
+
         const tmp = document.createElement("DIV");
-        tmp.innerHTML = html.replace(/\[sound:[^\]]+\]/g, ""); // also remove sound tags
-        return tmp.textContent || tmp.innerText || "";
+        tmp.innerHTML = clean;
+        let text = tmp.textContent || tmp.innerText || "";
+
+        // Clean up excessive spaces and trailing commas
+        text = text.replace(/\s+/g, " ").trim();
+        text = text.replace(/,\s*(?=[,])/g, ""); // remove consecutive commas
+        text = text.replace(/,\s*$/, ""); // remove trailing comma
+        return text;
       };
 
       const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
