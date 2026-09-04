@@ -1,3 +1,25 @@
+/**
+ * Safely escapes HTML characters to prevent XSS.
+ * Can be used as a replacement for the old local sanitizeHTML functions.
+ */
+function escapeHtml(str) {
+  if (!str) return "";
+  const temp = document.createElement("div");
+  temp.textContent = str;
+  return temp.innerHTML;
+}
+
+let searchAnkiCardsTimeout = null;
+/**
+ * Debounced wrapper for Anki search to prevent rapid API calls.
+ */
+function debounceSearchAnkiCards() {
+  if (searchAnkiCardsTimeout) clearTimeout(searchAnkiCardsTimeout);
+  searchAnkiCardsTimeout = setTimeout(() => {
+    searchAnkiCards();
+  }, 300);
+}
+
 document.getElementById("searchInput").addEventListener("keypress", function (e) {
   if (e.key === "Enter") performSearch();
 });
@@ -371,10 +393,7 @@ function renderResults() {
 
   function highlightText(text) {
     if (!text) return "";
-    // Sanitize text first to prevent HTML injection from search results
-    const div = document.createElement("div");
-    div.innerText = text;
-    let sanitized = div.innerHTML;
+    let sanitized = escapeHtml(text);
 
     if (highlightRegex) {
       sanitized = sanitized.replace(highlightRegex, `<mark class="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300 rounded px-1 py-0.5">$1</mark>`);
@@ -1008,15 +1027,9 @@ function updateEncompassedText() {
   const selStart = timelineData.selectedStart;
   const selEnd = timelineData.selectedEnd;
 
-  const sanitizeHTML = (str) => {
-    const temp = document.createElement("div");
-    temp.textContent = str;
-    return temp.innerHTML;
-  };
-
   const cleanText = (text, lang) => {
     let cleaned = (text || "").replace(/<br\s*\/?>/gi, "\n");
-    cleaned = sanitizeHTML(cleaned);
+    cleaned = escapeHtml(cleaned);
     return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
   };
 
@@ -1605,44 +1618,46 @@ async function searchAnkiCards() {
         return tmp.textContent || tmp.innerText || "";
       };
 
-      tier1 = stripHtml(tier1);
-      tier2 = stripHtml(tier2);
-      tier3 = stripHtml(tier3);
+      tier1 = highlightSearchTerms(escapeHtml(stripHtml(tier1)));
+      tier2 = highlightSearchTerms(escapeHtml(stripHtml(tier2)));
+      tier3 = highlightSearchTerms(escapeHtml(stripHtml(tier3)));
 
       const el = document.createElement("button");
       el.type = "button";
-      el.className = "w-full text-left p-3 border rounded-lg dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition flex justify-between items-center group shadow-sm";
+      el.className = "w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-transparent hover:border-indigo-100 dark:hover:border-indigo-900/50 shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer flex justify-between items-center group relative overflow-hidden";
+      el.innerHTML = `<div class="absolute inset-y-0 left-0 w-1 bg-indigo-500 transform scale-y-0 group-hover:scale-y-100 transition-transform origin-center duration-200"></div>`;
+
       el.onclick = (e) => {
         const badge = e.currentTarget.querySelector(".update-badge");
         sendToAnki(badge || e.currentTarget, note.noteId);
       };
 
       const contentDiv = document.createElement("div");
-      contentDiv.className = "flex-1 overflow-hidden pr-2";
+      contentDiv.className = "flex-1 overflow-hidden pr-2 z-10 pl-1";
 
       if (tier1) {
         const t1 = document.createElement("div");
-        t1.className = "font-bold text-gray-800 dark:text-gray-200 truncate";
-        t1.textContent = tier1;
+        t1.className = "text-lg font-bold text-gray-900 dark:text-gray-100 truncate";
+        t1.innerHTML = tier1;
         contentDiv.appendChild(t1);
       }
 
       if (tier2) {
         const t2 = document.createElement("div");
-        t2.className = "text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5";
-        t2.textContent = tier2;
+        t2.className = "text-sm text-gray-500 dark:text-gray-400 truncate mt-1";
+        t2.innerHTML = tier2;
         contentDiv.appendChild(t2);
       }
 
       if (tier3) {
         const t3 = document.createElement("div");
-        t3.className = "text-[11px] text-gray-400 dark:text-gray-500 italic truncate mt-1 border-l-2 border-gray-300 dark:border-gray-600 pl-2";
-        t3.textContent = tier3;
+        t3.className = "text-xs text-gray-400 dark:text-gray-500 mt-2 italic truncate border-l-2 border-indigo-200 dark:border-indigo-900/50 pl-2 py-0.5";
+        t3.innerHTML = tier3;
         contentDiv.appendChild(t3);
       }
 
       const selectBadge = document.createElement("div");
-      selectBadge.className = "update-badge ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm flex items-center gap-1";
+      selectBadge.className = "update-badge ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm flex items-center gap-1 z-10 relative";
       selectBadge.textContent = "Update";
 
       el.appendChild(contentDiv);

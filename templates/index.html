@@ -221,20 +221,14 @@
 
           <!-- View 2: Anki Search -->
           <div id="mediaAnkiSearchView" inert class="absolute inset-0 p-4 md:p-6 flex flex-col w-full transform translate-x-full transition-transform duration-300 bg-white dark:bg-gray-800 invisible">
-            <div class="flex items-center justify-between mb-4 shrink-0">
-              <h3 class="text-xl font-bold dark:text-gray-100">Update Specific Anki Card</h3>
-              <button onclick="toggleModalView('mediaExtractView')" aria-label="Back to extraction view" class="md:hidden text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            <!-- Raycast-style Search Header -->
+            <div class="flex items-center border-b dark:border-gray-700 shrink-0 pb-4 mb-4 gap-3 relative">
+              <button onclick="toggleModalView('mediaExtractView')" aria-label="Back to extraction view" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
               </button>
-            </div>
-            
-            <!-- Search Section -->
-            <div class="flex gap-2 mb-4 shrink-0">
               <div class="relative flex-1">
-                 <input type="text" id="ankiCardSearchInput" placeholder="Search your Anki collection..." class="w-full p-2.5 pl-10 border rounded-lg dark:bg-gray-800 dark:border-gray-600 dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500 transition shadow-sm" onkeydown="if(event.key === 'Enter') searchAnkiCards()">
-                 <svg class="absolute left-3 top-3 h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                 <input type="text" id="ankiCardSearchInput" placeholder="Search your Anki collection..." class="w-full text-xl p-2 bg-transparent border-none focus:ring-0 dark:text-white placeholder-gray-400 font-medium" oninput="debounceSearchAnkiCards()" onkeydown="if(event.key === 'Escape') toggleModalView('mediaExtractView')">
               </div>
-              <button onclick="searchAnkiCards()" class="bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 px-5 py-2.5 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm font-semibold flex-shrink-0">Search</button>
             </div>
 
             
