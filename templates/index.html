@@ -223,9 +223,6 @@
           <div id="mediaAnkiSearchView" inert class="absolute inset-0 p-4 md:p-6 flex flex-col w-full transform translate-x-full transition-transform duration-300 bg-white dark:bg-gray-800 invisible">
             <!-- Raycast-style Search Header -->
             <div class="flex items-center border-b dark:border-gray-700 shrink-0 pb-4 mb-4 gap-3 relative">
-              <button onclick="toggleModalView('mediaExtractView')" aria-label="Back to extraction view" class="text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors p-2 -ml-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-              </button>
               <div class="relative flex-1">
                  <input type="text" id="ankiCardSearchInput" placeholder="Search your Anki collection..." class="w-full text-xl p-2 bg-transparent border-none focus:ring-0 dark:text-white placeholder-gray-400 font-medium" oninput="debounceSearchAnkiCards()" onkeydown="if(event.key === 'Escape') toggleModalView('mediaExtractView')">
               </div>
