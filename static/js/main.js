@@ -1263,7 +1263,7 @@ async function sendToAnki(btn, targetNoteId = null) {
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-white rounded-full"></div><span>Sending...</span>`;
+  btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div><span>Sending...</span>`;
   btn.classList.add("opacity-70");
 
   try {
@@ -1313,20 +1313,6 @@ async function sendToAnki(btn, targetNoteId = null) {
 /**
  * Handles sending to a specific Anki NID from the UI
  */
-function sendToAnkiSpecific(btn) {
-  const nidInput = document.getElementById("ankiTargetNid");
-  const nid = nidInput.value.trim();
-  if (!nid) {
-    showToast("Please enter a Note ID.", "error");
-    return;
-  }
-  const numericNid = Number(nid);
-  if (!Number.isSafeInteger(numericNid) || numericNid <= 0) {
-    showToast("Please enter a valid positive Note ID.", "error");
-    return;
-  }
-  sendToAnki(btn, numericNid);
-}
 
 /**
  * Toggles the views inside the media extraction modal
@@ -1626,15 +1612,9 @@ async function searchAnkiCards() {
       const el = document.createElement("button");
       el.type = "button";
       el.className = "w-full text-left p-3 border rounded-lg dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition flex justify-between items-center group shadow-sm";
-      el.onclick = () => {
-        const nidInput = document.getElementById("ankiTargetNid");
-        nidInput.value = note.noteId;
-        // Highlight selection
-        const siblings = resultsContainer.children;
-        for (let i = 0; i < siblings.length; i++) {
-          siblings[i].classList.remove("ring-2", "ring-indigo-500");
-        }
-        el.classList.add("ring-2", "ring-indigo-500");
+      el.onclick = (e) => {
+        const badge = e.currentTarget.querySelector(".update-badge");
+        sendToAnki(badge || e.currentTarget, note.noteId);
       };
 
       const contentDiv = document.createElement("div");
@@ -1662,8 +1642,8 @@ async function searchAnkiCards() {
       }
 
       const selectBadge = document.createElement("div");
-      selectBadge.className = "ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm";
-      selectBadge.textContent = "Select";
+      selectBadge.className = "update-badge ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm flex items-center gap-1";
+      selectBadge.textContent = "Update";
 
       el.appendChild(contentDiv);
       el.appendChild(selectBadge);
