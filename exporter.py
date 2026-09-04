@@ -665,3 +665,5 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
     except Exception:
         logging.exception("Anki note search failed")
         return False, "An error occurred while searching Anki.", []
+
+# Trigger review diff
