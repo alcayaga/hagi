@@ -3,9 +3,9 @@
  * Can be used as a replacement for the old local sanitizeHTML functions.
  */
 function escapeHtml(str) {
-  if (!str) return "";
+  if (str == null) return "";
   const temp = document.createElement("div");
-  temp.textContent = str;
+  temp.textContent = String(str);
   return temp.innerHTML;
 }
 
@@ -1629,9 +1629,9 @@ async function searchAnkiCards() {
         clean = clean.replace(/<\/li>/gi, ", </li>");
         clean = clean.replace(/<\/(div|p|h[1-6])>/gi, " </$1>");
 
-        const tmp = document.createElement("DIV");
-        tmp.innerHTML = clean;
-        let text = tmp.textContent || tmp.innerText || "";
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(clean, "text/html");
+        let text = doc.body.textContent || "";
 
         // Clean up excessive spaces and trailing commas
         text = text.replace(/\s+/g, " ").trim();
@@ -1674,11 +1674,16 @@ async function searchAnkiCards() {
 
       const selectBadge = document.createElement("button");
       selectBadge.type = "button";
-      selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 z-10 relative cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300";
+      selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 z-10 relative cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus:opacity-100 transition-opacity duration-300";
       selectBadge.textContent = "Update";
 
       selectBadge.onclick = (e) => {
         e.stopPropagation();
+
+        if (selectBadge.dataset.confirmTimer) {
+          clearTimeout(Number(selectBadge.dataset.confirmTimer));
+          delete selectBadge.dataset.confirmTimer;
+        }
 
         if (selectBadge.dataset.confirming === "true") {
           selectBadge.dataset.confirming = "sending";
@@ -1692,13 +1697,14 @@ async function searchAnkiCards() {
           selectBadge.textContent = "Confirm?";
 
           // Use closure variable 'selectBadge' safely inside the timeout
-          setTimeout(() => {
+          selectBadge.dataset.confirmTimer = setTimeout(() => {
             if (selectBadge.dataset.confirming === "true") {
               selectBadge.className = selectBadge.dataset.origClass;
               selectBadge.textContent = selectBadge.dataset.origText;
               delete selectBadge.dataset.confirming;
               delete selectBadge.dataset.origText;
               delete selectBadge.dataset.origClass;
+              delete selectBadge.dataset.confirmTimer;
             }
           }, 3000);
         }

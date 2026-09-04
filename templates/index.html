@@ -224,7 +224,7 @@
             <!-- Raycast-style Search Header -->
             <div class="flex items-center border-b dark:border-gray-700 shrink-0 pb-4 mb-4 gap-3 relative">
               <div class="relative flex-1">
-                 <input type="text" id="ankiCardSearchInput" placeholder="Search your Anki collection..." class="w-full text-xl p-2 bg-transparent border-none focus:ring-0 dark:text-white placeholder-gray-400 font-medium" oninput="debounceSearchAnkiCards()" onkeydown="if(event.key === 'Escape') toggleModalView('mediaExtractView')">
+                 <input type="text" id="ankiCardSearchInput" aria-label="Search your Anki collection" placeholder="Search your Anki collection..." class="w-full text-xl p-2 bg-transparent border-none focus:ring-0 dark:text-white placeholder-gray-400 font-medium" oninput="debounceSearchAnkiCards()" onkeydown="if(event.key === 'Escape') toggleModalView('mediaExtractView')">
               </div>
             </div>
 
