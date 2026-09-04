@@ -1521,6 +1521,8 @@ window.addEventListener("popstate", async (event) => {
   }
 });
 
+let searchAnkiCardsAbortController = null;
+
 async function searchAnkiCards() {
   const input = document.getElementById("ankiCardSearchInput");
   const query = input.value.trim();
@@ -1531,6 +1533,12 @@ async function searchAnkiCards() {
     return;
   }
 
+  if (searchAnkiCardsAbortController) {
+    searchAnkiCardsAbortController.abort();
+  }
+  searchAnkiCardsAbortController = new AbortController();
+  const signal = searchAnkiCardsAbortController.signal;
+
   resultsContainer.innerHTML = '<div class="flex justify-center mt-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
 
   try {
@@ -1538,6 +1546,7 @@ async function searchAnkiCards() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ query: query }),
+      signal: signal,
     });
 
     if (!res.ok) {
@@ -1599,8 +1608,9 @@ async function searchAnkiCards() {
       tier2 = stripHtml(tier2);
       tier3 = stripHtml(tier3);
 
-      const el = document.createElement("div");
-      el.className = "p-3 border rounded-lg dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition flex justify-between items-center group shadow-sm";
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "w-full text-left p-3 border rounded-lg dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition flex justify-between items-center group shadow-sm";
       el.onclick = () => {
         const nidInput = document.getElementById("ankiTargetNid");
         nidInput.value = note.noteId;
@@ -1612,17 +1622,42 @@ async function searchAnkiCards() {
         el.classList.add("ring-2", "ring-indigo-500");
       };
 
-      let innerHTML = `<div class="flex-1 overflow-hidden pr-2">`;
-      if (tier1) innerHTML += `<div class="font-bold text-gray-800 dark:text-gray-200 truncate">${tier1}</div>`;
-      if (tier2) innerHTML += `<div class="text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5">${tier2}</div>`;
-      if (tier3) innerHTML += `<div class="text-[11px] text-gray-400 dark:text-gray-500 italic truncate mt-1 border-l-2 border-gray-300 dark:border-gray-600 pl-2">${tier3}</div>`;
-      innerHTML += `</div>`;
-      innerHTML += `<div class="ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm">Select</div>`;
+      const contentDiv = document.createElement("div");
+      contentDiv.className = "flex-1 overflow-hidden pr-2";
 
-      el.innerHTML = innerHTML;
+      if (tier1) {
+        const t1 = document.createElement("div");
+        t1.className = "font-bold text-gray-800 dark:text-gray-200 truncate";
+        t1.textContent = tier1;
+        contentDiv.appendChild(t1);
+      }
+
+      if (tier2) {
+        const t2 = document.createElement("div");
+        t2.className = "text-xs text-gray-500 dark:text-gray-400 truncate mt-0.5";
+        t2.textContent = tier2;
+        contentDiv.appendChild(t2);
+      }
+
+      if (tier3) {
+        const t3 = document.createElement("div");
+        t3.className = "text-[11px] text-gray-400 dark:text-gray-500 italic truncate mt-1 border-l-2 border-gray-300 dark:border-gray-600 pl-2";
+        t3.textContent = tier3;
+        contentDiv.appendChild(t3);
+      }
+
+      const selectBadge = document.createElement("div");
+      selectBadge.className = "ml-2 px-3 py-1.5 bg-indigo-100 text-indigo-700 dark:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold rounded-md opacity-0 group-hover:opacity-100 transition shadow-sm";
+      selectBadge.textContent = "Select";
+
+      el.appendChild(contentDiv);
+      el.appendChild(selectBadge);
+
       resultsContainer.appendChild(el);
     });
   } catch (err) {
-    resultsContainer.innerHTML = `<div class="flex items-center justify-center h-full text-red-500 text-sm">Error: ${err.message}</div>`;
+    if (err.name !== "AbortError") {
+      resultsContainer.innerHTML = `<div class="flex items-center justify-center h-full text-red-500 text-sm">Error: ${err.message}</div>`;
+    }
   }
 }
