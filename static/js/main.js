@@ -1594,6 +1594,7 @@ async function searchAnkiCards() {
     const sentenceField = config.sentenceHighlightedField || "Sentence";
 
     notes.forEach((note) => {
+      if (!note.fields) return;
       const fields = Object.keys(note.fields);
       if (fields.length === 0) return;
 
@@ -1603,21 +1604,21 @@ async function searchAnkiCards() {
 
       // Determine Tier 1 (Word)
       if (wordField && note.fields[wordField]) {
-        tier1 = note.fields[wordField].value;
-      } else {
-        tier1 = note.fields[fields[0]].value;
+        tier1 = note.fields[wordField].value || "";
+      } else if (note.fields[fields[0]]) {
+        tier1 = note.fields[fields[0]].value || "";
       }
 
       // Determine Tier 2 (Definition)
       if (definitionField && note.fields[definitionField]) {
-        tier2 = note.fields[definitionField].value;
-      } else if (fields.length > 1) {
-        tier2 = note.fields[fields[1]].value;
+        tier2 = note.fields[definitionField].value || "";
+      } else if (fields.length > 1 && note.fields[fields[1]]) {
+        tier2 = note.fields[fields[1]].value || "";
       }
 
       // Determine Tier 3 (Sentence)
       if (sentenceField && note.fields[sentenceField]) {
-        tier3 = note.fields[sentenceField].value;
+        tier3 = note.fields[sentenceField].value || "";
       }
 
       // Strip HTML function

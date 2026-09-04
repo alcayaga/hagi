@@ -655,8 +655,12 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
             return True, "No notes found.", []
 
         notes_info = anki_request("notesInfo", notes=unique_ids)
+        if not isinstance(notes_info, list):
+            return True, "No notes found.", []
+
+        notes_info = [n for n in notes_info if isinstance(n, dict) and n.get("noteId")]
         order_map = {nid: i for i, nid in enumerate(unique_ids)}
-        notes_info.sort(key=lambda n: order_map.get(n["noteId"], 999))
+        notes_info.sort(key=lambda n: order_map.get(n["noteId"], len(order_map)))
 
         return True, "Success", notes_info
 

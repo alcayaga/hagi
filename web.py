@@ -307,7 +307,11 @@ def search_anki_endpoint(req: AnkiSearchRequest):
     if not success:
         raise HTTPException(status_code=500, detail=msg)
 
-    return {"notes": notes, "config": app_config}
+    display_config = {
+        key: app_config.get(key, "")
+        for key in ("wordField", "definitionField", "sentenceHighlightedField")
+    }
+    return {"notes": notes, "config": display_config}
 
 
 @app.post("/api/anki/{sentence_id}")
