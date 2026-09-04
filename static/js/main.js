@@ -1559,6 +1559,10 @@ async function searchAnkiCards() {
     }
 
     const data = await res.json();
+
+    // Ignore stale responses
+    if (signal !== searchAnkiCardsAbortController.signal) return;
+
     const notes = data.notes;
     const config = data.config || {};
 
@@ -1661,7 +1665,12 @@ async function searchAnkiCards() {
     });
   } catch (err) {
     if (err.name !== "AbortError") {
-      resultsContainer.innerHTML = `<div class="flex items-center justify-center h-full text-red-500 text-sm">Error: ${err.message}</div>`;
+      if (signal !== searchAnkiCardsAbortController.signal) return;
+      const errorElement = document.createElement("div");
+      errorElement.className = "flex items-center justify-center h-full text-red-500 text-sm";
+      errorElement.textContent = `Error: ${err.message}`;
+      resultsContainer.innerHTML = "";
+      resultsContainer.appendChild(errorElement);
     }
   }
 }

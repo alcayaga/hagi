@@ -615,6 +615,9 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
         unique_ids = []
         seen = set()
 
+        if limit <= 0:
+            return True, "No notes found.", []
+
         if safe_query:
             # Pass 1: Prioritize matches in the user-defined wordField (if it exists)
             if word_field:
