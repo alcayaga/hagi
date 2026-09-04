@@ -30,6 +30,9 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             - bool: Whether the media was served from cache.
     """
     sentence_id = int(sentence_id)
+    if not (-9223372036854775808 <= sentence_id <= 9223372036854775807):
+        return False, "Sentence not found", None, None, None, False
+
     pad_start = round(pad_start, 3)
     pad_end = round(pad_end, 3)
     conn = db.get_db()
