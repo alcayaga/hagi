@@ -1633,7 +1633,34 @@ async function searchAnkiCards() {
 
       el.onclick = (e) => {
         const badge = e.currentTarget.querySelector(".update-badge");
-        sendToAnki(badge || e.currentTarget, note.noteId);
+        if (!badge) {
+          sendToAnki(e.currentTarget, note.noteId);
+          return;
+        }
+
+        if (e.currentTarget.dataset.confirming === "true") {
+          e.currentTarget.dataset.confirming = "sending";
+          e.currentTarget.classList.remove("ring-2", "ring-red-500", "dark:ring-red-600");
+          sendToAnki(badge, note.noteId);
+        } else {
+          e.currentTarget.dataset.confirming = "true";
+          const originalText = badge.textContent;
+          const originalClass = badge.className;
+
+          badge.className = "update-badge ml-2 px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded-md shadow-md flex items-center gap-1 z-10 relative animate-pulse";
+          badge.textContent = "Confirm?";
+
+          e.currentTarget.classList.add("ring-2", "ring-red-500", "dark:ring-red-600");
+
+          setTimeout(() => {
+            if (e.currentTarget.dataset.confirming === "true") {
+              e.currentTarget.dataset.confirming = "false";
+              badge.className = originalClass;
+              badge.textContent = originalText;
+              e.currentTarget.classList.remove("ring-2", "ring-red-500", "dark:ring-red-600");
+            }
+          }, 3000);
+        }
       };
 
       const contentDiv = document.createElement("div");
