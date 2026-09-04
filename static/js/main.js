@@ -1538,6 +1538,10 @@ window.addEventListener("popstate", async (event) => {
 
 let searchAnkiCardsAbortController = null;
 
+/**
+ * Searches the user's Anki collection dynamically and renders the results.
+ * Handles aborting stale requests when typing rapidly.
+ */
 async function searchAnkiCards() {
   const input = document.getElementById("ankiCardSearchInput");
   const query = input.value.trim();
@@ -1621,7 +1625,11 @@ async function searchAnkiCards() {
         tier3 = note.fields[sentenceField].value || "";
       }
 
-      // Strip HTML function
+      /**
+       * Safely strips HTML from Anki fields and formats lists with commas.
+       * @param {string} html - The raw HTML string.
+       * @returns {string} The cleaned text.
+       */
       const stripHtml = (html) => {
         if (!html) return "";
         let clean = html.replace(/\[sound:[^\]]+\]/g, ""); // remove sound tags

@@ -315,9 +315,11 @@ def test_api_extract_exception_exposure(test_db):
 def test_search_anki_endpoint(test_db):
     """Test the POST /api/anki/search endpoint."""
     def mock_exists(path):
+        """Mock os.path.exists to return true for config.json."""
         return path == "config.json"
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock builtins.open to return a string buffer for config.json."""
         if path == "config.json":
             from io import StringIO
             import json

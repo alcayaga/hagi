@@ -587,6 +587,7 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
     anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
 
     def anki_request(action, **params):
+        """Execute a local request to AnkiConnect via urllib."""
         req_data = json.dumps({"action": action, "version": 6, "params": params}).encode("utf-8")
         req = urllib.request.Request(anki_url, req_data, headers={"Content-Type": "application/json"})
         try:
