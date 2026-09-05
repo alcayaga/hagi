@@ -59,9 +59,13 @@ When committing new features or fixes, you are expected to handle the entire PR 
 3. **Ask for manual user feedback** so the user can test the changes locally before you create the Pull Request.
 4. Once the user approves the local test, create the Pull Request using the GitHub CLI (`gh pr create`). You **MUST** format the PR body using the `.github/pull_request_template.md`. When filling out the pre-merge checklist, you must actually validate each checkbox and not just mark it for the sake of it.
 5. Monitor the pre-merge GitHub Actions checks by running `gh pr checks <pr_number> --watch --interval 60`. 
-6. **Trigger CodeRabbit Manually:** Because this OSS repository is limited to 1 CodeRabbit review per hour, you must **NOT** waste it on failing builds. Only after the standard GitHub Actions tests pass, trigger the CodeRabbit review by running:
+6. **Local CodeRabbit Review:** Before wasting your 1-per-hour remote GitHub token, you **MUST** validate your commits locally. You must read and use the `code-review` skill (via `coderabbit review --agent`) to compare your feature branch against the base branch and catch edge-cases. You get 3 local reviews per hour, so use them to guarantee a clean build first.
+7. **Trigger CodeRabbit Manually:** Only after the local review is completely clean (0 findings) and standard GitHub Actions tests pass, trigger the remote review by running:
    ```bash
    gh pr comment <pr_number> --body "@coderabbitai review"
    ```
-7. Monitor the PR comments for CodeRabbit's reply and wait for the review to definitively finish. 
-8. Address any actionable review comments from CodeRabbit. Ensure all tests and coverage checks pass before merging via `gh pr merge <pr_number> --squash --delete-branch`.
+8. **Verify the Actual Review State:** A green `CodeRabbit` status check in `gh pr checks` **ONLY** means the analysis finished running successfully; it does **NOT** mean the code was approved. CodeRabbit updates its very first summary comment on the PR with findings. You must explicitly verify the PR is actually unblocked by checking the summary comment or running:
+   ```bash
+   gh pr view <pr_number> --json mergeable,mergeStateStatus
+   ```
+9. Address any actionable review comments from CodeRabbit. Ensure all tests and coverage checks pass before merging via `gh pr merge <pr_number> --squash --delete-branch`.
