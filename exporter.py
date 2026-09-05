@@ -8,7 +8,23 @@ import urllib.request
 import urllib.error
 import json
 
+import logging
+
 import db
+
+
+def anki_request(anki_url, action, timeout=10.0, **params):
+    """Execute a local request to AnkiConnect via urllib."""
+    req_data = json.dumps({"action": action, "version": 6, "params": params}).encode("utf-8")
+    req = urllib.request.Request(anki_url, req_data, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as response:
+            res = json.loads(response.read().decode("utf-8"))
+    except Exception as e:
+        raise Exception(f"AnkiConnect error: {e}")
+    if res.get("error"):
+        raise Exception(f"AnkiConnect error: {res['error']}")
+    return res.get("result")
 
 
 def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
@@ -269,7 +285,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             False,
         )
     except Exception:
-        print("EXCEPTION: An internal error occurred.")
+        logging.exception("Media extraction failed for sentence %s", sentence_id)
         if "audio_tmp" in locals() and os.path.exists(audio_tmp):
             try:
                 os.remove(audio_tmp)
@@ -351,18 +367,7 @@ def export_ankiconnect(
 
     anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
 
-    def anki_request(action, **params):
-        """Helper to send requests to AnkiConnect API."""
-        req_data = json.dumps({"action": action, "version": 6, "params": params}).encode("utf-8")
-        req = urllib.request.Request(anki_url, req_data, headers={"Content-Type": "application/json"})
-        try:
-            with urllib.request.urlopen(req, timeout=10.0) as response:
-                res = json.loads(response.read().decode("utf-8"))
-                if res.get("error"):
-                    raise Exception(res["error"])
-                return res.get("result")
-        except Exception as e:
-            raise Exception(f"AnkiConnect error: {e}")
+
 
     try:
         # Fetch metadata for source_info
@@ -448,7 +453,7 @@ def export_ankiconnect(
                 query_parts.append(f'note:"{note_type}"')
             query = " ".join(query_parts)
 
-            notes = anki_request("findNotes", query=query)
+            notes = anki_request(anki_url, "findNotes", query=query)
             if not notes:
                 return False, "No notes found to update.", False
             target_note_id = max(notes)
@@ -514,7 +519,7 @@ def export_ankiconnect(
             else:
                 store_params["path"] = os.path.abspath(audio_out)
 
-            actual_filename = anki_request("storeMediaFile", **store_params)
+            actual_filename = anki_request(anki_url, "storeMediaFile", **store_params)
             if actual_filename:
                 current = fields_to_update.get(audio_field, "")
                 fields_to_update[audio_field] = current + f"[sound:{actual_filename}]"
@@ -526,23 +531,23 @@ def export_ankiconnect(
             else:
                 store_params["path"] = os.path.abspath(image_out)
 
-            actual_filename = anki_request("storeMediaFile", **store_params)
+            actual_filename = anki_request(anki_url, "storeMediaFile", **store_params)
             if actual_filename:
                 current = fields_to_update.get(image_field, "")
                 fields_to_update[image_field] = current + f'<img src="{actual_filename}">'
 
-        anki_request("updateNoteFields", **update_params)
+        anki_request(anki_url, "updateNoteFields", **update_params)
 
         # Add tags if configured
         tags = config.get("tags")
         if tags and isinstance(tags, list):
             tags_str = " ".join(tags)
-            anki_request("addTags", notes=[target_note_id], tags=tags_str)
+            anki_request(anki_url, "addTags", notes=[target_note_id], tags=tags_str)
 
         return True, f"Successfully updated note {target_note_id} in Anki.", is_cached
 
     except Exception:
-        print("EXCEPTION: An internal error occurred.")
+        logging.exception("An error occurred during AnkiConnect export for sentence %s", sentence_id)
         return False, "An error occurred during AnkiConnect export.", False
 
 
@@ -578,3 +583,85 @@ def cleanup_media_cache(out_dir: str, max_mb: int = 500):
             total_size -= size
         except Exception:
             pass
+
+def search_anki_notes(config: dict, query: str, limit: int = 20):
+    """Search AnkiConnect for notes matching the query dynamically."""
+    if not isinstance(config, dict):
+        return False, "Invalid configuration format.", []
+
+    anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
+
+
+
+    try:
+        deck = config.get("deck", "")
+        note_type = config.get("noteType", "")
+        word_field = config.get("wordField", "")
+
+        base_filters = []
+        if deck:
+            base_filters.append(f'deck:"{deck}"')
+        if note_type:
+            base_filters.append(f'note:"{note_type}"')
+
+        base_query_str = " ".join(base_filters)
+
+        if not base_query_str:
+            return False, "Target Anki deck or note type must be configured.", []
+        safe_query = query.replace('\\', '\\\\').replace('"', '\\"') if query else ""
+
+        unique_ids = []
+        seen = set()
+
+        if limit <= 0:
+            return True, "No notes found.", []
+
+        if safe_query:
+            # Pass 1: Prioritize matches in the user-defined wordField (if it exists)
+            if word_field:
+                query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
+                ids_expr = anki_request(anki_url, "findNotes", timeout=5.0, query=query_expr.strip())
+                if ids_expr:
+                    for nid in ids_expr:
+                        if nid not in seen:
+                            seen.add(nid)
+                            unique_ids.append(nid)
+                            if len(unique_ids) >= limit:
+                                break
+
+            # Pass 2: Broad search across all fields (only if limit not reached)
+            if len(unique_ids) < limit:
+                query_broad = f'{base_query_str} "{safe_query}"'
+                ids_broad = anki_request(anki_url, "findNotes", timeout=5.0, query=query_broad.strip())
+                if ids_broad:
+                    for nid in ids_broad:
+                        if nid not in seen:
+                            seen.add(nid)
+                            unique_ids.append(nid)
+                            if len(unique_ids) >= limit:
+                                break
+        else:
+            ids_broad = anki_request(anki_url, "findNotes", timeout=5.0, query=base_query_str)
+            if ids_broad:
+                for nid in ids_broad:
+                    if nid not in seen:
+                        seen.add(nid)
+                        unique_ids.append(nid)
+                        if len(unique_ids) >= limit:
+                            break
+        if not unique_ids:
+            return True, "No notes found.", []
+
+        notes_info = anki_request(anki_url, "notesInfo", timeout=5.0, notes=unique_ids)
+        if not isinstance(notes_info, list):
+            return True, "No notes found.", []
+
+        notes_info = [n for n in notes_info if isinstance(n, dict) and n.get("noteId")]
+        order_map = {nid: i for i, nid in enumerate(unique_ids)}
+        notes_info.sort(key=lambda n: order_map.get(n["noteId"], len(order_map)))
+
+        return True, "Success", notes_info
+
+    except Exception:
+        logging.exception("Anki note search failed")
+        return False, "An error occurred while searching Anki.", []

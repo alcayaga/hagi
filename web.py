@@ -9,9 +9,27 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
 
+import json
+import logging
+
 import db
 import exporter
 import nadeshiko
+
+
+logger = logging.getLogger(__name__)
+
+
+def _load_config():
+    """Load config.json from disk."""
+    if not os.path.exists("config.json"):
+        raise HTTPException(status_code=500, detail="config.json not found.")
+    try:
+        with open("config.json", "r") as f:
+            return json.load(f)
+    except Exception:
+        logger.exception("Failed to load config.json")
+        raise HTTPException(status_code=500, detail="An error occurred while loading the configuration.")
 
 
 def _get_normalized_media_url(config_obj: dict) -> str | None:
@@ -285,19 +303,31 @@ def extract(sentence_id: int, config: ExtractConfig, background_tasks: Backgroun
     }
 
 
+class AnkiSearchRequest(BaseModel):
+    """Payload for searching Anki notes."""
+    query: str = Field(..., max_length=200)
+
+
+@app.post("/api/anki/search")
+def search_anki_endpoint(req: AnkiSearchRequest):
+    """Search Anki for notes matching a query."""
+    app_config = _load_config()
+
+    success, msg, notes = exporter.search_anki_notes(app_config, req.query, limit=20)
+    if not success:
+        raise HTTPException(status_code=500, detail=msg)
+
+    display_config = {
+        key: app_config.get(key, "")
+        for key in ("wordField", "definitionField", "sentenceHighlightedField")
+    }
+    return {"notes": notes, "config": display_config}
+
+
 @app.post("/api/anki/{sentence_id}")
 def export_anki_endpoint(sentence_id: int, config: ExtractConfig, background_tasks: BackgroundTasks):
     """Export a sentence to AnkiConnect using the existing local config."""
-    if not os.path.exists("config.json"):
-        raise HTTPException(status_code=500, detail="config.json not found.")
-
-    try:
-        import json
-
-        with open("config.json", "r") as f:
-            app_config = json.load(f)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to load config: {e}")
+    app_config = _load_config()
 
     media_base_url = _get_normalized_media_url(app_config)
     if not media_base_url:

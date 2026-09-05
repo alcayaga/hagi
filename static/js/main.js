@@ -1,3 +1,25 @@
+/**
+ * Safely escapes HTML characters to prevent XSS.
+ * Can be used as a replacement for the old local sanitizeHTML functions.
+ */
+function escapeHtml(str) {
+  if (str == null) return "";
+  const temp = document.createElement("div");
+  temp.textContent = String(str);
+  return temp.innerHTML;
+}
+
+let searchAnkiCardsTimeout = null;
+/**
+ * Debounced wrapper for Anki search to prevent rapid API calls.
+ */
+function debounceSearchAnkiCards() {
+  if (searchAnkiCardsTimeout) clearTimeout(searchAnkiCardsTimeout);
+  searchAnkiCardsTimeout = setTimeout(() => {
+    searchAnkiCards();
+  }, 300);
+}
+
 document.getElementById("searchInput").addEventListener("keypress", function (e) {
   if (e.key === "Enter") performSearch();
 });
@@ -371,10 +393,7 @@ function renderResults() {
 
   function highlightText(text) {
     if (!text) return "";
-    // Sanitize text first to prevent HTML injection from search results
-    const div = document.createElement("div");
-    div.innerText = text;
-    let sanitized = div.innerHTML;
+    let sanitized = escapeHtml(text);
 
     if (highlightRegex) {
       sanitized = sanitized.replace(highlightRegex, `<mark class="bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300 rounded px-1 py-0.5">$1</mark>`);
@@ -444,11 +463,14 @@ function renderResults() {
 /**
  * Highlights search terms in the given text, wrapping them in styling tags.
  */
-function highlightSearchTerms(text) {
-  const searchInput = document.getElementById("searchInput");
-  if (!searchInput) return text;
-  const query = searchInput.value.trim();
-  if (!query) return text;
+function highlightSearchTerms(text, queryToUse = null, escapeFunc = null) {
+  let query = queryToUse;
+  if (query === null) {
+    const searchInput = document.getElementById("searchInput");
+    if (!searchInput) return escapeFunc ? escapeFunc(text) : text;
+    query = searchInput.value.trim();
+  }
+  if (!query) return escapeFunc ? escapeFunc(text) : text;
 
   const tokens = query.match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || [];
   let cleanTokens = [];
@@ -461,9 +483,17 @@ function highlightSearchTerms(text) {
     }
   }
 
-  if (cleanTokens.length === 0) return text;
+  if (cleanTokens.length === 0) return escapeFunc ? escapeFunc(text) : text;
 
   const regex = new RegExp(`(${cleanTokens.join("|")})`, "gi");
+  if (escapeFunc) {
+    const subParts = text.split(regex);
+    for (let j = 0; j < subParts.length; j++) {
+      subParts[j] = j % 2 === 0 ? escapeFunc(subParts[j]) : '<b class="text-indigo-600 dark:text-indigo-400">' + escapeFunc(subParts[j]) + "</b>";
+    }
+    return subParts.join("");
+  }
+
   const parts = text.split(/(<[a-zA-Z/](?:[^>"']|"[^"]*"|'[^']*')*>)/g);
   for (let i = 0; i < parts.length; i++) {
     if (i % 2 === 0) {
@@ -1008,15 +1038,9 @@ function updateEncompassedText() {
   const selStart = timelineData.selectedStart;
   const selEnd = timelineData.selectedEnd;
 
-  const sanitizeHTML = (str) => {
-    const temp = document.createElement("div");
-    temp.textContent = str;
-    return temp.innerHTML;
-  };
-
   const cleanText = (text, lang) => {
     let cleaned = (text || "").replace(/<br\s*\/?>/gi, "\n");
-    cleaned = sanitizeHTML(cleaned);
+    cleaned = escapeHtml(cleaned);
     return cleaned.replace(/\n/g, lang === "jpn" ? "" : " ");
   };
 
@@ -1263,7 +1287,7 @@ async function sendToAnki(btn, targetNoteId = null) {
 
   const originalHtml = btn.innerHTML;
   btn.disabled = true;
-  btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-white rounded-full"></div><span>Sending...</span>`;
+  btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div><span>Sending...</span>`;
   btn.classList.add("opacity-70");
 
   try {
@@ -1304,7 +1328,17 @@ async function sendToAnki(btn, targetNoteId = null) {
     console.error("Error sending to Anki:", err);
     showToast("Error connecting to server.", "error");
   } finally {
-    btn.innerHTML = originalHtml;
+    btn.innerHTML = btn.dataset.origText || originalHtml;
+    if (btn.dataset.origClass) {
+      btn.className = btn.dataset.origClass;
+    }
+    delete btn.dataset.confirming;
+    delete btn.dataset.origText;
+    delete btn.dataset.origClass;
+    if (btn.dataset.confirmTimer) {
+      clearTimeout(Number(btn.dataset.confirmTimer));
+      delete btn.dataset.confirmTimer;
+    }
     btn.disabled = false;
     btn.classList.remove("opacity-70");
   }
@@ -1313,20 +1347,6 @@ async function sendToAnki(btn, targetNoteId = null) {
 /**
  * Handles sending to a specific Anki NID from the UI
  */
-function sendToAnkiSpecific(btn) {
-  const nidInput = document.getElementById("ankiTargetNid");
-  const nid = nidInput.value.trim();
-  if (!nid) {
-    showToast("Please enter a Note ID.", "error");
-    return;
-  }
-  const numericNid = Number(nid);
-  if (!Number.isSafeInteger(numericNid) || numericNid <= 0) {
-    showToast("Please enter a valid positive Note ID.", "error");
-    return;
-  }
-  sendToAnki(btn, numericNid);
-}
 
 /**
  * Toggles the views inside the media extraction modal
@@ -1335,22 +1355,38 @@ function toggleModalView(viewName) {
   const extractView = document.getElementById("mediaExtractView");
   const searchView = document.getElementById("mediaAnkiSearchView");
   const backBtn = document.getElementById("mediaModalBackButton");
+  const container = document.getElementById("mediaModalContentContainer");
 
   if (!extractView || !searchView || !backBtn) return;
 
   if (viewName === "mediaAnkiSearchView") {
+    if (container) {
+      container.style.minHeight = "min(60vh, 600px)";
+    }
     extractView.classList.add("-translate-x-full");
     extractView.setAttribute("inert", "");
     searchView.classList.remove("invisible", "translate-x-full");
     searchView.removeAttribute("inert");
     backBtn.classList.remove("opacity-0", "pointer-events-none");
     backBtn.removeAttribute("tabindex");
+
+    // Auto-search using original query
+    const mainQuery = document.getElementById("searchInput")?.value.trim() || "";
+    const ankiSearchInput = document.getElementById("ankiCardSearchInput");
+    if (ankiSearchInput) {
+      ankiSearchInput.value = mainQuery;
+      searchAnkiCards();
+    }
+
     setTimeout(() => {
       if (!document.getElementById("mediaModal").classList.contains("hidden") && extractView.classList.contains("-translate-x-full")) {
-        document.getElementById("ankiTargetNid")?.focus();
+        ankiSearchInput?.focus();
       }
     }, 300);
   } else {
+    if (container) {
+      container.style.minHeight = "";
+    }
     extractView.classList.remove("-translate-x-full");
     extractView.removeAttribute("inert");
     searchView.classList.add("translate-x-full");
@@ -1511,3 +1547,211 @@ window.addEventListener("popstate", async (event) => {
     if (id) viewContext(parseInt(id), false);
   }
 });
+
+let searchAnkiCardsAbortController = null;
+
+/**
+ * Searches the user's Anki collection dynamically and renders the results.
+ * Handles aborting stale requests when typing rapidly.
+ */
+async function searchAnkiCards() {
+  const input = document.getElementById("ankiCardSearchInput");
+  const query = input.value.trim();
+  const resultsContainer = document.getElementById("ankiSearchResults");
+
+  if (!query) {
+    if (searchAnkiCardsAbortController) {
+      searchAnkiCardsAbortController.abort();
+      searchAnkiCardsAbortController = null;
+    }
+    resultsContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Please enter a search query.</div>';
+    return;
+  }
+
+  if (searchAnkiCardsAbortController) {
+    searchAnkiCardsAbortController.abort();
+  }
+  const currentController = new AbortController();
+  searchAnkiCardsAbortController = currentController;
+  const signal = currentController.signal;
+
+  resultsContainer.innerHTML = '<div class="flex justify-center mt-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
+
+  try {
+    const res = await fetch("/api/anki/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: query }),
+      signal: signal,
+    });
+
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Search failed");
+    }
+
+    const data = await res.json();
+
+    // Ignore stale responses
+    if (currentController !== searchAnkiCardsAbortController) return;
+
+    const notes = data.notes;
+    const config = data.config || {};
+
+    if (!notes || notes.length === 0) {
+      resultsContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500 text-sm">No cards found matching your query.</div>';
+      return;
+    }
+
+    resultsContainer.innerHTML = "";
+
+    const wordField = config.wordField || "";
+    const definitionField = config.definitionField || "";
+    const sentenceField = config.sentenceHighlightedField || "";
+
+    notes.forEach((note) => {
+      if (!note.fields) return;
+      const fields = Object.keys(note.fields);
+      if (fields.length === 0) return;
+
+      let tier1 = "";
+      let tier2 = "";
+      let tier3 = "";
+
+      // Determine Tier 1 (Word)
+      if (wordField && note.fields[wordField]) {
+        tier1 = note.fields[wordField].value || "";
+      } else if (note.fields[fields[0]]) {
+        tier1 = note.fields[fields[0]].value || "";
+      }
+
+      // Determine Tier 2 (Definition)
+      if (definitionField && note.fields[definitionField]) {
+        tier2 = note.fields[definitionField].value || "";
+      } else if (fields.length > 1 && note.fields[fields[1]]) {
+        tier2 = note.fields[fields[1]].value || "";
+      }
+
+      // Determine Tier 3 (Sentence)
+      if (sentenceField && note.fields[sentenceField]) {
+        tier3 = note.fields[sentenceField].value || "";
+      }
+
+      /**
+       * Safely strips HTML from Anki fields and formats lists with commas.
+       * @param {string} html - The raw HTML string.
+       * @returns {string} The cleaned text.
+       */
+      const stripHtml = (html) => {
+        if (!html) return "";
+        let clean = html.replace(/\[sound:[^\]]+\]/g, ""); // remove sound tags
+        // Add commas for line breaks and list items so words don't merge
+        clean = clean.replace(/<br\s*\/?>/gi, ", ");
+        clean = clean.replace(/<\/li>/gi, ", </li>");
+        clean = clean.replace(/<\/(div|p|h[1-6])>/gi, " </$1>");
+
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(clean, "text/html");
+        let text = doc.body.textContent || "";
+
+        // Clean up excessive spaces and trailing commas
+        text = text.replace(/\s+/g, " ").trim();
+        text = text.replace(/,\s*(?=[,])/g, ""); // remove consecutive commas
+        text = text.replace(/,\s*$/, ""); // remove trailing comma
+        return text;
+      };
+
+      const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
+      tier1 = highlightSearchTerms(stripHtml(tier1), currentQuery, escapeHtml);
+      tier2 = highlightSearchTerms(stripHtml(tier2), currentQuery, escapeHtml);
+      tier3 = highlightSearchTerms(stripHtml(tier3), currentQuery, escapeHtml);
+
+      const el = document.createElement("div");
+      el.className = "shrink-0 w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center group relative overflow-hidden";
+
+      const contentDiv = document.createElement("div");
+      contentDiv.className = "flex-1 overflow-hidden pr-2 z-10 pl-1";
+
+      if (tier1) {
+        const t1 = document.createElement("div");
+        t1.className = "text-lg font-bold text-gray-900 dark:text-gray-100 truncate";
+        t1.innerHTML = tier1;
+        contentDiv.appendChild(t1);
+      }
+
+      if (tier2) {
+        const t2 = document.createElement("div");
+        t2.className = "text-sm text-gray-500 dark:text-gray-400 truncate mt-1";
+        t2.innerHTML = tier2;
+        contentDiv.appendChild(t2);
+      }
+
+      if (tier3) {
+        const t3 = document.createElement("div");
+        t3.className = "text-xs text-gray-400 dark:text-gray-500 mt-2 italic truncate border-l-2 border-indigo-200 dark:border-indigo-900/50 pl-2 py-0.5";
+        t3.innerHTML = tier3;
+        contentDiv.appendChild(t3);
+      }
+
+      const selectBadge = document.createElement("button");
+      selectBadge.type = "button";
+      selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 z-10 relative cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus:opacity-100 transition-opacity duration-300";
+      selectBadge.textContent = "Update";
+
+      selectBadge.onclick = (e) => {
+        e.stopPropagation();
+
+        if (selectBadge.dataset.confirmTimer) {
+          clearTimeout(Number(selectBadge.dataset.confirmTimer));
+          delete selectBadge.dataset.confirmTimer;
+        }
+
+        if (selectBadge.dataset.confirming === "true") {
+          selectBadge.dataset.confirming = "sending";
+          if (!currentExtraction.id) {
+            selectBadge.className = selectBadge.dataset.origClass;
+            selectBadge.textContent = selectBadge.dataset.origText;
+            delete selectBadge.dataset.confirming;
+            delete selectBadge.dataset.origText;
+            delete selectBadge.dataset.origClass;
+            return;
+          }
+          sendToAnki(selectBadge, note.noteId);
+        } else {
+          selectBadge.dataset.confirming = "true";
+          selectBadge.dataset.origText = selectBadge.textContent;
+          selectBadge.dataset.origClass = selectBadge.className;
+
+          selectBadge.className = "update-badge ml-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1 z-10 relative cursor-pointer animate-pulse";
+          selectBadge.textContent = "Confirm?";
+
+          // Use closure variable 'selectBadge' safely inside the timeout
+          selectBadge.dataset.confirmTimer = setTimeout(() => {
+            if (selectBadge.dataset.confirming === "true") {
+              selectBadge.className = selectBadge.dataset.origClass;
+              selectBadge.textContent = selectBadge.dataset.origText;
+              delete selectBadge.dataset.confirming;
+              delete selectBadge.dataset.origText;
+              delete selectBadge.dataset.origClass;
+              delete selectBadge.dataset.confirmTimer;
+            }
+          }, 3000);
+        }
+      };
+
+      el.appendChild(contentDiv);
+      el.appendChild(selectBadge);
+
+      resultsContainer.appendChild(el);
+    });
+  } catch (err) {
+    if (err.name !== "AbortError") {
+      if (currentController !== searchAnkiCardsAbortController) return;
+      const errorElement = document.createElement("div");
+      errorElement.className = "flex items-center justify-center h-full text-red-500 text-sm";
+      errorElement.textContent = `Error: ${err.message}`;
+      resultsContainer.innerHTML = "";
+      resultsContainer.appendChild(errorElement);
+    }
+  }
+}
