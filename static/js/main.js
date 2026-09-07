@@ -321,8 +321,9 @@ async function performSearch(pushState = true, resetFilters = false) {
     errorDiv.textContent = `Error fetching results: ${error}`;
     container.appendChild(errorDiv);
   } finally {
-    if (currentSearchAbortController.signal === signal) {
+    if (currentSearchAbortController?.signal === signal) {
       loading.classList.add("hidden");
+      currentSearchAbortController = null;
     }
   }
 }
