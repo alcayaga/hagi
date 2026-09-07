@@ -240,6 +240,8 @@ function populateDropdowns() {
   return false;
 }
 
+let currentSearchAbortController = null;
+
 /**
  * Fetches all search results matching the query string from the backend API.
  * Populates the local results cache and updates the UI filters.
@@ -253,6 +255,12 @@ async function performSearch(pushState = true, resetFilters = false) {
   const container = document.getElementById("resultsList");
 
   if (!query.trim()) return;
+
+  if (currentSearchAbortController) {
+    currentSearchAbortController.abort();
+  }
+  currentSearchAbortController = new AbortController();
+  const signal = currentSearchAbortController.signal;
 
   loading.classList.remove("hidden");
   container.innerHTML = "";
@@ -271,7 +279,7 @@ async function performSearch(pushState = true, resetFilters = false) {
     // Kick off Nadeshiko search concurrently (it handles its own UI/loading state)
     performNadeshikoSearch(query);
 
-    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
+    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal });
     allSearchResults = await response.json();
 
     if (activeShow) {
@@ -302,9 +310,11 @@ async function performSearch(pushState = true, resetFilters = false) {
     const dropdownDroppedFilters = populateDropdowns();
     if (dropdownDroppedFilters) {
       updateUrl(query, true);
+      showToast("Filter reset: No results found in selection.", "info");
     }
     renderResults();
   } catch (error) {
+    if (error.name === "AbortError") return;
     container.innerHTML = "";
     const errorDiv = document.createElement("div");
     errorDiv.className = "px-6 py-4 text-center text-red-500";
