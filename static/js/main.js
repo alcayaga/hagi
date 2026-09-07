@@ -285,7 +285,7 @@ async function performSearch(pushState = true, resetFilters = false) {
       }
 
       if (filtersChanged) {
-        if (pushState) updateUrl(query, true);
+        updateUrl(query, true);
         showToast("Filter reset: No results found in selection.", "info");
       }
     }
