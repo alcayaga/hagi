@@ -254,11 +254,12 @@ async function performSearch(pushState = true, resetFilters = false) {
   const loading = document.getElementById("loading");
   const container = document.getElementById("resultsList");
 
-  if (!query.trim()) return;
-
   if (currentSearchAbortController) {
     currentSearchAbortController.abort();
   }
+
+  if (!query.trim()) return;
+
   currentSearchAbortController = new AbortController();
   const signal = currentSearchAbortController.signal;
 
