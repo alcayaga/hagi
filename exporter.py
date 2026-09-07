@@ -597,7 +597,7 @@ def search_anki_notes(config: dict, query: str, limit: int = 20, exact: bool = F
         deck = config.get("deck", "")
         note_type = config.get("noteType", "")
         word_field = config.get("wordField", "")
-        
+
         if exact and not word_field:
             return False, "Cannot use exact search because 'wordField' is not configured.", []
 
@@ -626,7 +626,7 @@ def search_anki_notes(config: dict, query: str, limit: int = 20, exact: bool = F
                     query_expr = f'{base_query_str} {word_field}:"{safe_query}"'
                 else:
                     query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
-                
+
                 ids_expr = anki_request(anki_url, "findNotes", timeout=5.0, query=query_expr.strip())
                 if ids_expr:
                     for nid in ids_expr:
