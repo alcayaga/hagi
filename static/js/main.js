@@ -87,11 +87,12 @@ let activeEp = null;
  *
  * @param {string} [queryOverride] - Optional query string to use instead of the input value.
  */
-function updateUrl(queryOverride) {
+function updateUrl(queryOverride, replace = false) {
   const query = queryOverride !== undefined ? queryOverride : document.getElementById("searchInput").value;
 
   if (!query.trim()) {
-    history.pushState(null, "", "/");
+    if (replace) history.replaceState(null, "", "/");
+    else history.pushState(null, "", "/");
     return;
   }
 
@@ -102,7 +103,12 @@ function updateUrl(queryOverride) {
   if (activeEp !== null) params.append("episode", activeEp);
   const qs = params.toString();
   if (qs) url += `?${qs}`;
-  history.pushState(null, "", url);
+
+  if (replace) {
+    history.replaceState(null, "", url);
+  } else {
+    history.pushState(null, "", url);
+  }
 }
 
 /**
@@ -152,17 +158,24 @@ function populateDropdowns() {
   const epWrapper = document.getElementById("episodeWrapper");
 
   // 1. Always populate Shows
-  if (!showSelect.options.length || showSelect.options.length === 1) {
-    const uniqueShows = [...new Set(allSearchResults.map((r) => r.show_title || r.path.split("/").pop()))].sort();
+  const uniqueShows = [...new Set(allSearchResults.map((r) => r.show_title || r.path.split("/").pop()))].sort();
+  const currentOptions = Array.from(showSelect.options)
+    .map((o) => o.value)
+    .filter((v) => v !== "");
+
+  if (currentOptions.length !== uniqueShows.length || !currentOptions.every((val, index) => val === uniqueShows[index])) {
     showSelect.innerHTML = '<option value="">All Shows</option>';
     uniqueShows.forEach((s) => showSelect.add(new Option(`${s}`, s)));
-    showSelect.value = activeShow || "";
   }
+  showSelect.value = activeShow || "";
 
   // 2. If no show selected, hide Episode wrapper
   if (!activeShow) {
     epWrapper.classList.add("hidden");
-    return;
+    const dropped = activeSeason !== null || activeEp !== null;
+    activeSeason = null;
+    activeEp = null;
+    return dropped;
   }
 
   // 3. Populate Unified Season & Episode Dropdown
@@ -172,18 +185,21 @@ function populateDropdowns() {
 
   if (uniqueSeasons.length === 0 && !hasEpisodes) {
     epWrapper.classList.add("hidden");
-    return;
+    const dropped = activeSeason !== null || activeEp !== null;
+    activeSeason = null;
+    activeEp = null;
+    return dropped;
   }
 
   const uniqueSeasonEpCombos = new Set(showResults.filter((r) => r.episode != null).map((r) => `${r.season !== null ? r.season : ""}-${r.episode}`));
 
   // Hide the dropdown if there is only 1 episode (e.g., a movie) and no useful season choices
-  if (uniqueSeasons.length <= 1 && uniqueSeasonEpCombos.size <= 1) {
+  if (activeSeason === null && activeEp === null && uniqueSeasons.length <= 1 && uniqueSeasonEpCombos.size <= 1) {
     epWrapper.classList.add("hidden");
-    // Ensure filters are reset if the dropdown is hidden
+    const dropped = activeSeason !== null || activeEp !== null;
     activeSeason = null;
     activeEp = null;
-    return;
+    return dropped;
   }
 
   epWrapper.classList.remove("hidden");
@@ -220,7 +236,11 @@ function populateDropdowns() {
   if (activeSeason !== null && activeEp !== null) epSelect.value = `s${activeSeason}e${activeEp}`;
   else if (activeSeason !== null) epSelect.value = `s${activeSeason}`;
   else if (activeEp !== null) epSelect.value = `e${activeEp}`;
+
+  return false;
 }
+
+let currentSearchAbortController = null;
 
 /**
  * Fetches all search results matching the query string from the backend API.
@@ -229,12 +249,35 @@ function populateDropdowns() {
  * @param {boolean} pushState - Whether to push the new state to the browser history.
  * @param {boolean} resetFilters - Whether to reset UI filters before searching.
  */
-async function performSearch(pushState = true, resetFilters = true) {
+async function performSearch(pushState = true, resetFilters = false) {
   const query = document.getElementById("searchInput").value;
   const loading = document.getElementById("loading");
   const container = document.getElementById("resultsList");
 
-  if (!query.trim()) return;
+  if (currentSearchAbortController) {
+    currentSearchAbortController.abort();
+  }
+
+  if (!query.trim()) {
+    currentNadeshikoSearchId++;
+    document.getElementById("nadeshikoResultsWrapper").classList.add("hidden");
+    document.getElementById("nadeshikoLoading").classList.add("hidden");
+    document.getElementById("nadeshikoResultsList").innerHTML = "";
+
+    allSearchResults = [];
+    container.innerHTML = "";
+    document.getElementById("filtersAndControlsWrapper").classList.add("hidden");
+    activeShow = null;
+    activeSeason = null;
+    activeEp = null;
+    if (pushState) {
+      updateUrl("", true);
+    }
+    return;
+  }
+
+  currentSearchAbortController = new AbortController();
+  const signal = currentSearchAbortController.signal;
 
   loading.classList.remove("hidden");
   container.innerHTML = "";
@@ -243,7 +286,6 @@ async function performSearch(pushState = true, resetFilters = true) {
     activeShow = null;
     activeSeason = null;
     activeEp = null;
-    document.getElementById("filterShow").innerHTML = '<option value="">All Shows</option>';
   }
 
   try {
@@ -254,20 +296,54 @@ async function performSearch(pushState = true, resetFilters = true) {
     // Kick off Nadeshiko search concurrently (it handles its own UI/loading state)
     performNadeshikoSearch(query);
 
-    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
-    allSearchResults = await response.json();
+    const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal });
+    const data = await response.json();
+    if (currentSearchAbortController?.signal !== signal) return;
+    allSearchResults = data;
+
+    if (activeShow) {
+      const showExists = allSearchResults.some((r) => (r.show_title || r.path.split("/").pop()) === activeShow);
+      let filtersChanged = false;
+
+      if (!showExists) {
+        activeShow = null;
+        activeSeason = null;
+        activeEp = null;
+        filtersChanged = true;
+      } else if (activeSeason !== null || activeEp !== null) {
+        const epExists = allSearchResults.some((r) => (r.show_title || r.path.split("/").pop()) === activeShow && (activeSeason === null || r.season == activeSeason) && (activeEp === null || r.episode == activeEp));
+        if (!epExists) {
+          activeSeason = null;
+          activeEp = null;
+          filtersChanged = true;
+        }
+      }
+
+      if (filtersChanged) {
+        updateUrl(query, true);
+        showToast("Filter reset: No results found in selection.", "info");
+      }
+    }
 
     document.getElementById("filtersAndControlsWrapper").classList.remove("hidden");
-    populateDropdowns();
+    const dropdownDroppedFilters = populateDropdowns();
+    if (dropdownDroppedFilters) {
+      updateUrl(query, true);
+      showToast("Filter reset: No results found in selection.", "info");
+    }
     renderResults();
   } catch (error) {
+    if (error.name === "AbortError") return;
     container.innerHTML = "";
     const errorDiv = document.createElement("div");
     errorDiv.className = "px-6 py-4 text-center text-red-500";
     errorDiv.textContent = `Error fetching results: ${error}`;
     container.appendChild(errorDiv);
   } finally {
-    loading.classList.add("hidden");
+    if (currentSearchAbortController?.signal === signal) {
+      loading.classList.add("hidden");
+      currentSearchAbortController = null;
+    }
   }
 }
 
@@ -1253,10 +1329,18 @@ function showToast(message, type = "success") {
   if (!container) return;
 
   const toast = document.createElement("div");
-  const bgClass = type === "success" ? "bg-green-600" : "bg-red-600";
-  toast.className = `flex items-center gap-2 text-white px-4 py-3 rounded shadow-lg transform transition-all duration-300 translate-y-10 opacity-0 ${bgClass}`;
+  let bgClass = "bg-green-600";
+  let icon = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>';
 
-  const icon = type === "success" ? '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>' : '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+  if (type === "error") {
+    bgClass = "bg-red-600";
+    icon = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>';
+  } else if (type === "info") {
+    bgClass = "bg-indigo-600";
+    icon = '<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>';
+  }
+
+  toast.className = `flex items-center gap-2 text-white px-4 py-3 rounded shadow-lg transform transition-all duration-300 translate-y-10 opacity-0 ${bgClass}`;
 
   toast.innerHTML = icon;
   const textSpan = document.createElement("span");
