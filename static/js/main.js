@@ -172,7 +172,10 @@ function populateDropdowns() {
   // 2. If no show selected, hide Episode wrapper
   if (!activeShow) {
     epWrapper.classList.add("hidden");
-    return;
+    const dropped = activeSeason !== null || activeEp !== null;
+    activeSeason = null;
+    activeEp = null;
+    return dropped;
   }
 
   // 3. Populate Unified Season & Episode Dropdown
@@ -182,7 +185,10 @@ function populateDropdowns() {
 
   if (uniqueSeasons.length === 0 && !hasEpisodes) {
     epWrapper.classList.add("hidden");
-    return;
+    const dropped = activeSeason !== null || activeEp !== null;
+    activeSeason = null;
+    activeEp = null;
+    return dropped;
   }
 
   const uniqueSeasonEpCombos = new Set(showResults.filter((r) => r.episode != null).map((r) => `${r.season !== null ? r.season : ""}-${r.episode}`));
@@ -190,10 +196,10 @@ function populateDropdowns() {
   // Hide the dropdown if there is only 1 episode (e.g., a movie) and no useful season choices
   if (uniqueSeasons.length <= 1 && uniqueSeasonEpCombos.size <= 1) {
     epWrapper.classList.add("hidden");
-    // Ensure filters are reset if the dropdown is hidden
+    const dropped = activeSeason !== null || activeEp !== null;
     activeSeason = null;
     activeEp = null;
-    return;
+    return dropped;
   }
 
   epWrapper.classList.remove("hidden");
@@ -230,6 +236,8 @@ function populateDropdowns() {
   if (activeSeason !== null && activeEp !== null) epSelect.value = `s${activeSeason}e${activeEp}`;
   else if (activeSeason !== null) epSelect.value = `s${activeSeason}`;
   else if (activeEp !== null) epSelect.value = `e${activeEp}`;
+
+  return false;
 }
 
 /**
@@ -291,7 +299,10 @@ async function performSearch(pushState = true, resetFilters = false) {
     }
 
     document.getElementById("filtersAndControlsWrapper").classList.remove("hidden");
-    populateDropdowns();
+    const dropdownDroppedFilters = populateDropdowns();
+    if (dropdownDroppedFilters) {
+      updateUrl(query, true);
+    }
     renderResults();
   } catch (error) {
     container.innerHTML = "";
