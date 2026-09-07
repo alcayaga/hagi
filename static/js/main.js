@@ -263,6 +263,16 @@ async function performSearch(pushState = true, resetFilters = false) {
     document.getElementById("nadeshikoResultsWrapper").classList.add("hidden");
     document.getElementById("nadeshikoLoading").classList.add("hidden");
     document.getElementById("nadeshikoResultsList").innerHTML = "";
+
+    allSearchResults = [];
+    container.innerHTML = "";
+    document.getElementById("filtersAndControlsWrapper").classList.add("hidden");
+    activeShow = null;
+    activeSeason = null;
+    activeEp = null;
+    if (pushState) {
+      updateUrl("", true);
+    }
     return;
   }
 
@@ -287,7 +297,9 @@ async function performSearch(pushState = true, resetFilters = false) {
     performNadeshikoSearch(query);
 
     const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal });
-    allSearchResults = await response.json();
+    const data = await response.json();
+    if (currentSearchAbortController?.signal !== signal) return;
+    allSearchResults = data;
 
     if (activeShow) {
       const showExists = allSearchResults.some((r) => (r.show_title || r.path.split("/").pop()) === activeShow);
