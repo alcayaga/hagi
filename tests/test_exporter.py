@@ -739,15 +739,15 @@ def test_search_anki_notes_exact():
         mock_response.__enter__.return_value = mock_response
         mock_urlopen.return_value = mock_response
 
-        success, msg, notes = exporter.search_anki_notes(mock_config, "大胆", limit=20, exact=True)
+        success, msg, notes = exporter.search_anki_notes(mock_config, "大*胆_test", limit=20, exact=True)
 
         assert success is True
 
-        # Verify the target queries were sent correctly without asterisks
+        # Verify the target queries were sent correctly without asterisks and with escaping
         req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
         assert req1["action"] == "findNotes"
-        assert 'Expression:"大胆"' in req1["params"]["query"]
-        assert 'Expression:"*大胆*"' not in req1["params"]["query"]
+        assert 'Expression:"大\\*胆\\_test"' in req1["params"]["query"]
+        assert 'Expression:"*大\\*胆\\_test*"' not in req1["params"]["query"]
 
 
 def test_search_anki_notes_broad():

@@ -261,7 +261,10 @@ def test_cli_anki_search_html_truncation(monkeypatch):
         # A very long HTML string where the visible text is exactly 50 chars, but raw HTML is longer.
         # It shouldn't be truncated if HTML is stripped first.
         # Visible text length: "This is a sentence. " (20) + "A" * 30 = 50 chars.
-        html_val = f"<div style='color: red; font-size: 20px; font-weight: bold;'>This is a sentence. {'A' * 30}</div>"
+        html_val = (
+            f"<div style='color: red; font-size: 20px; font-weight: bold;' title='hello > world'>"
+            f"This is a sentence. {'A' * 30}</div>"
+        )
         notes = [{"noteId": 999, "fields": {"Sentence": {"value": html_val}}}]
         return True, "Success", notes
 

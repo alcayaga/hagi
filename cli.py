@@ -148,10 +148,25 @@ def anki_search(
         return
 
     table = Table("Note ID", "Preview")
-    import re
+
+    from html.parser import HTMLParser
+
+    class MLStripper(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.reset()
+            self.strict = False
+            self.convert_charrefs= True
+            self.text = []
+        def handle_data(self, d):
+            self.text.append(d)
+        def get_data(self):
+            return ''.join(self.text)
 
     def clean_html(text: str) -> str:
-        return re.sub(r'<[^>]+>', '', text)
+        s = MLStripper()
+        s.feed(text)
+        return s.get_data()
 
     for note in notes:
         nid = str(note.get("noteId"))

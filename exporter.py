@@ -623,7 +623,8 @@ def search_anki_notes(config: dict, query: str, limit: int = 20, exact: bool = F
             # Pass 1: Prioritize matches in the user-defined wordField (if it exists)
             if word_field:
                 if exact:
-                    query_expr = f'{base_query_str} {word_field}:"{safe_query}"'
+                    safe_exact = safe_query.replace("*", "\\*").replace("_", "\\_")
+                    query_expr = f'{base_query_str} {word_field}:"{safe_exact}"'
                 else:
                     query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
 
