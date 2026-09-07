@@ -258,7 +258,13 @@ async function performSearch(pushState = true, resetFilters = false) {
     currentSearchAbortController.abort();
   }
 
-  if (!query.trim()) return;
+  if (!query.trim()) {
+    currentNadeshikoSearchId++;
+    document.getElementById("nadeshikoResultsWrapper").classList.add("hidden");
+    document.getElementById("nadeshikoLoading").classList.add("hidden");
+    document.getElementById("nadeshikoResultsList").innerHTML = "";
+    return;
+  }
 
   currentSearchAbortController = new AbortController();
   const signal = currentSearchAbortController.signal;
