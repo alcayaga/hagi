@@ -63,10 +63,15 @@ def index(directory: Optional[str] = typer.Argument(None)):
 
 
 @app.command()
-def search(query: str):
+def search(
+    query: str,
+    show: Optional[str] = typer.Option(None, "--show", "-s", help="Filter by show title"),
+    season: Optional[int] = typer.Option(None, "--season", help="Filter by season number"),
+    episode: Optional[int] = typer.Option(None, "--episode", "-e", help="Filter by episode number"),
+):
     """Search for a sentence."""
     conn = db.get_db()
-    results = db.search_sentences(conn, query)
+    results = db.search_sentences(conn, query, show_title=show, season=season, episode=episode)
 
     if not results:
         console.print("[yellow]No results found.[/yellow]")
@@ -86,6 +91,96 @@ def search(query: str):
         lang_display = f"[{lang_color}]{lang}[/{lang_color}]"
 
         table.add_row(str(r["id"]), lang_display, time_str, r["text"], file_name)
+
+    console.print(table)
+
+
+@app.command("anki-search")
+def anki_search(
+    query: str,
+    limit: int = typer.Option(20, "--limit", "-l", help="Maximum number of notes to return"),
+    exact: bool = typer.Option(False, "--exact", "-x", help="Search exactly by the key field (wordField in config)"),
+    json_output: bool = typer.Option(False, "--json", help="Output full note objects as a JSON array"),
+):
+    """Search Anki for notes matching a query to find Note IDs."""
+    if not os.path.exists("config.json"):
+        if not json_output:
+            console.print("[red]Error: config.json not found. Please create it with AnkiConnect settings.[/red]")
+        raise typer.Exit(code=1)
+
+    try:
+        with open("config.json", "r") as f:
+            config = json.load(f)
+    except Exception as e:
+        if not json_output:
+            console.print(f"[red]Error parsing config.json: {e}[/red]")
+        raise typer.Exit(code=1)
+
+    if not isinstance(config, dict):
+        if not json_output:
+            console.print("[red]Error: config.json must contain a JSON object.[/red]")
+        raise typer.Exit(code=1)
+
+    if exact and not config.get("wordField"):
+        if not json_output:
+            console.print("[red]Error: Cannot use --exact because 'wordField' is not set in config.json.[/red]")
+        raise typer.Exit(code=1)
+
+    if not json_output:
+        console.print(f"Searching Anki for '{query}'...")
+
+    success, msg, notes = exporter.search_anki_notes(config, query, limit=limit, exact=exact)
+
+    if not success:
+        if not json_output:
+            console.print(f"[red]Error: {msg}[/red]")
+        raise typer.Exit(code=1)
+
+    if not notes:
+        if not json_output:
+            console.print("[yellow]No matching notes found.[/yellow]")
+        elif json_output:
+            print("[]")
+        return
+
+    if json_output:
+        print(json.dumps(notes, ensure_ascii=False, indent=2))
+        return
+
+    table = Table("Note ID", "Preview")
+    import re
+
+    def clean_html(text: str) -> str:
+        return re.sub(r'<[^>]+>', '', text)
+
+    for note in notes:
+        nid = str(note.get("noteId"))
+        fields = note.get("fields", {})
+
+        preview_parts = []
+        word_field = config.get("wordField")
+        sentence_field = config.get("sentenceField")
+
+        if word_field and word_field in fields:
+            val = clean_html(fields[word_field].get('value', '')).replace("\n", " ")
+            preview_parts.append(f"[{word_field}]: {val}")
+
+        if sentence_field and sentence_field in fields:
+            val = clean_html(fields[sentence_field].get('value', '')).replace("\n", " ")
+            if len(val) > 50:
+                val = val[:47] + "..."
+            preview_parts.append(f"[{sentence_field}]: {val}")
+
+        if not preview_parts:
+            for k, v in list(fields.items())[:2]:
+                val = clean_html(v.get("value", "")).replace("\n", " ")
+                if len(val) > 30:
+                    val = val[:27] + "..."
+                preview_parts.append(f"[{k}]: {val}")
+
+        preview = " | ".join(preview_parts)
+
+        table.add_row(nid, preview)
 
     console.print(table)
 

@@ -584,7 +584,7 @@ def cleanup_media_cache(out_dir: str, max_mb: int = 500):
         except Exception:
             pass
 
-def search_anki_notes(config: dict, query: str, limit: int = 20):
+def search_anki_notes(config: dict, query: str, limit: int = 20, exact: bool = False):
     """Search AnkiConnect for notes matching the query dynamically."""
     if not isinstance(config, dict):
         return False, "Invalid configuration format.", []
@@ -597,6 +597,9 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
         deck = config.get("deck", "")
         note_type = config.get("noteType", "")
         word_field = config.get("wordField", "")
+        
+        if exact and not word_field:
+            return False, "Cannot use exact search because 'wordField' is not configured.", []
 
         base_filters = []
         if deck:
@@ -619,7 +622,11 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
         if safe_query:
             # Pass 1: Prioritize matches in the user-defined wordField (if it exists)
             if word_field:
-                query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
+                if exact:
+                    query_expr = f'{base_query_str} {word_field}:"{safe_query}"'
+                else:
+                    query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
+                
                 ids_expr = anki_request(anki_url, "findNotes", timeout=5.0, query=query_expr.strip())
                 if ids_expr:
                     for nid in ids_expr:
@@ -629,8 +636,8 @@ def search_anki_notes(config: dict, query: str, limit: int = 20):
                             if len(unique_ids) >= limit:
                                 break
 
-            # Pass 2: Broad search across all fields (only if limit not reached)
-            if len(unique_ids) < limit:
+            # Pass 2: Broad search across all fields (only if limit not reached and exact is False)
+            if not exact and len(unique_ids) < limit:
                 query_broad = f'{base_query_str} "{safe_query}"'
                 ids_broad = anki_request(anki_url, "findNotes", timeout=5.0, query=query_broad.strip())
                 if ids_broad:
