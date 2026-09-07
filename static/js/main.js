@@ -87,11 +87,12 @@ let activeEp = null;
  *
  * @param {string} [queryOverride] - Optional query string to use instead of the input value.
  */
-function updateUrl(queryOverride) {
+function updateUrl(queryOverride, replace = false) {
   const query = queryOverride !== undefined ? queryOverride : document.getElementById("searchInput").value;
 
   if (!query.trim()) {
-    history.pushState(null, "", "/");
+    if (replace) history.replaceState(null, "", "/");
+    else history.pushState(null, "", "/");
     return;
   }
 
@@ -102,7 +103,12 @@ function updateUrl(queryOverride) {
   if (activeEp !== null) params.append("episode", activeEp);
   const qs = params.toString();
   if (qs) url += `?${qs}`;
-  history.pushState(null, "", url);
+
+  if (replace) {
+    history.replaceState(null, "", url);
+  } else {
+    history.pushState(null, "", url);
+  }
 }
 
 /**
@@ -279,7 +285,7 @@ async function performSearch(pushState = true, resetFilters = false) {
       }
 
       if (filtersChanged) {
-        if (pushState) updateUrl(query);
+        if (pushState) updateUrl(query, true);
         showToast("Filter reset: No results found in selection.", "info");
       }
     }
