@@ -346,80 +346,79 @@ def index_directory(directory_path: str):
 
                     extracted_subs = []
                     processed_any = False
-                    for stream in selected_streams:
-                        i = stream.get("index")
-                        tags = stream.get("tags", {})
-                        lang = tags.get("language", "unknown").lower()
+                    temp_paths_to_clean = []
+                    try:
+                        for stream in selected_streams:
+                            i = stream.get("index")
+                            tags = stream.get("tags", {})
+                            lang = tags.get("language", "unknown").lower()
 
-                        fd, temp_sub_path = tempfile.mkstemp(suffix=".srt")
-                        os.close(fd)
+                            fd, temp_sub_path = tempfile.mkstemp(suffix=".srt")
+                            os.close(fd)
+                            temp_paths_to_clean.append(temp_sub_path)
 
-                        ext_cmd = [
-                            "ffmpeg",
-                            "-y",
-                            "-i",
-                            file_path,
-                            "-map",
-                            f"0:{i}",
-                            "-c:s",
-                            "srt",
-                            temp_sub_path,
-                        ]
-                        ext_res = subprocess.run(
-                            ext_cmd,
-                            stdout=subprocess.DEVNULL,
-                            stderr=subprocess.DEVNULL,
-                        )
+                            ext_cmd = [
+                                "ffmpeg",
+                                "-y",
+                                "-i",
+                                file_path,
+                                "-map",
+                                f"0:{i}",
+                                "-c:s",
+                                "srt",
+                                temp_sub_path,
+                            ]
+                            ext_res = subprocess.run(
+                                ext_cmd,
+                                stdout=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL,
+                            )
 
-                        if ext_res.returncode == 0:
-                            extracted_subs.append((temp_sub_path, lang, i))
-                        else:
+                            if ext_res.returncode == 0:
+                                extracted_subs.append((temp_sub_path, lang, i))
+
+                        if extracted_subs:
+                            for temp_sub_path, lang, i in extracted_subs:
+                                try:
+                                    subs = load_and_sanitize_subs(temp_sub_path)
+                                    final_lang = lang
+
+                                    detected_lang = detect_language(subs)
+                                    # Verify Japanese tracks actually contain Japanese text (Anime dual-audio mistagging)
+                                    if final_lang == "jpn" and detected_lang == "eng":
+                                        final_lang = "eng"
+                                    elif final_lang == "spa" and detected_lang == "por":
+                                        final_lang = "por"
+
+                                    if final_lang in {"unknown", "und", ""}:
+                                        final_lang = detected_lang
+
+                                    if final_lang not in ["eng", "spa", "jpn"]:
+                                        continue  # Skip if the heuristic found it to be an unwanted language
+
+                                    process_subs(conn, file_path, subs, "mkv_embedded", language=final_lang)
+                                    conn.commit()
+                                    processed_any = True
+                                except Exception as parse_e:
+                                    print(f"Error parsing track {i} in {file_path}: {parse_e}")
+
+                        if not processed_any:
+                            # Ensure the media is still added even if all subtitles were skipped
+                            show_title, season, episode, episode_title = get_plex_metadata(file_path)
+                            add_media(
+                                conn,
+                                file_path,
+                                "mkv_embedded",
+                                show_title,
+                                season,
+                                episode,
+                                episode_title,
+                            )
+                            conn.commit()
+                    finally:
+                        for temp_sub_path in temp_paths_to_clean:
                             if os.path.exists(temp_sub_path):
                                 os.remove(temp_sub_path)
-
-                    if extracted_subs:
-                        for temp_sub_path, lang, i in extracted_subs:
-                            try:
-                                subs = load_and_sanitize_subs(temp_sub_path)
-                                final_lang = lang
-
-                                detected_lang = detect_language(subs)
-                                # Verify Japanese tracks actually contain Japanese text (Anime dual-audio mistagging)
-                                if final_lang == "jpn" and detected_lang == "eng":
-                                    final_lang = "eng"
-                                elif final_lang == "spa" and detected_lang == "por":
-                                    final_lang = "por"
-
-                                if final_lang in {"unknown", "und", ""}:
-                                    final_lang = detected_lang
-
-                                if final_lang not in ["eng", "spa", "jpn"]:
-                                    continue  # Skip if the heuristic found it to be an unwanted language
-
-                                process_subs(conn, file_path, subs, "mkv_embedded", language=final_lang)
-                                processed_any = True
-                            except Exception as parse_e:
-                                print(f"Error parsing track {i} in {file_path}: {parse_e}")
-                            finally:
-                                if os.path.exists(temp_sub_path):
-                                    os.remove(temp_sub_path)
-
-                        if processed_any:
-                            conn.commit()
-
-                    if not processed_any:
-                        # Ensure the media is still added even if all subtitles were skipped
-                        show_title, season, episode, episode_title = get_plex_metadata(file_path)
-                        add_media(
-                            conn,
-                            file_path,
-                            "mkv_embedded",
-                            show_title,
-                            season,
-                            episode,
-                            episode_title,
-                        )
-                        conn.commit()
 
                 except Exception as e:
                     print(f"Error extracting from {file_path}: {e}")
