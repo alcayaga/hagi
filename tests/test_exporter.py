@@ -723,3 +723,83 @@ def test_search_anki_notes():
         req3 = json.loads(mock_urlopen.call_args_list[2][0][0].data.decode("utf-8"))
         assert req3["action"] == "notesInfo"
         assert req3["params"]["notes"] == [10002, 10001, 10003]
+
+
+def test_search_anki_notes_exact():
+    """Verify search_anki_notes uses exact queries when exact=True."""
+    import json
+    mock_config = {"deck": "Mining", "noteType": "Lapis", "wordField": "Expression"}
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"result": [10001], "error": None}).encode("utf-8"),
+            json.dumps({"result": [{"noteId": 10001, "fields": {}}], "error": None}).encode("utf-8"),
+        ]
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        success, msg, notes = exporter.search_anki_notes(mock_config, "大*胆_test", limit=20, exact=True)
+
+        assert success is True
+
+        # Verify the target queries were sent correctly without asterisks and with escaping
+        req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
+        assert req1["action"] == "findNotes"
+        assert 'Expression:"大\\*胆\\_test"' in req1["params"]["query"]
+        assert 'Expression:"*大\\*胆\\_test*"' not in req1["params"]["query"]
+
+
+def test_search_anki_notes_broad():
+    """Verify search_anki_notes uses broad queries when exact=False."""
+    import json
+    mock_config = {"deck": "Mining", "noteType": "Lapis", "wordField": "Expression"}
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"result": [], "error": None}).encode("utf-8"), # Pass 1 returns nothing
+            json.dumps({"result": [10002], "error": None}).encode("utf-8"), # Pass 2 returns broad
+            json.dumps({"result": [{"noteId": 10002, "fields": {}}], "error": None}).encode("utf-8"),
+        ]
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        success, msg, notes = exporter.search_anki_notes(mock_config, "土砂", limit=20, exact=False)
+
+        assert success is True
+
+        # Verify pass 1 used asterisks
+        req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
+        assert req1["action"] == "findNotes"
+        assert 'Expression:"*土砂*"' in req1["params"]["query"]
+
+        # Verify pass 2 searched everything (no field specified)
+        req2 = json.loads(mock_urlopen.call_args_list[1][0][0].data.decode("utf-8"))
+        assert req2["action"] == "findNotes"
+        assert '"土砂"' in req2["params"]["query"]
+        assert 'Expression' not in req2["params"]["query"]
+
+
+def test_search_anki_notes_spaced_field():
+    """Verify search_anki_notes correctly quotes field names containing spaces."""
+    import json
+    from unittest.mock import patch, MagicMock
+    import exporter
+
+    mock_config = {"deck": "Mining", "noteType": "Lapis", "wordField": "Example Sentence"}
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"result": [10003], "error": None}).encode("utf-8"),
+            json.dumps({"result": [{"noteId": 10003, "fields": {}}], "error": None}).encode("utf-8"),
+        ]
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        success, msg, notes = exporter.search_anki_notes(mock_config, "test", limit=20, exact=True)
+        assert success is True
+
+        req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
+        assert '"Example Sentence:test"' in req1["params"]["query"]
