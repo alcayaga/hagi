@@ -16,7 +16,12 @@ def get_db():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
     conn.row_factory = sqlite3.Row
     try:
-        conn.execute("PRAGMA journal_mode=WAL;")
+        # Check current journal mode to avoid requiring an exclusive lock
+        cursor = conn.execute("PRAGMA journal_mode;")
+        mode = cursor.fetchone()[0]
+        if mode.lower() != "wal":
+            conn.execute("PRAGMA journal_mode=WAL;")
+
         conn.execute("PRAGMA synchronous=NORMAL;")
         conn.execute("PRAGMA foreign_keys = ON;")
     except sqlite3.OperationalError:
