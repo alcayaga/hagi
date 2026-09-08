@@ -155,11 +155,13 @@ def test_cli_anki_search_success(monkeypatch):
     import exporter
 
     def mock_exists(path):
+        """Mock os.path.exists to always return True for config.json."""
         if path == "config.json":
             return True
         return False
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock builtins.open to return a dummy config."""
         from io import StringIO
         return StringIO(json.dumps({"wordField": "Expression"}))
 
@@ -169,6 +171,7 @@ def test_cli_anki_search_success(monkeypatch):
     called_args = {}
 
     def mock_search_anki_notes(config, query, limit=20, exact=False):
+        """Mock exporter.search_anki_notes to capture arguments and return dummy notes."""
         called_args.update({"query": query, "limit": limit, "exact": exact})
         notes = [{"noteId": 12345, "fields": {"Expression": {"value": "Hello"}}}]
         return True, "Success", notes
@@ -193,11 +196,13 @@ def test_cli_anki_search_exact(monkeypatch):
     import exporter
 
     def mock_exists(path):
+        """Mock os.path.exists to always return True for config.json."""
         if path == "config.json":
             return True
         return False
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock builtins.open to return a dummy config."""
         from io import StringIO
         return StringIO(json.dumps({"wordField": "Expression"}))
 
@@ -207,6 +212,7 @@ def test_cli_anki_search_exact(monkeypatch):
     called_args = {}
 
     def mock_search_anki_notes(config, query, limit=20, exact=False):
+        """Mock exporter.search_anki_notes to capture arguments."""
         called_args.update({"exact": exact})
         return True, "Success", []
 
@@ -223,11 +229,13 @@ def test_cli_anki_search_exact_missing_word_field(monkeypatch):
     import json
 
     def mock_exists(path):
+        """Mock os.path.exists to always return True for config.json."""
         if path == "config.json":
             return True
         return False
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock builtins.open to return a dummy config without wordField."""
         from io import StringIO
         return StringIO(json.dumps({})) # Missing wordField
 
@@ -246,11 +254,13 @@ def test_cli_anki_search_html_truncation(monkeypatch):
     import exporter
 
     def mock_exists(path):
+        """Mock os.path.exists to always return True for config.json."""
         if path == "config.json":
             return True
         return False
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock builtins.open to return a dummy config."""
         from io import StringIO
         return StringIO(json.dumps({"sentenceField": "Sentence"}))
 
@@ -258,6 +268,7 @@ def test_cli_anki_search_html_truncation(monkeypatch):
     monkeypatch.setattr("builtins.open", mock_open)
 
     def mock_search_anki_notes(config, query, limit=20, exact=False):
+        """Mock exporter.search_anki_notes to return dummy notes with HTML."""
         # A very long HTML string where the visible text is exactly 50 chars, but raw HTML is longer.
         # It shouldn't be truncated if HTML is stripped first.
         # Visible text length: "This is a sentence. " (20) + "A" * 30 = 50 chars.
@@ -281,6 +292,7 @@ def test_cli_anki_search_html_truncation(monkeypatch):
 
     # Test truncation of visible text > 50 chars
     def mock_search_anki_notes_long(config, query, limit=20, exact=False):
+        """Mock exporter.search_anki_notes to return dummy notes with long visible text."""
         # Visible text length: 60 chars.
         html_val = f"<span class='some-class'>{'B' * 60}</span>"
         notes = [{"noteId": 888, "fields": {"Sentence": {"value": html_val}}}]
@@ -302,11 +314,13 @@ def test_cli_anki_search_json(monkeypatch):
     import exporter
 
     def mock_exists(path):
+        """Mock os.path.exists to always return True for config.json."""
         if path == "config.json":
             return True
         return False
 
     def mock_open(path, mode="r", *args, **kwargs):
+        """Mock builtins.open to return a dummy config."""
         from io import StringIO
         return StringIO(json.dumps({"wordField": "Expression"}))
 
@@ -314,6 +328,7 @@ def test_cli_anki_search_json(monkeypatch):
     monkeypatch.setattr("builtins.open", mock_open)
 
     def mock_search_anki_notes(config, query, limit=20, exact=False):
+        """Mock exporter.search_anki_notes to return dummy note list."""
         notes = [{"noteId": 55555, "fields": {}}, {"noteId": 66666, "fields": {}}]
         return True, "Success", notes
 

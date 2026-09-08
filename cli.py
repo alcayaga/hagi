@@ -153,17 +153,21 @@ def anki_search(
 
     class MLStripper(HTMLParser):
         def __init__(self):
+            """Initialize the HTML parser state for stripping tags."""
             super().__init__()
             self.reset()
             self.strict = False
             self.convert_charrefs= True
             self.text = []
         def handle_data(self, d):
+            """Append raw data chunks to the text array."""
             self.text.append(d)
         def get_data(self):
+            """Return the concatenated string of raw text chunks."""
             return ''.join(self.text)
 
     def clean_html(text: str) -> str:
+        """Strip HTML tags from a string using a robust parser."""
         s = MLStripper()
         s.feed(text)
         return s.get_data()
