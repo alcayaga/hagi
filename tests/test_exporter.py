@@ -779,3 +779,27 @@ def test_search_anki_notes_broad():
         assert req2["action"] == "findNotes"
         assert '"土砂"' in req2["params"]["query"]
         assert 'Expression' not in req2["params"]["query"]
+
+
+def test_search_anki_notes_spaced_field():
+    """Verify search_anki_notes correctly quotes field names containing spaces."""
+    import json
+    from unittest.mock import patch, MagicMock
+    import exporter
+
+    mock_config = {"deck": "Mining", "noteType": "Lapis", "wordField": "Example Sentence"}
+
+    with patch("urllib.request.urlopen") as mock_urlopen:
+        mock_response = MagicMock()
+        mock_response.read.side_effect = [
+            json.dumps({"result": [10003], "error": None}).encode("utf-8"),
+            json.dumps({"result": [{"noteId": 10003, "fields": {}}], "error": None}).encode("utf-8"),
+        ]
+        mock_response.__enter__.return_value = mock_response
+        mock_urlopen.return_value = mock_response
+
+        success, msg, notes = exporter.search_anki_notes(mock_config, "test", limit=20, exact=True)
+        assert success is True
+
+        req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
+        assert '"Example Sentence:test"' in req1["params"]["query"]

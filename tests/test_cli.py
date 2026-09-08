@@ -271,10 +271,10 @@ def test_cli_anki_search_html_truncation(monkeypatch):
         """Mock exporter.search_anki_notes to return dummy notes with HTML."""
         # A very long HTML string where the visible text is exactly 50 chars, but raw HTML is longer.
         # It shouldn't be truncated if HTML is stripped first.
-        # Visible text length: "This is a sentence. " (20) + "A" * 30 = 50 chars.
+        # Visible text length: "This is a sentence & " (21) + "A" * 29 = 50 chars.
         html_val = (
             f"<div style='color: red; font-size: 20px; font-weight: bold;' title='hello > world'>"
-            f"This is a sentence. {'A' * 30}</div>"
+            f"This is a sentence &amp; {'A' * 29}</div>"
         )
         notes = [{"noteId": 999, "fields": {"Sentence": {"value": html_val}}}]
         return True, "Success", notes
@@ -286,8 +286,8 @@ def test_cli_anki_search_html_truncation(monkeypatch):
     assert result.exit_code == 0
     assert "999" in result.stdout
     # Should not be truncated
-    assert f"This is a sentence. {'A' * 30}" in result.stdout
-    assert f"[{'A' * 30}..." not in result.stdout
+    assert f"This is a sentence & {'A' * 29}" in result.stdout
+    assert f"[{'A' * 29}..." not in result.stdout
     assert "<div" not in result.stdout
 
     # Test truncation of visible text > 50 chars

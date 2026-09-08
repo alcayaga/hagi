@@ -170,6 +170,7 @@ def anki_search(
         """Strip HTML tags from a string using a robust parser."""
         s = MLStripper()
         s.feed(text)
+        s.close()
         return s.get_data()
 
     for note in notes:

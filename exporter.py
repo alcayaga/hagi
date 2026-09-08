@@ -622,11 +622,18 @@ def search_anki_notes(config: dict, query: str, limit: int = 20, exact: bool = F
         if safe_query:
             # Pass 1: Prioritize matches in the user-defined wordField (if it exists)
             if word_field:
-                if exact:
-                    safe_exact = safe_query.replace("*", "\\*").replace("_", "\\_")
-                    query_expr = f'{base_query_str} {word_field}:"{safe_exact}"'
+                if " " in word_field:
+                    if exact:
+                        safe_exact = safe_query.replace("*", "\\*").replace("_", "\\_")
+                        query_expr = f'{base_query_str} "{word_field}:{safe_exact}"'
+                    else:
+                        query_expr = f'{base_query_str} "{word_field}:*{safe_query}*"'
                 else:
-                    query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
+                    if exact:
+                        safe_exact = safe_query.replace("*", "\\*").replace("_", "\\_")
+                        query_expr = f'{base_query_str} {word_field}:"{safe_exact}"'
+                    else:
+                        query_expr = f'{base_query_str} {word_field}:"*{safe_query}*"'
 
                 ids_expr = anki_request(anki_url, "findNotes", timeout=5.0, query=query_expr.strip())
                 if ids_expr:
