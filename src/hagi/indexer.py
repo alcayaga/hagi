@@ -9,7 +9,7 @@ import tempfile
 import pysubs2
 from dotenv import load_dotenv
 
-from db import add_media, add_sentences, get_db
+from .db import add_media, add_sentences, get_db
 
 load_dotenv()
 
@@ -47,18 +47,25 @@ def load_and_sanitize_subs(file_path, encoding="utf-8"):
     return pysubs2.SSAFile.from_string(content)
 
 
-plex = None
+_plex_instance = None
+_plex_initialized = False
+
+def _get_plex():
+    global _plex_instance, _plex_initialized
+    if _plex_initialized:
+        return _plex_instance
+    _plex_initialized = True
+    try:
+        from plexapi.server import PlexServer
+        PLEX_URL = os.getenv("PLEX_URL")
+        PLEX_TOKEN = os.getenv("PLEX_TOKEN")
+        if PLEX_URL and PLEX_TOKEN:
+            _plex_instance = PlexServer(PLEX_URL, PLEX_TOKEN)
+    except Exception as e:
+        print(f"Warning: Could not connect to Plex: {e}")
+    return _plex_instance
+
 plex_path_cache = {}
-
-try:
-    from plexapi.server import PlexServer
-
-    PLEX_URL = os.getenv("PLEX_URL")
-    PLEX_TOKEN = os.getenv("PLEX_TOKEN")
-    if PLEX_URL and PLEX_TOKEN:
-        plex = PlexServer(PLEX_URL, PLEX_TOKEN)
-except Exception as e:
-    print(f"Warning: Could not connect to Plex: {e}")
 
 
 _plex_cache_built = False
@@ -67,6 +74,7 @@ _plex_cache_built = False
 def build_plex_cache():
     """Build the cache of Plex paths and metadata."""
     global _plex_cache_built
+    plex = _get_plex()
     if not plex or _plex_cache_built:
         return
     print("Building Plex path mapping cache (this may take a moment)...")
@@ -93,14 +101,18 @@ def build_plex_cache():
                     for media in movie.media:
                         for part in media.parts:
                             base_name = os.path.splitext(os.path.basename(part.file))[0]
-                            plex_path_cache[base_name] = (movie.title, 1, 1, movie.title)
+                            parent_dir = os.path.basename(os.path.dirname(part.file))
+                            cache_key = f"{parent_dir}/{base_name}" if parent_dir else base_name
+                            plex_path_cache[cache_key] = (movie.title, 1, 1, movie.title)
             elif section.type == "show":
                 episodes = section.search(libtype="episode")
                 for ep in episodes:
                     for media in ep.media:
                         for part in media.parts:
                             base_name = os.path.splitext(os.path.basename(part.file))[0]
-                            plex_path_cache[base_name] = (
+                            parent_dir = os.path.basename(os.path.dirname(part.file))
+                            cache_key = f"{parent_dir}/{base_name}" if parent_dir else base_name
+                            plex_path_cache[cache_key] = (
                                 ep.grandparentTitle,
                                 ep.parentIndex,
                                 ep.index,
@@ -121,10 +133,13 @@ def get_plex_metadata(file_path):
         tuple: (show_title, season, episode, episode_title)
     """
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    info = plex_path_cache.get(base_name)
+    parent_dir = os.path.basename(os.path.dirname(file_path))
+    cache_key = f"{parent_dir}/{base_name}" if parent_dir else base_name
+    info = plex_path_cache.get(cache_key)
     if not info and "." in base_name:
         stripped = base_name.rsplit(".", 1)[0]
-        info = plex_path_cache.get(stripped)
+        cache_key_stripped = f"{parent_dir}/{stripped}" if parent_dir else stripped
+        info = plex_path_cache.get(cache_key_stripped)
     return info or (None, None, None, None)
 
 
@@ -205,9 +220,9 @@ def index_directory(directory_path: str):
     # Clean up missing files that fall under the directory being indexed
     abs_dir = os.path.abspath(directory_path)
     like_pattern = abs_dir if abs_dir.endswith(os.sep) else f"{abs_dir}{os.sep}"
-    like_pattern += "%"
+    like_pattern = like_pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
-    cursor = conn.execute("SELECT id, path FROM media WHERE path LIKE ?", (like_pattern,))
+    cursor = conn.execute("SELECT id, path FROM media WHERE path LIKE ? ESCAPE '\\'", (like_pattern,))
     for row in cursor.fetchall():
         if not os.path.exists(row["path"]):
             print(f"Removing deleted file from database: {row['path']}")
@@ -215,6 +230,7 @@ def index_directory(directory_path: str):
             conn.execute("DELETE FROM media WHERE id = ?", (row["id"],))
     conn.commit()
 
+    directory_path = abs_dir
     for root, _, files in os.walk(directory_path):
         for file in files:
             if file.startswith("._"):
@@ -251,7 +267,7 @@ def index_directory(directory_path: str):
             if file.endswith((".ass", ".srt")):
                 try:
                     subs = None
-                    for enc in ["utf-8", "utf-16", "utf-8-sig", "latin-1", "shift_jis"]:
+                    for enc in ["utf-8-sig", "utf-8", "utf-16", "shift_jis", "latin-1"]:
                         try:
                             subs = load_and_sanitize_subs(file_path, encoding=enc)
                             break
@@ -281,7 +297,7 @@ def index_directory(directory_path: str):
                         "json",
                         file_path,
                     ]
-                    result = subprocess.run(probe_cmd, capture_output=True, text=True)
+                    result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
                     if result.returncode != 0:
                         print(f"ffprobe failed for {file_path}: {result.stderr}")
                         continue
@@ -371,13 +387,14 @@ def index_directory(directory_path: str):
                             ext_res = subprocess.run(
                                 ext_cmd,
                                 stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL,
+                                stderr=subprocess.DEVNULL, timeout=120,
                             )
 
                             if ext_res.returncode == 0:
                                 extracted_subs.append((temp_sub_path, lang, i))
 
                         if extracted_subs:
+                            seen_langs = set()
                             for temp_sub_path, lang, i in extracted_subs:
                                 try:
                                     subs = load_and_sanitize_subs(temp_sub_path)
@@ -396,10 +413,15 @@ def index_directory(directory_path: str):
                                     if final_lang not in ["eng", "spa", "jpn"]:
                                         continue  # Skip if the heuristic found it to be an unwanted language
 
+                                    if final_lang in seen_langs:
+                                        continue
+                                    seen_langs.add(final_lang)
+
                                     process_subs(conn, file_path, subs, "mkv_embedded", language=final_lang)
                                     conn.commit()
                                     processed_any = True
                                 except Exception as parse_e:
+                                    conn.rollback()
                                     print(f"Error parsing track {i} in {file_path}: {parse_e}")
 
                         if not processed_any:
@@ -414,7 +436,8 @@ def index_directory(directory_path: str):
                                 episode,
                                 episode_title,
                             )
-                            conn.commit()
+
+                        conn.commit()
                     finally:
                         for temp_sub_path in temp_paths_to_clean:
                             if os.path.exists(temp_sub_path):

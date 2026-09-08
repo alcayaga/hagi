@@ -4,7 +4,7 @@ import os
 import shlex
 import sqlite3
 
-DB_PATH = os.path.abspath("hagi.db")
+DB_PATH = os.environ.get("DB_PATH", os.path.abspath("hagi.db"))
 
 
 def get_db():
@@ -62,13 +62,16 @@ def init_db():
         )
 
         # Add columns to existing DB
-        try:
-            conn.execute("ALTER TABLE media ADD COLUMN show_title TEXT")
-            conn.execute("ALTER TABLE media ADD COLUMN season INTEGER")
-            conn.execute("ALTER TABLE media ADD COLUMN episode INTEGER")
-            conn.execute("ALTER TABLE media ADD COLUMN episode_title TEXT")
-        except sqlite3.OperationalError:
-            pass
+        for stmt in (
+            "ALTER TABLE media ADD COLUMN show_title TEXT",
+            "ALTER TABLE media ADD COLUMN season INTEGER",
+            "ALTER TABLE media ADD COLUMN episode INTEGER",
+            "ALTER TABLE media ADD COLUMN episode_title TEXT",
+        ):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
 
         try:
             conn.execute("CREATE INDEX IF NOT EXISTS idx_sentences_lookup ON sentences(media_id, language, start_time)")
@@ -76,11 +79,18 @@ def init_db():
         except sqlite3.OperationalError:
             pass
 
-        try:
-            conn.execute("ALTER TABLE sentences ADD COLUMN start_time REAL")
-            conn.execute("ALTER TABLE sentences ADD COLUMN end_time REAL")
-        except sqlite3.OperationalError:
-            pass
+        for stmt in (
+            "ALTER TABLE sentences ADD COLUMN start_time REAL",
+            "ALTER TABLE sentences ADD COLUMN end_time REAL",
+        ):
+            try:
+                conn.execute(stmt)
+            except sqlite3.OperationalError:
+                pass
+
+        fts_exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sentences_fts'"
+        ).fetchone()
 
         conn.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS sentences_fts USING fts5(
@@ -90,6 +100,9 @@ def init_db():
                 tokenize='trigram'
             )
         """)
+
+        if not fts_exists:
+            conn.execute("INSERT INTO sentences_fts(sentences_fts) VALUES('rebuild')")
         # Triggers to keep FTS updated
         conn.executescript("""
             CREATE TRIGGER IF NOT EXISTS sentences_ai AFTER INSERT ON sentences BEGIN
@@ -183,16 +196,25 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
     conditions = []
     params = []
 
+    has_inclusion = False
     for token in tokens:
         if token.startswith("-"):
             term = token[1:]
             if term:
-                conditions.append("s.text NOT LIKE ?")
-                params.append(f"%{term}%")
+                safe_term = term.replace('\\\\', '\\\\\\\\').replace('%', '\\\\%').replace('_', '\\\\_')
+                conditions.append("s.text NOT LIKE ? ESCAPE '\\\'")
+                params.append(f"%{safe_term}%")
         else:
+            has_inclusion = True
             if token:
-                conditions.append("s.text LIKE ?")
-                params.append(f"%{token}%")
+                if len(token) <= 2:
+                    safe_token = token.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                    conditions.append("s.text LIKE ? ESCAPE '\\'")
+                    params.append(f"%{safe_token}%")
+                else:
+                    conditions.append("s.id IN (SELECT rowid FROM sentences_fts WHERE text MATCH ?)")
+                    safe_token = token.replace('"', '""')
+                    params.append(f'"{safe_token}"')
 
     if show_title:
         conditions.append("m.show_title = ?")
@@ -206,13 +228,19 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
         conditions.append("m.episode = ?")
         params.append(episode)
 
+    has_meaningful_conditions = bool(conditions)
+    if not has_inclusion and not sentence_id and not show_title:
+        return []
+
     if sentence_id is not None:
         conditions.append("s.id = ?")
         params.append(sentence_id)
+        has_meaningful_conditions = True
     else:
-        conditions.append("s.language != 'por'")
+        if has_meaningful_conditions:
+            conditions.append("s.language != 'por'")
 
-    if not conditions and sentence_id is None:
+    if not has_meaningful_conditions:
         return []
 
     where_clause = " AND ".join(conditions)

@@ -1,7 +1,7 @@
 """Test module for CLI commands."""
 
 from typer.testing import CliRunner
-from cli import app
+from hagi.cli import app
 
 runner = CliRunner()
 
@@ -21,12 +21,12 @@ def test_index_non_existent_directory():
 def test_index_existing_directory(tmp_path, monkeypatch):
     """Test that indexing an existing directory works without error."""
     # Mock indexer so it doesn't actually try to scan the empty dir and do DB stuff
-    import indexer
+    from hagi import indexer
 
     monkeypatch.setattr(indexer, "index_directory", lambda x: None)
 
     # Mock db.init_db to avoid creating local dbs during tests
-    import db
+    from hagi import db
 
     monkeypatch.setattr(db, "init_db", lambda: None)
 
@@ -61,11 +61,11 @@ def test_anki_command(monkeypatch):
             return StringIO(json.dumps({"ankiConnectUrl": "mock"}))
         return open(path, mode, *args, **kwargs)
 
-    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("hagi.cli.os.path.exists", mock_exists)
     monkeypatch.setattr("builtins.open", mock_open)
 
     # Mock exporter
-    import exporter
+    from hagi import exporter
 
     called_args = {}
 
@@ -105,12 +105,12 @@ def test_anki_command_invalid_config(monkeypatch):
             return StringIO(json.dumps([]))
         return open(path, mode, *args, **kwargs)
 
-    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("hagi.cli.os.path.exists", mock_exists)
     monkeypatch.setattr("builtins.open", mock_open)
 
     # We should let export_ankiconnect run natively to trigger the validation check
     # But we mock extract_media to avoid db calls
-    import exporter
+    from hagi import exporter
 
     def mock_extract(sentence_id, out_dir, pad_start, pad_end):
         """Mock extract_media."""
@@ -120,12 +120,12 @@ def test_anki_command_invalid_config(monkeypatch):
 
     result = runner.invoke(app, ["anki", "123"])
     assert result.exit_code == 1
-    assert "Invalid configuration format" in result.stdout
+    assert "config.json must contain a JSON object" in result.stdout
 
 
 def test_cli_search_with_filters(monkeypatch):
     """Verify the search command parses filters and passes them to db.search_sentences."""
-    import db
+    from hagi import db
     called_args = {}
 
     def mock_search_sentences(conn, query, show_title=None, season=None, episode=None):
@@ -152,7 +152,7 @@ def test_cli_search_with_filters(monkeypatch):
 def test_cli_anki_search_success(monkeypatch):
     """Verify anki-search correctly loads config.json and calls exporter.search_anki_notes."""
     import json
-    import exporter
+    from hagi import exporter
 
     def mock_exists(path):
         """Mock os.path.exists to always return True for config.json."""
@@ -165,7 +165,7 @@ def test_cli_anki_search_success(monkeypatch):
         from io import StringIO
         return StringIO(json.dumps({"wordField": "Expression"}))
 
-    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("hagi.cli.os.path.exists", mock_exists)
     monkeypatch.setattr("builtins.open", mock_open)
 
     called_args = {}
@@ -193,7 +193,7 @@ def test_cli_anki_search_success(monkeypatch):
 def test_cli_anki_search_exact(monkeypatch):
     """Verify anki-search --exact correctly passes the exact=True parameter downstream."""
     import json
-    import exporter
+    from hagi import exporter
 
     def mock_exists(path):
         """Mock os.path.exists to always return True for config.json."""
@@ -206,7 +206,7 @@ def test_cli_anki_search_exact(monkeypatch):
         from io import StringIO
         return StringIO(json.dumps({"wordField": "Expression"}))
 
-    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("hagi.cli.os.path.exists", mock_exists)
     monkeypatch.setattr("builtins.open", mock_open)
 
     called_args = {}
@@ -229,17 +229,15 @@ def test_cli_anki_search_exact_missing_word_field(monkeypatch):
     import json
 
     def mock_exists(path):
-        """Mock os.path.exists to always return True for config.json."""
-        if path == "config.json":
-            return True
-        return False
+        return True
+
 
     def mock_open(path, mode="r", *args, **kwargs):
         """Mock builtins.open to return a dummy config without wordField."""
         from io import StringIO
         return StringIO(json.dumps({})) # Missing wordField
 
-    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("hagi.cli.os.path.exists", mock_exists)
     monkeypatch.setattr("builtins.open", mock_open)
 
     result = runner.invoke(app, ["anki-search", "hello", "--exact"])
@@ -251,7 +249,7 @@ def test_cli_anki_search_exact_missing_word_field(monkeypatch):
 def test_cli_anki_search_html_truncation(monkeypatch):
     """Verify that HTML is stripped before truncation to prevent broken tags."""
     import json
-    import exporter
+    from hagi import exporter
 
     def mock_exists(path):
         """Mock os.path.exists to always return True for config.json."""
@@ -264,7 +262,7 @@ def test_cli_anki_search_html_truncation(monkeypatch):
         from io import StringIO
         return StringIO(json.dumps({"sentenceField": "Sentence"}))
 
-    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("hagi.cli.os.path.exists", mock_exists)
     monkeypatch.setattr("builtins.open", mock_open)
 
     def mock_search_anki_notes(config, query, limit=20, exact=False):
@@ -311,7 +309,7 @@ def test_cli_anki_search_html_truncation(monkeypatch):
 def test_cli_anki_search_json(monkeypatch):
     """Verify that --json outputs a full JSON array of notes."""
     import json
-    import exporter
+    from hagi import exporter
 
     def mock_exists(path):
         """Mock os.path.exists to always return True for config.json."""
@@ -324,7 +322,7 @@ def test_cli_anki_search_json(monkeypatch):
         from io import StringIO
         return StringIO(json.dumps({"wordField": "Expression"}))
 
-    monkeypatch.setattr("os.path.exists", mock_exists)
+    monkeypatch.setattr("hagi.cli.os.path.exists", mock_exists)
     monkeypatch.setattr("builtins.open", mock_open)
 
     def mock_search_anki_notes(config, query, limit=20, exact=False):

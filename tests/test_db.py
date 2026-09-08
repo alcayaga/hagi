@@ -2,7 +2,7 @@
 
 import pytest
 
-import db
+from hagi import db
 
 @pytest.fixture
 def test_db_path(tmp_path):

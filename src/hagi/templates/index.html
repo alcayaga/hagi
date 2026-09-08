@@ -110,7 +110,7 @@
     </div>
 
     <!-- Extraction Modal -->
-    <div id="mediaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
+    <div id="mediaModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50" role="dialog" aria-modal="true" aria-label="Media Modal">
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-5xl w-full flex flex-col max-h-[90vh] overflow-hidden border dark:border-gray-700">
         <div class="p-4 md:px-6 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700 flex-shrink-0">
           <div class="flex items-center gap-2 w-full pr-4 overflow-hidden">
@@ -165,7 +165,7 @@
             <!-- Right Column -->
             <div class="w-full md:w-3/5 flex flex-col gap-4">
               <div>
-                <p id="mediaText" class="text-2xl font-bold dark:text-gray-100"></p>
+                <p id="mediaText" lang="ja" class="text-2xl font-bold dark:text-gray-100"></p>
                 <div id="mediaTranslations" class="mt-2 text-left inline-block"></div>
               </div>
               <!-- Timeline Controls -->
@@ -241,7 +241,7 @@
     </div>
 
     <!-- Context Modal -->
-    <div id="contextModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50">
+    <div id="contextModal" class="hidden fixed inset-0 bg-black bg-opacity-75 flex justify-center items-center p-2 md:p-4 z-50" role="dialog" aria-modal="true" aria-label="Context Modal">
       <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-3xl w-full overflow-hidden border dark:border-gray-700 flex flex-col max-h-[80vh] md:max-h-[90vh]">
         <div class="p-4 border-b dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-700">
           <h3 class="font-bold text-lg dark:text-white">Conversation Context</h3>

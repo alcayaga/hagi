@@ -4,13 +4,13 @@ import json
 import time
 from unittest import mock
 
-import nadeshiko
+from hagi import nadeshiko
 
 
 def test_get_favorite_media_success():
     """Test fetching favorite media successfully."""
     # Reset cache
-    nadeshiko._FAVORITE_MEDIA_CACHE = (0, [])
+    nadeshiko._FAVORITE_MEDIA_CACHE = {}
 
     mock_resp = {
         "favoriteMedia": [
@@ -35,7 +35,7 @@ def test_get_favorite_media_success():
 
 def test_get_favorite_media_error():
     """Test fetching favorite media with an error."""
-    nadeshiko._FAVORITE_MEDIA_CACHE = (0, [])
+    nadeshiko._FAVORITE_MEDIA_CACHE = {}
 
     with mock.patch("urllib.request.build_opener") as mock_build_opener:
         mock_opener = mock.MagicMock()
@@ -50,7 +50,7 @@ def test_get_favorite_media_error():
 def test_search_global_stats():
     """Test searching global stats and sorting."""
     # Pre-populate cache so media1 is starred
-    nadeshiko._FAVORITE_MEDIA_CACHE = (time.time(), ["media1"])
+    nadeshiko._FAVORITE_MEDIA_CACHE = {"dummy_key": (time.time(), ["media1"])}
 
     mock_resp = {
         "media": [

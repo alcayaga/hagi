@@ -2,8 +2,8 @@
 
 import pytest
 
-import db
-from db import add_media, add_sentences, search_sentences
+from hagi import db
+from hagi.db import add_media, add_sentences, search_sentences
 
 
 @pytest.fixture

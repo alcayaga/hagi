@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 import sys
-from cli import app
+import os
+
+# Inject src directory into sys.path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "src")))
+
+from hagi.cli import app
 
 if __name__ == "__main__":
     app()

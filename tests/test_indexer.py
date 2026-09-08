@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import db
-import indexer
+from hagi import db
+from hagi import indexer
 
 
 @pytest.fixture
@@ -25,12 +25,12 @@ def test_incremental_indexing_skips(test_db):
 
     with (
         patch("os.walk") as mock_walk,
-        patch("indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.get_db", return_value=test_db),
         patch("os.path.exists", return_value=True),
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.srt"])]
 
-        with patch("indexer.load_and_sanitize_subs") as mock_load:
+        with patch("hagi.indexer.load_and_sanitize_subs") as mock_load:
             indexer.index_directory("/fake/path")
 
             mock_load.assert_not_called()
@@ -38,10 +38,10 @@ def test_incremental_indexing_skips(test_db):
 
 def test_language_detection_external_subs(test_db):
     """Ensure external subtitle files infer language correctly from their text content."""
-    with patch("os.walk") as mock_walk, patch("indexer.get_db", return_value=test_db):
+    with patch("os.walk") as mock_walk, patch("hagi.indexer.get_db", return_value=test_db):
         mock_walk.return_value = [("/fake/path", [], ["ep1.srt", "ep2.srt", "ep3.srt"])]
 
-        with patch("indexer.load_and_sanitize_subs") as mock_load:
+        with patch("hagi.indexer.load_and_sanitize_subs") as mock_load:
             # Setup mock returns: English, Japanese, Spanish
             def mock_load_side_effect(path, **kwargs):
                 """Test function."""
@@ -77,9 +77,9 @@ def test_mkv_embedded_extraction(test_db):
     """Ensure MKV files are probed and multiple subtitle streams are extracted with proper tags."""
     with (
         patch("os.walk") as mock_walk,
-        patch("indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.get_db", return_value=test_db),
         patch("subprocess.run") as mock_subrun,
-        patch("indexer.load_and_sanitize_subs") as mock_load,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
@@ -126,10 +126,10 @@ def test_add_media_lastrowid_bug(test_db):
 def test_plex_cache_unpacking(test_db):
     """Ensure process_subs correctly unpacks 4 values from the plex_path_cache including episode_title."""
     # Seed the cache with a 4-tuple representing (show_title, season, episode, episode_title)
-    indexer.plex_path_cache["episode1"] = ("My Show", 1, 5, "The Best Episode")
+    indexer.plex_path_cache["path/episode1"] = ("My Show", 1, 5, "The Best Episode")
 
-    with patch("indexer.get_db", return_value=test_db):
-        with patch("indexer.load_and_sanitize_subs") as mock_load:
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        with patch("hagi.indexer.load_and_sanitize_subs") as mock_load:
             mock_subs = MagicMock()
             mock_line = MagicMock()
             mock_line.start = 0
@@ -151,9 +151,9 @@ def test_mkv_subtitle_filtering(test_db):
     """Ensure we filter unwanted tracks, skip SDH, and catch Japanese mistagging."""
     with (
         patch("os.walk") as mock_walk,
-        patch("indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.get_db", return_value=test_db),
         patch("subprocess.run") as mock_subrun,
-        patch("indexer.load_and_sanitize_subs") as mock_load,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
@@ -203,11 +203,11 @@ def test_mkv_subtitle_filtering(test_db):
         assert mock_subrun.call_count == 5
 
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
-        # English, Spanish, mistagged Japanese track, and untagged track
-        assert len(sentences) == 4
+        # English, Spanish (mistagged Japanese track and untagged track were deduplicated since they evaluate to English)
+        assert len(sentences) == 2
         langs = [s["language"] for s in sentences]
 
-        assert langs.count("eng") == 3
+        assert langs.count("eng") == 1
         assert langs.count("spa") == 1
         assert langs.count("jpn") == 0
 
@@ -216,7 +216,7 @@ def test_mkv_skip_all_subtitles(test_db):
     """Ensure media is still added even if no subtitle tracks match."""
     with (
         patch("os.walk") as mock_walk,
-        patch("indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.get_db", return_value=test_db),
         patch("subprocess.run") as mock_subrun,
     ):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
@@ -252,7 +252,8 @@ def test_build_plex_cache_filtering():
     from unittest.mock import mock_open
 
     # Create the mock setup inside
-    with patch("indexer.plex") as mock_plex, patch("os.path.exists") as mock_exists:
+    with patch("hagi.indexer._get_plex") as mock_get_plex, patch("os.path.exists") as mock_exists:
+        mock_plex = mock_get_plex.return_value
         # Mock indexer.plex
         mock_section_anime = MagicMock()
         mock_section_anime.title = "Anime"
@@ -291,24 +292,24 @@ def test_build_plex_cache_filtering():
         indexer.plex_path_cache = {}
         with patch("builtins.open", mock_open(read_data='{"plex_libraries": ["Anime"]}')):
             indexer.build_plex_cache()
-        assert "anime_ep1" in indexer.plex_path_cache
-        assert "movie1" not in indexer.plex_path_cache
+        assert "path/anime_ep1" in indexer.plex_path_cache
+        assert "path/movie1" not in indexer.plex_path_cache
 
         # 2. Test filtering by ID "5"
         indexer._plex_cache_built = False
         indexer.plex_path_cache = {}
         with patch("builtins.open", mock_open(read_data='{"plex_libraries": ["5"]}')):
             indexer.build_plex_cache()
-        assert "anime_ep1" not in indexer.plex_path_cache
-        assert "movie1" in indexer.plex_path_cache
+        assert "path/anime_ep1" not in indexer.plex_path_cache
+        assert "path/movie1" in indexer.plex_path_cache
 
         # 3. Test no filter (empty config)
         indexer._plex_cache_built = False
         indexer.plex_path_cache = {}
         with patch("builtins.open", mock_open(read_data="{}")):
             indexer.build_plex_cache()
-        assert "anime_ep1" in indexer.plex_path_cache
-        assert "movie1" in indexer.plex_path_cache
+        assert "path/anime_ep1" in indexer.plex_path_cache
+        assert "path/movie1" in indexer.plex_path_cache
 
 
 def test_language_detection_por_spa():
@@ -346,7 +347,7 @@ def test_incremental_indexing_removes_missing_files(test_db):
 
     with (
         patch("os.walk") as mock_walk,
-        patch("indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.get_db", return_value=test_db),
         patch("os.path.exists", side_effect=mock_exists),
     ):
         mock_walk.return_value = []
@@ -367,7 +368,7 @@ def test_incremental_indexing_removes_missing_files(test_db):
 def test_get_plex_metadata_external_subtitles():
     """Ensure get_plex_metadata correctly strips language suffixes to find Plex metadata."""
     # Seed the cache with a movie base name
-    indexer.plex_path_cache["Belle (2021)"] = ("Belle", None, None, "Belle")
+    indexer.plex_path_cache["path/Belle (2021)"] = ("Belle", None, None, "Belle")
 
     # Exact match should work
     res1 = indexer.get_plex_metadata("/fake/path/Belle (2021).mkv")
