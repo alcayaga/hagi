@@ -242,6 +242,7 @@ def index_directory(directory_path: str):
                     updated = True
 
                 if updated:
+                    conn.commit()
                     print(f"Backfilled Plex metadata for: {file_path}")
                 else:
                     print(f"Skipping (already indexed): {file_path}")
@@ -260,6 +261,7 @@ def index_directory(directory_path: str):
                     if subs:
                         lang_hint = detect_language(subs)
                         process_subs(conn, file_path, subs, "subtitle", language=lang_hint)
+                        conn.commit()
                     else:
                         print(f"Failed to decode subtitle file: {file_path}")
                 except Exception as e:
@@ -297,6 +299,7 @@ def index_directory(directory_path: str):
                             episode,
                             episode_title,
                         )
+                        conn.commit()
                         continue
 
                     eng_streams, spa_streams, jpn_streams, unk_streams = [], [], [], []
@@ -341,6 +344,7 @@ def index_directory(directory_path: str):
                         selected_streams.append(best_jpn)
                     selected_streams.extend(unk_streams)
 
+                    extracted_subs = []
                     processed_any = False
                     for stream in selected_streams:
                         i = stream.get("index")
@@ -368,6 +372,13 @@ def index_directory(directory_path: str):
                         )
 
                         if ext_res.returncode == 0:
+                            extracted_subs.append((temp_sub_path, lang, i))
+                        else:
+                            if os.path.exists(temp_sub_path):
+                                os.remove(temp_sub_path)
+
+                    if extracted_subs:
+                        for temp_sub_path, lang, i in extracted_subs:
                             try:
                                 subs = load_and_sanitize_subs(temp_sub_path)
                                 final_lang = lang
@@ -389,9 +400,12 @@ def index_directory(directory_path: str):
                                 processed_any = True
                             except Exception as parse_e:
                                 print(f"Error parsing track {i} in {file_path}: {parse_e}")
+                            finally:
+                                if os.path.exists(temp_sub_path):
+                                    os.remove(temp_sub_path)
 
-                        if os.path.exists(temp_sub_path):
-                            os.remove(temp_sub_path)
+                        if processed_any:
+                            conn.commit()
 
                     if not processed_any:
                         # Ensure the media is still added even if all subtitles were skipped
@@ -405,6 +419,7 @@ def index_directory(directory_path: str):
                             episode,
                             episode_title,
                         )
+                        conn.commit()
 
                 except Exception as e:
                     print(f"Error extracting from {file_path}: {e}")
