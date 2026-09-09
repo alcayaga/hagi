@@ -20,6 +20,7 @@ class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         """Prevent redirects to protect the Authorization header."""
         return None  # Explicitly prevent following redirects
 
+
 def _make_request(url, api_key, method="GET", data=None):
     """Helper to make urllib requests to Nadeshiko API."""
     headers = {
@@ -59,7 +60,7 @@ def get_favorite_media(api_key: str) -> list[str]:
     url = "https://api.nadeshiko.co/v1/user/favorite-media"
     resp, error = _make_request(url, api_key)
 
-    if error or not resp:
+    if error or not isinstance(resp, dict):
         # Return stale cache on error, or empty list
         return _FAVORITE_MEDIA_CACHE.get(api_key, (0, []))[1]
 
@@ -94,7 +95,7 @@ def search_global_stats(api_key: str, query: str, title_language: str = "romaji"
     }
 
     resp, error = _make_request(url, api_key, method="POST", data=data)
-    if error or not resp:
+    if error or not isinstance(resp, dict):
         logger.error(f"Nadeshiko API Error: {error}")
         return []
 

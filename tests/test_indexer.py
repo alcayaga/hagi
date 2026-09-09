@@ -1,6 +1,7 @@
 """Test module."""
 
 import json
+import subprocess
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -112,6 +113,47 @@ def test_mkv_embedded_extraction(test_db):
 
         assert "jpn" in langs
         assert "eng" in langs
+
+
+def test_mkv_extraction_continues_after_track_timeout(test_db):
+    """Ensure one timed-out subtitle track does not prevent later tracks from being indexed."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_result = MagicMock(
+            stdout=json.dumps(
+                {
+                    "streams": [
+                        {"index": 1, "tags": {"language": "eng"}},
+                        {"index": 2, "tags": {"language": "jpn"}},
+                    ]
+                }
+            ),
+            returncode=0,
+        )
+        extraction_result = MagicMock(returncode=0)
+        mock_subrun.side_effect = [
+            probe_result,
+            subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
+            extraction_result,
+        ]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock(plaintext="こんにちは", start=0, end=1000)
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 3
+        mock_load.assert_called_once()
+        sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
+        assert [(row["language"], row["text"]) for row in sentences] == [("jpn", "こんにちは")]
 
 
 def test_add_media_lastrowid_bug(test_db):

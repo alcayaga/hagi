@@ -47,6 +47,16 @@ def test_get_favorite_media_error():
         assert favorites == []
 
 
+def test_get_favorite_media_non_dictionary_response():
+    """Test that an unexpected favorite-media response uses the existing fallback."""
+    nadeshiko._FAVORITE_MEDIA_CACHE = {"dummy_key": (0, ["stale-media"])}
+
+    with mock.patch("hagi.nadeshiko._make_request", return_value=(["unexpected"], None)):
+        favorites = nadeshiko.get_favorite_media("dummy_key")
+
+    assert favorites == ["stale-media"]
+
+
 def test_search_global_stats():
     """Test searching global stats and sorting."""
     # Pre-populate cache so media1 is starred
@@ -91,9 +101,19 @@ def test_search_global_stats():
         assert results[2]["isStarred"] is False
         assert results[2]["matchCount"] == 50
 
+
+def test_search_global_stats_non_dictionary_response():
+    """Test that an unexpected search response uses the existing empty fallback."""
+    with mock.patch("hagi.nadeshiko._make_request", return_value=(["unexpected"], None)):
+        results = nadeshiko.search_global_stats("dummy_key", "test")
+
+    assert results == []
+
+
 def test_no_redirect_handler():
     """Test that NoRedirectHandler explicitly returns None to block redirects."""
     import urllib.request
+
     handler = nadeshiko.NoRedirectHandler()
     req = urllib.request.Request("https://api.nadeshiko.co/v1/search/stats", headers={"Authorization": "Bearer secret"})
 

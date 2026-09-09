@@ -4,12 +4,7 @@
  */
 function escapeHtml(str) {
   if (str == null) return "";
-  return String(str)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 function formatTime(seconds) {
@@ -783,7 +778,7 @@ async function viewContext(id, pushState = true) {
           const firstTarget = group.targets[0];
           const timeStr = formatTime(firstTarget.start_time);
 
-          const cleanText = group.targets.map((t) => (t.text ? t.text.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "")).join("<br/>");
+          const cleanText = group.targets.map((t) => escapeHtml(t.text ? t.text.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "")).join("<br/>");
           const cleanSec = group.secText ? group.secText.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "";
 
           const card = document.createElement("div");
@@ -808,7 +803,7 @@ async function viewContext(id, pushState = true) {
               <span class="font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs text-gray-600 dark:text-gray-300 shadow-sm">${timeStr}</span>
               ${isTarget ? `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-indigo-100 text-indigo-800 dark:bg-indigo-800 dark:text-indigo-100 uppercase tracking-wider">Search Match</span>` : ""}
             </div>
-            <div class="text-lg font-bold text-gray-900 dark:text-gray-100">${escapeHtml(cleanText)}</div>
+            <div class="text-lg font-bold text-gray-900 dark:text-gray-100">${cleanText}</div>
             ${secondaryHtml}
           `;
 
@@ -910,20 +905,37 @@ async function openExtractionTimeline(id) {
   const timelineContainer = document.getElementById("timelineContainer");
   timelineContainer.innerHTML = '<div class="absolute inset-0 flex justify-center items-center"><div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div></div>';
 
-  const response = await fetch(`/api/context/${id}`);
+  timelineData.target = null;
+  timelineData.contextData = null;
+
+  let response;
+  try {
+    response = await fetch(`/api/context/${id}`);
+  } catch {
+    timelineData.target = null;
+    timelineData.contextData = null;
+    timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
+    return;
+  }
   let contextData;
   if (!response.ok) {
+    timelineData.target = null;
+    timelineData.contextData = null;
     timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
     return;
   }
   try {
     contextData = await response.json();
   } catch {
+    timelineData.target = null;
+    timelineData.contextData = null;
     timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
     return;
   }
 
   if (!contextData || !contextData.target_context || contextData.target_context.length === 0) {
+    timelineData.target = null;
+    timelineData.contextData = null;
     timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">No context data found.</div>';
     return;
   }
@@ -1255,6 +1267,10 @@ function attachTimelineEvents(container, hStart, hEnd) {
 async function applyTimelineExtraction() {
   if (!timelineData || !timelineData.target) {
     showToast("Timeline data is not loaded.", "error");
+    return;
+  }
+  if (timelineData.target.id !== currentExtraction.id) {
+    showToast("Timeline data does not match the current extraction.", "error");
     return;
   }
   const targetStart = timelineData.target.start_time || 0;
@@ -1878,6 +1894,7 @@ async function searchAnkiCards() {
 
 document.getElementById("ankiCardSearchInput")?.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
+    toggleModalView("mediaExtractView");
     e.stopPropagation();
   }
 });

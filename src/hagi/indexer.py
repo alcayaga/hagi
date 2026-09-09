@@ -50,6 +50,7 @@ def load_and_sanitize_subs(file_path, encoding="utf-8"):
 _plex_instance = None
 _plex_initialized = False
 
+
 def _get_plex():
     global _plex_instance, _plex_initialized
     if _plex_initialized:
@@ -57,6 +58,7 @@ def _get_plex():
     _plex_initialized = True
     try:
         from plexapi.server import PlexServer
+
         PLEX_URL = os.getenv("PLEX_URL")
         PLEX_TOKEN = os.getenv("PLEX_TOKEN")
         if PLEX_URL and PLEX_TOKEN:
@@ -64,6 +66,7 @@ def _get_plex():
     except Exception as e:
         print(f"Warning: Could not connect to Plex: {e}")
     return _plex_instance
+
 
 plex_path_cache = {}
 
@@ -381,11 +384,19 @@ def index_directory(directory_path: str):
                                 "srt",
                                 temp_sub_path,
                             ]
-                            ext_res = subprocess.run(
-                                ext_cmd,
-                                stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, timeout=120,
-                            )
+                            try:
+                                ext_res = subprocess.run(
+                                    ext_cmd,
+                                    stdout=subprocess.DEVNULL,
+                                    stderr=subprocess.DEVNULL,
+                                    timeout=120,
+                                )
+                            except subprocess.TimeoutExpired:
+                                if os.path.exists(temp_sub_path):
+                                    os.remove(temp_sub_path)
+                                temp_paths_to_clean.remove(temp_sub_path)
+                                print(f"Timed out extracting track {i} from {file_path}")
+                                continue
 
                             if ext_res.returncode == 0:
                                 extracted_subs.append((temp_sub_path, lang, i))

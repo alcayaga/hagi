@@ -74,7 +74,6 @@ def init_db():
                 pass
 
         try:
-            conn.execute("CREATE INDEX IF NOT EXISTS idx_sentences_lookup ON sentences(media_id, language, start_time)")
             conn.execute("CREATE INDEX IF NOT EXISTS idx_media_lookup ON media(show_title, season, episode)")
         except sqlite3.OperationalError:
             pass
@@ -87,6 +86,11 @@ def init_db():
                 conn.execute(stmt)
             except sqlite3.OperationalError:
                 pass
+
+        try:
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_sentences_lookup ON sentences(media_id, language, start_time)")
+        except sqlite3.OperationalError:
+            pass
 
         fts_exists = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sentences_fts'"
