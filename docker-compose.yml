@@ -11,6 +11,6 @@ services:
       - .env
     volumes:
       # Mount only the database file to persist it safely
-      - ./hagi.db:/app/hagi.db
+      - ./hagi.db:/data/hagi.db
       # Mount the NAS directory so the container can access your anime files
       - /mnt/NAS:/mnt/NAS:ro
