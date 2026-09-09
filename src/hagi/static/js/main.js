@@ -900,8 +900,10 @@ let timelineData = {
   activeHandle: null,
   contextData: null,
 };
+let latestTimelineLoadId = 0;
 
 async function openExtractionTimeline(id) {
+  const timelineLoadId = ++latestTimelineLoadId;
   const timelineContainer = document.getElementById("timelineContainer");
   timelineContainer.innerHTML = '<div class="absolute inset-0 flex justify-center items-center"><div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div></div>';
 
@@ -912,11 +914,14 @@ async function openExtractionTimeline(id) {
   try {
     response = await fetch(`/api/context/${id}`);
   } catch {
+    if (timelineLoadId !== latestTimelineLoadId) return;
     timelineData.target = null;
     timelineData.contextData = null;
     timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
     return;
   }
+  if (timelineLoadId !== latestTimelineLoadId) return;
+
   let contextData;
   if (!response.ok) {
     timelineData.target = null;
@@ -927,11 +932,13 @@ async function openExtractionTimeline(id) {
   try {
     contextData = await response.json();
   } catch {
+    if (timelineLoadId !== latestTimelineLoadId) return;
     timelineData.target = null;
     timelineData.contextData = null;
     timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
     return;
   }
+  if (timelineLoadId !== latestTimelineLoadId) return;
 
   if (!contextData || !contextData.target_context || contextData.target_context.length === 0) {
     timelineData.target = null;
