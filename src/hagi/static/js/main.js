@@ -1253,6 +1253,10 @@ function attachTimelineEvents(container, hStart, hEnd) {
  * a perfectly trimmed audio clip and updates the UI with the enclosed subtitle text.
  */
 async function applyTimelineExtraction() {
+  if (!timelineData || !timelineData.target) {
+    showToast("Timeline data is not loaded.", "error");
+    return;
+  }
   const targetStart = timelineData.target.start_time || 0;
   const targetEnd = timelineData.target.end_time || targetStart + 2.0;
 
@@ -1871,6 +1875,12 @@ async function searchAnkiCards() {
     }
   }
 }
+
+document.getElementById("ankiCardSearchInput")?.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    e.stopPropagation();
+  }
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {

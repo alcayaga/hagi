@@ -201,8 +201,8 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
         if token.startswith("-"):
             term = token[1:]
             if term:
-                safe_term = term.replace('\\\\', '\\\\\\\\').replace('%', '\\\\%').replace('_', '\\\\_')
-                conditions.append("s.text NOT LIKE ? ESCAPE '\\\'")
+                safe_term = term.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
+                conditions.append("s.text NOT LIKE ? ESCAPE '\\'")
                 params.append(f"%{safe_term}%")
         else:
             has_inclusion = True
@@ -229,7 +229,7 @@ def search_sentences(conn, query, show_title=None, season=None, episode=None, se
         params.append(episode)
 
     has_meaningful_conditions = bool(conditions)
-    if not has_inclusion and not sentence_id and not show_title:
+    if not has_inclusion and sentence_id is None and not show_title and season is None and episode is None:
         return []
 
     if sentence_id is not None:

@@ -100,18 +100,14 @@ def build_plex_cache():
                 for movie in movies:
                     for media in movie.media:
                         for part in media.parts:
-                            base_name = os.path.splitext(os.path.basename(part.file))[0]
-                            parent_dir = os.path.basename(os.path.dirname(part.file))
-                            cache_key = f"{parent_dir}/{base_name}" if parent_dir else base_name
+                            cache_key = os.path.splitext(part.file)[0]
                             plex_path_cache[cache_key] = (movie.title, 1, 1, movie.title)
             elif section.type == "show":
                 episodes = section.search(libtype="episode")
                 for ep in episodes:
                     for media in ep.media:
                         for part in media.parts:
-                            base_name = os.path.splitext(os.path.basename(part.file))[0]
-                            parent_dir = os.path.basename(os.path.dirname(part.file))
-                            cache_key = f"{parent_dir}/{base_name}" if parent_dir else base_name
+                            cache_key = os.path.splitext(part.file)[0]
                             plex_path_cache[cache_key] = (
                                 ep.grandparentTitle,
                                 ep.parentIndex,
@@ -132,14 +128,15 @@ def get_plex_metadata(file_path):
     Returns:
         tuple: (show_title, season, episode, episode_title)
     """
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    parent_dir = os.path.basename(os.path.dirname(file_path))
-    cache_key = f"{parent_dir}/{base_name}" if parent_dir else base_name
+    cache_key = os.path.splitext(file_path)[0]
     info = plex_path_cache.get(cache_key)
-    if not info and "." in base_name:
-        stripped = base_name.rsplit(".", 1)[0]
-        cache_key_stripped = f"{parent_dir}/{stripped}" if parent_dir else stripped
-        info = plex_path_cache.get(cache_key_stripped)
+    if not info:
+        base_name = os.path.basename(cache_key)
+        if "." in base_name:
+            # Strip language code (e.g. .ja from .ja.srt)
+            stripped = base_name.rsplit(".", 1)[0]
+            cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
+            info = plex_path_cache.get(cache_key_stripped)
     return info or (None, None, None, None)
 
 
@@ -415,10 +412,9 @@ def index_directory(directory_path: str):
 
                                     if final_lang in seen_langs:
                                         continue
-                                    seen_langs.add(final_lang)
-
                                     process_subs(conn, file_path, subs, "mkv_embedded", language=final_lang)
                                     conn.commit()
+                                    seen_langs.add(final_lang)
                                     processed_any = True
                                 except Exception as parse_e:
                                     conn.rollback()

@@ -126,7 +126,7 @@ def test_add_media_lastrowid_bug(test_db):
 def test_plex_cache_unpacking(test_db):
     """Ensure process_subs correctly unpacks 4 values from the plex_path_cache including episode_title."""
     # Seed the cache with a 4-tuple representing (show_title, season, episode, episode_title)
-    indexer.plex_path_cache["path/episode1"] = ("My Show", 1, 5, "The Best Episode")
+    indexer.plex_path_cache["/fake/path/episode1"] = ("My Show", 1, 5, "The Best Episode")
 
     with patch("hagi.indexer.get_db", return_value=test_db):
         with patch("hagi.indexer.load_and_sanitize_subs") as mock_load:
@@ -292,24 +292,24 @@ def test_build_plex_cache_filtering():
         indexer.plex_path_cache = {}
         with patch("builtins.open", mock_open(read_data='{"plex_libraries": ["Anime"]}')):
             indexer.build_plex_cache()
-        assert "path/anime_ep1" in indexer.plex_path_cache
-        assert "path/movie1" not in indexer.plex_path_cache
+        assert "/path/anime_ep1" in indexer.plex_path_cache
+        assert "/path/movie1" not in indexer.plex_path_cache
 
         # 2. Test filtering by ID "5"
         indexer._plex_cache_built = False
         indexer.plex_path_cache = {}
         with patch("builtins.open", mock_open(read_data='{"plex_libraries": ["5"]}')):
             indexer.build_plex_cache()
-        assert "path/anime_ep1" not in indexer.plex_path_cache
-        assert "path/movie1" in indexer.plex_path_cache
+        assert "/path/anime_ep1" not in indexer.plex_path_cache
+        assert "/path/movie1" in indexer.plex_path_cache
 
         # 3. Test no filter (empty config)
         indexer._plex_cache_built = False
         indexer.plex_path_cache = {}
         with patch("builtins.open", mock_open(read_data="{}")):
             indexer.build_plex_cache()
-        assert "path/anime_ep1" in indexer.plex_path_cache
-        assert "path/movie1" in indexer.plex_path_cache
+        assert "/path/anime_ep1" in indexer.plex_path_cache
+        assert "/path/movie1" in indexer.plex_path_cache
 
 
 def test_language_detection_por_spa():
@@ -368,7 +368,7 @@ def test_incremental_indexing_removes_missing_files(test_db):
 def test_get_plex_metadata_external_subtitles():
     """Ensure get_plex_metadata correctly strips language suffixes to find Plex metadata."""
     # Seed the cache with a movie base name
-    indexer.plex_path_cache["path/Belle (2021)"] = ("Belle", None, None, "Belle")
+    indexer.plex_path_cache["/fake/path/Belle (2021)"] = ("Belle", None, None, "Belle")
 
     # Exact match should work
     res1 = indexer.get_plex_metadata("/fake/path/Belle (2021).mkv")

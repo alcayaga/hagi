@@ -20,8 +20,10 @@ ENV PYTHONPATH=/app/src
 # Expose the default UI port
 EXPOSE 8000
 
-ENV DB_PATH=/app/hagi.db
-VOLUME /app
+ENV DB_PATH=/data/hagi.db
+RUN mkdir -p /data && useradd -m appuser && chown -R appuser:appuser /data /app
+VOLUME /data
+USER appuser
 
 # Set the default command to start the web UI
 CMD ["python", "-m", "hagi.cli", "ui", "--host", "0.0.0.0", "--port", "8000"]

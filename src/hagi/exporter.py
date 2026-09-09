@@ -121,6 +121,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     start = max(0, target["start_time"] - pad_start)
     end = target["end_time"] + pad_end
     duration = end - start
+    if duration <= 0:
+        return False, "Requested clip range is empty. Adjust the padding values.", None, None, None, False
     midpoint = start + (duration / 2)
 
     # Grab overlapping text whose midpoint falls within the padded timeframe (matching UI logic)
