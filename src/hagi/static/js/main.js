@@ -490,7 +490,7 @@ function renderResults() {
 
   let highlightRegex = null;
   if (validTerms.length > 0) {
-    highlightRegex = new RegExp(`(${validTerms.map((t) => t.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, "\\$&")).join("|")})`, "gi");
+    highlightRegex = new RegExp(`(${validTerms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi");
   }
 
   function highlightText(text) {
