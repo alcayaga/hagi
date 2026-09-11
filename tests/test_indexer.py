@@ -115,8 +115,8 @@ def test_mkv_embedded_extraction(test_db):
         assert "eng" in langs
 
 
-def test_mkv_extraction_continues_after_track_timeout(test_db):
-    """Ensure one timed-out subtitle track does not prevent later tracks from being indexed."""
+def test_mkv_extraction_rolls_back_entire_mkv_on_track_timeout(test_db):
+    """Ensure that if one subtitle track times out, the entire MKV is rolled back for retry."""
     with (
         patch("os.walk") as mock_walk,
         patch("hagi.indexer.get_db", return_value=test_db),
@@ -153,7 +153,7 @@ def test_mkv_extraction_continues_after_track_timeout(test_db):
         assert mock_subrun.call_count == 3
         mock_load.assert_called_once()
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
-        assert [(row["language"], row["text"]) for row in sentences] == [("jpn", "こんにちは")]
+        assert [(row["language"], row["text"]) for row in sentences] == []
 
 
 def test_add_media_lastrowid_bug(test_db):
