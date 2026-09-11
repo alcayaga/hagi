@@ -39,9 +39,16 @@ def init():
 
 
 @app.command()
-def index(directory: Optional[str] = typer.Argument(None)):
+def index(
+    directory: Optional[str] = typer.Argument(None),
+    prune: bool = typer.Option(False, "--prune", help="Globally verify all database entries and remove missing media"),
+):
     """Index a directory or multiple directories from config.json."""
     db.init_db()  # ensure db exists
+
+    if prune:
+        console.print("[yellow]Running global database prune...[/yellow]")
+        indexer.prune_database()
 
     directories_to_index = []
 
