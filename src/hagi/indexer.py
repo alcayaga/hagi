@@ -208,6 +208,24 @@ def detect_language(subs_obj):
     return "eng"
 
 
+def prune_database():
+    """Verify all media in the database and remove missing files globally."""
+    conn = get_db()
+    cursor = conn.execute("SELECT id, path FROM media")
+    pruned_count = 0
+    for row in cursor.fetchall():
+        if not os.path.exists(row["path"]):
+            print(f"Removing missing file from database: {row['path']}")
+            conn.execute("DELETE FROM sentences WHERE media_id = ?", (row["id"],))
+            conn.execute("DELETE FROM media WHERE id = ?", (row["id"],))
+            pruned_count += 1
+    if pruned_count > 0:
+        conn.commit()
+        print(f"Pruned {pruned_count} missing media files.")
+    else:
+        print("No missing media files found.")
+
+
 def index_directory(directory_path: str):
     """Scan and index all subtitle and MKV files in a directory.
 

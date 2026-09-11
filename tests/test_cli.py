@@ -42,6 +42,27 @@ def test_index_existing_directory(tmp_path, monkeypatch):
     assert "Indexing complete!" in result.stdout
 
 
+def test_index_prune(monkeypatch):
+    """Test that index --prune calls indexer.prune_database."""
+    from hagi import indexer
+    from hagi import db
+
+    called = {"prune": False}
+
+    def mock_prune():
+        called["prune"] = True
+
+    monkeypatch.setattr(indexer, "prune_database", mock_prune)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+    monkeypatch.setattr("hagi.cli._load_config", lambda: None)
+
+    result = runner.invoke(app, ["index", "--prune"])
+
+    # Still fails on no directory to index, but prune should have run first
+    assert called["prune"] is True
+    assert "Running global database prune..." in result.stdout
+
+
 def test_anki_command(monkeypatch):
     """Test the anki CLI command."""
     import json
