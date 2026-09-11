@@ -413,7 +413,7 @@ def index_directory(directory_path: str):
                                     ext_cmd,
                                     stdout=subprocess.DEVNULL,
                                     stderr=subprocess.DEVNULL,
-                                    timeout=120,
+                                    timeout=600,
                                 )
                             except subprocess.TimeoutExpired:
                                 if os.path.exists(temp_sub_path):
