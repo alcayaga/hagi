@@ -155,6 +155,9 @@ def test_mkv_extraction_rolls_back_entire_mkv_on_track_timeout(test_db):
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
         assert [(row["language"], row["text"]) for row in sentences] == []
 
+        media = test_db.execute("SELECT * FROM media").fetchall()
+        assert len(media) == 0
+
 
 def test_add_media_lastrowid_bug(test_db):
     """Ensure add_media doesn't return the ID of a recently inserted sentence when adding a duplicate media path."""
