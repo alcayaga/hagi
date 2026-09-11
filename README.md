@@ -54,6 +54,11 @@ Alternatively, if you create a `config.json` file in the root folder containing 
 ./hagi index
 ```
 
+If you have deleted files from your disk and want to automatically clean them up from the database globally before indexing, use the `--prune` flag:
+```bash
+./hagi index --prune
+```
+
 **3. Launch the Web UI (Recommended)**
 Start the local FastAPI web server to search visually and extract media with the click of a button!
 ```bash
