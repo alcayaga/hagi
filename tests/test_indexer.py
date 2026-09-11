@@ -289,6 +289,43 @@ def test_mkv_skip_all_subtitles(test_db):
         assert media[0]["path"] == "/fake/path/episode1.mkv"
 
 
+def test_mkv_skip_all_subtitles_due_to_timeout(test_db):
+    """Ensure media is NOT added if all subtitle tracks time out during extraction."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 0, "tags": {"language": "eng"}},
+            ]
+        }
+        probe_result = MagicMock()
+        probe_result.stdout = json.dumps(probe_output)
+        probe_result.returncode = 0
+
+        mock_subrun.side_effect = [
+            probe_result,
+            subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
+        ]
+
+        indexer.index_directory("/fake/path")
+
+        # Verify subprocess was called exactly 2 times (ffprobe and ffmpeg)
+        assert mock_subrun.call_count == 2
+
+        # Sentences should be empty
+        sentences = test_db.execute("SELECT * FROM sentences").fetchall()
+        assert len(sentences) == 0
+
+        # Media should NOT be added since it failed via timeout!
+        media = test_db.execute("SELECT * FROM media").fetchall()
+        assert len(media) == 0
+
+
 def test_build_plex_cache_filtering():
     """Ensure build_plex_cache respects plex_libraries from config.json."""
     from unittest.mock import mock_open

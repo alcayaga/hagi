@@ -386,6 +386,7 @@ def index_directory(directory_path: str):
 
                     extracted_subs = []
                     processed_any = False
+                    had_timeout = False
                     temp_paths_to_clean = []
                     try:
                         for stream in selected_streams:
@@ -420,6 +421,7 @@ def index_directory(directory_path: str):
                                     os.remove(temp_sub_path)
                                 temp_paths_to_clean.remove(temp_sub_path)
                                 print(f"Timed out extracting track {i} from {file_path}")
+                                had_timeout = True
                                 continue
 
                             if ext_res.returncode == 0:
@@ -455,7 +457,7 @@ def index_directory(directory_path: str):
                                     conn.rollback()
                                     print(f"Error parsing track {i} in {file_path}: {parse_e}")
 
-                        if not processed_any:
+                        if not processed_any and not had_timeout:
                             # Ensure the media is still added even if all subtitles were skipped
                             show_title, season, episode, episode_title = get_plex_metadata(file_path)
                             add_media(
