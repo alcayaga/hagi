@@ -115,8 +115,8 @@ def test_mkv_embedded_extraction(test_db):
         assert "eng" in langs
 
 
-def test_mkv_extraction_continues_after_track_timeout(test_db):
-    """Ensure one timed-out subtitle track does not prevent later tracks from being indexed."""
+def test_mkv_extraction_rolls_back_entire_mkv_on_track_timeout(test_db):
+    """Ensure that if one subtitle track times out, the entire MKV is rolled back for retry."""
     with (
         patch("os.walk") as mock_walk,
         patch("hagi.indexer.get_db", return_value=test_db),
@@ -153,7 +153,10 @@ def test_mkv_extraction_continues_after_track_timeout(test_db):
         assert mock_subrun.call_count == 3
         mock_load.assert_called_once()
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
-        assert [(row["language"], row["text"]) for row in sentences] == [("jpn", "こんにちは")]
+        assert [(row["language"], row["text"]) for row in sentences] == []
+
+        media = test_db.execute("SELECT * FROM media").fetchall()
+        assert len(media) == 0
 
 
 def test_add_media_lastrowid_bug(test_db):
@@ -287,6 +290,43 @@ def test_mkv_skip_all_subtitles(test_db):
         media = test_db.execute("SELECT * FROM media").fetchall()
         assert len(media) == 1
         assert media[0]["path"] == "/fake/path/episode1.mkv"
+
+
+def test_mkv_skip_all_subtitles_due_to_timeout(test_db):
+    """Ensure media is NOT added if all subtitle tracks time out during extraction."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 0, "tags": {"language": "eng"}},
+            ]
+        }
+        probe_result = MagicMock()
+        probe_result.stdout = json.dumps(probe_output)
+        probe_result.returncode = 0
+
+        mock_subrun.side_effect = [
+            probe_result,
+            subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
+        ]
+
+        indexer.index_directory("/fake/path")
+
+        # Verify subprocess was called exactly 2 times (ffprobe and ffmpeg)
+        assert mock_subrun.call_count == 2
+
+        # Sentences should be empty
+        sentences = test_db.execute("SELECT * FROM sentences").fetchall()
+        assert len(sentences) == 0
+
+        # Media should NOT be added since it failed via timeout!
+        media = test_db.execute("SELECT * FROM media").fetchall()
+        assert len(media) == 0
 
 
 def test_build_plex_cache_filtering():
