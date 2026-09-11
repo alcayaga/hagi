@@ -10,7 +10,10 @@ services:
     env_file:
       - .env
     volumes:
-      # Mount only the database file to persist it safely
-      - ./hagi.db:/app/hagi.db
+      # Persist /data so SQLite can create /data/hagi.db as a regular file
+      - hagi-data:/data
       # Mount the NAS directory so the container can access your anime files
       - /mnt/NAS:/mnt/NAS:ro
+
+volumes:
+  hagi-data:

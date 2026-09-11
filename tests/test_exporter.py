@@ -4,8 +4,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import db
-import exporter
+from hagi import db
+from hagi import exporter
 
 
 @pytest.fixture
@@ -25,9 +25,9 @@ def test_db():
 def test_extract_media(test_db):
     """Test that extract_media correctly queries DB and calls ffmpeg with correct parameters."""
     with (
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
         patch("subprocess.run") as mock_subrun,
         patch("os.replace"),
     ):
@@ -98,9 +98,9 @@ def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_ma
             return mock_result
 
     with (
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
         patch("subprocess.run", side_effect=mock_run_side_effect) as mock_subrun,
         patch("os.replace"),
     ):
@@ -121,7 +121,7 @@ def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_ma
 def test_export_anki(test_db):
     """Test that export_anki generates the correct TSV line."""
     with (
-        patch("exporter.extract_media") as mock_extract,
+        patch("hagi.exporter.extract_media") as mock_extract,
         patch("builtins.open", new_callable=MagicMock),
         patch("csv.writer") as mock_csv_writer,
     ):
@@ -173,8 +173,8 @@ def test_export_ankiconnect(test_db):
         return BytesIO(b"fake_img")
 
     with (
-        patch("exporter.extract_media") as mock_extract,
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.extract_media") as mock_extract,
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("urllib.request.urlopen") as mock_urlopen,
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
@@ -281,8 +281,8 @@ def test_export_ankiconnect_with_note_id(test_db):
         return BytesIO(b"fake_img")
 
     with (
-        patch("exporter.extract_media") as mock_extract,
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.extract_media") as mock_extract,
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("urllib.request.urlopen") as mock_urlopen,
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
@@ -324,7 +324,7 @@ def test_export_ankiconnect_unconstrained(test_db):
     """Test that export_ankiconnect rejects unconstrained searches."""
     mock_config = {"ankiConnectUrl": "http://127.0.0.1:8765"}
 
-    with patch("exporter.extract_media") as mock_extract, patch("exporter.db.get_db", return_value=test_db):
+    with patch("hagi.exporter.extract_media") as mock_extract, patch("hagi.exporter.db.get_db", return_value=test_db):
         mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text", False)
 
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
@@ -357,8 +357,8 @@ def test_export_ankiconnect_multiple_exports(test_db):
         return BytesIO(b"fake_data")
 
     with (
-        patch("exporter.extract_media") as mock_extract,
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.extract_media") as mock_extract,
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("urllib.request.urlopen") as mock_urlopen,
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
@@ -408,9 +408,9 @@ def test_export_ankiconnect_multiple_exports(test_db):
 def test_extract_media_concatenation(test_db):
     """Test that extract_media correctly concatenates overlapping sentences by language grammar."""
     with (
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
         patch("subprocess.run"),
         patch("os.replace"),
     ):
@@ -472,7 +472,7 @@ def test_extract_media_concatenation(test_db):
 def test_extract_media_external_subtitle(test_db):
     """Test that extract_media correctly resolves the video path for an external subtitle using the Plex standard."""
     with (
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
         patch("subprocess.run") as mock_subrun,
         patch("os.replace"),
@@ -534,8 +534,8 @@ def test_export_ankiconnect_highlight(test_db):
     }
 
     with (
-        patch("exporter.extract_media") as mock_extract,
-        patch("exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.extract_media") as mock_extract,
+        patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("urllib.request.urlopen") as mock_urlopen,
     ):
         mock_extract.return_value = (
@@ -595,8 +595,8 @@ def test_cache_and_cleanup(test_db):
 
         # Test 1: First extraction
         with (
-            patch("exporter.db.get_db", return_value=test_db),
-            patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+            patch("hagi.exporter.db.get_db", return_value=test_db),
+            patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
             patch("subprocess.run") as mock_run,
         ):
             # Make sure ffprobe succeeds
@@ -634,8 +634,8 @@ def test_cache_and_cleanup(test_db):
 
         # Test 2: Second extraction (Cache Hit)
         with (
-            patch("exporter.db.get_db", return_value=test_db),
-            patch("exporter.os.path.exists", return_value=True),
+            patch("hagi.exporter.db.get_db", return_value=test_db),
+            patch("hagi.exporter.os.path.exists", return_value=True),
             patch("subprocess.run") as mock_run,
         ):
             success, msg, a_out2, i_out2, text, is_cached = exporter.extract_media(sid, tmpdir)
@@ -664,18 +664,18 @@ def test_cache_and_cleanup(test_db):
 
 def test_extract_media_path_injection(test_db):
     """Test that extract_media rejects path traversal payloads by enforcing integer conversion."""
-    with pytest.raises(ValueError):
-        # A malicious path string like "../../../etc/passwd" will fail int() conversion
-        exporter.extract_media("../../../etc/passwd", "/fake/out")
+    result = exporter.extract_media("../../../etc/passwd", "/fake/out")
+    assert result[0] is False
+    assert result[1] == "Invalid sentence ID"
 
 
 def test_extract_media_exception_exposure(test_db):
     """Test that extract_media masks raw exception stack traces with a generic message."""
     with (
-        patch("exporter.db.get_db", return_value=test_db),
-        patch("exporter.os.makedirs"),
-        patch("exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
-        patch("exporter.subprocess.run", side_effect=Exception("Secret Database Connection String Leaked")),
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("hagi.exporter.os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.subprocess.run", side_effect=Exception("Secret Database Connection String Leaked")),
     ):
         sid = test_db.execute("SELECT id FROM sentences").fetchone()["id"]
         success, msg, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
@@ -785,7 +785,7 @@ def test_search_anki_notes_spaced_field():
     """Verify search_anki_notes correctly quotes field names containing spaces."""
     import json
     from unittest.mock import patch, MagicMock
-    import exporter
+    from hagi import exporter
 
     mock_config = {"deck": "Mining", "noteType": "Lapis", "wordField": "Example Sentence"}
 

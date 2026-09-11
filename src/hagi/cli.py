@@ -7,12 +7,28 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-import db
-import exporter
-import indexer
+from . import db
+from . import exporter
+from . import indexer
 
 app = typer.Typer()
 console = Console()
+
+def _load_config() -> Optional[dict]:
+    if not os.path.exists("config.json"):
+        return None
+    try:
+        with open("config.json", "r") as f:
+            config = json.load(f)
+            if not isinstance(config, dict):
+                console.print("[red]Error: config.json must contain a JSON object.[/red]")
+                raise typer.Exit(code=1)
+            return config
+    except typer.Exit:
+        raise
+    except Exception as e:
+        console.print(f"[red]Error parsing config.json: {e}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -33,15 +49,9 @@ def index(directory: Optional[str] = typer.Argument(None)):
         directories_to_index.append(directory)
     else:
         # Try to load config.json
-        if os.path.exists("config.json"):
-            with open("config.json", "r") as f:
-                try:
-                    config = json.load(f)
-                    if "directories" in config and isinstance(config["directories"], list):
-                        directories_to_index.extend(config["directories"])
-                except Exception as e:
-                    console.print(f"[red]Error parsing config.json: {e}[/red]")
-                    raise typer.Exit(code=1)
+        config = _load_config()
+        if config and "directories" in config and isinstance(config["directories"], list):
+            directories_to_index.extend(config["directories"])
 
         if not directories_to_index:
             console.print("[red]Error: Please provide a directory argument or specify 'directories' in config.json.[/red]")
@@ -103,22 +113,10 @@ def anki_search(
     json_output: bool = typer.Option(False, "--json", help="Output full note objects as a JSON array"),
 ):
     """Search Anki for notes matching a query to find Note IDs."""
-    if not os.path.exists("config.json"):
+    config = _load_config()
+    if config is None:
         if not json_output:
             console.print("[red]Error: config.json not found. Please create it with AnkiConnect settings.[/red]")
-        raise typer.Exit(code=1)
-
-    try:
-        with open("config.json", "r") as f:
-            config = json.load(f)
-    except Exception as e:
-        if not json_output:
-            console.print(f"[red]Error parsing config.json: {e}[/red]")
-        raise typer.Exit(code=1)
-
-    if not isinstance(config, dict):
-        if not json_output:
-            console.print("[red]Error: config.json must contain a JSON object.[/red]")
         raise typer.Exit(code=1)
 
     if exact and not config.get("wordField"):
@@ -265,6 +263,7 @@ def extract(
         console.print(f"[cyan]Text: {text}[/cyan]")
     else:
         console.print(f"[red]Error: {msg}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -281,6 +280,7 @@ def export(
         console.print(f"[green]{msg}[/green]")
     else:
         console.print(f"[red]Error: {msg}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command()
@@ -293,15 +293,9 @@ def anki(
     pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Export sentence directly to Anki via AnkiConnect."""
-    if not os.path.exists("config.json"):
+    config = _load_config()
+    if config is None:
         console.print("[red]Error: config.json not found. Please create it with AnkiConnect settings.[/red]")
-        raise typer.Exit(code=1)
-
-    try:
-        with open("config.json", "r") as f:
-            config = json.load(f)
-    except Exception as e:
-        console.print(f"[red]Error parsing config.json: {e}[/red]")
         raise typer.Exit(code=1)
 
     console.print(f"Exporting sentence {sentence_id} via AnkiConnect...")
@@ -323,7 +317,7 @@ def ui(port: int = 8000, host: str = "127.0.0.1"):
     """Launch the Hagi local web interface."""
     import uvicorn
 
-    from web import app as web_app
+    from .web import app as web_app
 
     # Ensure database migrations are run
     db.init_db()

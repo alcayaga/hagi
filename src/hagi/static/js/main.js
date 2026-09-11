@@ -4,9 +4,20 @@
  */
 function escapeHtml(str) {
   if (str == null) return "";
-  const temp = document.createElement("div");
-  temp.textContent = String(str);
-  return temp.innerHTML;
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+function formatTime(seconds) {
+  if (seconds == null || !Number.isFinite(seconds)) {
+    return "--:--";
+  }
+  const totalSecs = Math.floor(seconds);
+  const h = Math.floor(totalSecs / 3600);
+  const m = Math.floor((totalSecs % 3600) / 60)
+    .toString()
+    .padStart(h > 0 ? 2 : 1, "0");
+  const s = (totalSecs % 60).toString().padStart(2, "0");
+  return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
 let searchAnkiCardsTimeout = null;
@@ -297,7 +308,22 @@ async function performSearch(pushState = true, resetFilters = false) {
     performNadeshikoSearch(query);
 
     const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal });
-    const data = await response.json();
+
+    let data;
+    if (!response.ok) {
+      data = [];
+    } else {
+      try {
+        data = await response.json();
+      } catch {
+        data = [];
+      }
+    }
+
+    if (!Array.isArray(data)) {
+      data = [];
+    }
+
     if (currentSearchAbortController?.signal !== signal) return;
     allSearchResults = data;
 
@@ -464,7 +490,7 @@ function renderResults() {
 
   let highlightRegex = null;
   if (validTerms.length > 0) {
-    highlightRegex = new RegExp(`(${validTerms.map((t) => t.replace(/[-\\/\\\\^$*+?.()|[\\]{}]/g, "\\\\$&")).join("|")})`, "gi");
+    highlightRegex = new RegExp(`(${validTerms.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})`, "gi");
   }
 
   function highlightText(text) {
@@ -478,13 +504,7 @@ function renderResults() {
   }
 
   filtered.forEach((r) => {
-    const totalSecs = Math.floor(r.start_time);
-    const h = Math.floor(totalSecs / 3600);
-    const m = Math.floor((totalSecs % 3600) / 60)
-      .toString()
-      .padStart(h > 0 ? 2 : 1, "0");
-    const s = (totalSecs % 60).toString().padStart(2, "0");
-    const timeStr = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    const timeStr = formatTime(r.start_time);
 
     let sourceDisplay = r.path.split("/").pop();
     let subParts = [];
@@ -509,9 +529,9 @@ function renderResults() {
       <div class="flex flex-col gap-2 flex-grow">
         <!-- Top Metadata -->
         <div class="flex flex-wrap items-center gap-1.5 md:gap-2 text-[0.65rem] md:text-[0.7rem] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-          <span class="text-gray-700 dark:text-gray-200 font-bold">${sourceDisplay}</span>
-          ${subParts.length > 0 ? `<span class="opacity-50">&bull;</span><span>${subParts.join(" ")}</span>` : ""}
-          ${r.episode_title ? `<span class="opacity-50">&bull;</span><span class="italic">"${r.episode_title}"</span>` : ""}
+          <span class="text-gray-700 dark:text-gray-200 font-bold">${escapeHtml(sourceDisplay)}</span>
+          ${subParts.length > 0 ? `<span class="opacity-50">&bull;</span><span>${escapeHtml(subParts.join(" "))}</span>` : ""}
+          ${r.episode_title ? `<span class="opacity-50">&bull;</span><span class="italic">"${escapeHtml(r.episode_title)}"</span>` : ""}
           <span class="opacity-50">&bull;</span>
           <span class="font-mono bg-gray-500/10 dark:bg-gray-400/10 px-1.5 md:px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-300">${timeStr}</span>
         </div>
@@ -620,19 +640,13 @@ async function extractMedia(id, btnElement) {
       subParts.push(`"${r.episode_title}"`);
     }
 
-    const totalSecs = Math.floor(r.start_time);
-    const h = Math.floor(totalSecs / 3600);
-    const m = Math.floor((totalSecs % 3600) / 60)
-      .toString()
-      .padStart(h > 0 ? 2 : 1, "0");
-    const s = (totalSecs % 60).toString().padStart(2, "0");
-    const timeStr = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+    const timeStr = formatTime(r.start_time);
 
     document.getElementById("mediaMetadata").innerHTML = `
       <div class="flex flex-col leading-tight">
-        <span class="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">${mainTitle}</span>
+        <span class="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">${escapeHtml(mainTitle)}</span>
         <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate mt-0.5">
-          ${subParts.length > 0 ? subParts.join(" &bull; ") : "Unknown Episode"}
+          ${subParts.length > 0 ? subParts.map(escapeHtml).join(" &bull; ") : "Unknown Episode"}
         </span>
       </div>
     `;
@@ -655,13 +669,13 @@ async function extractMedia(id, btnElement) {
 
     if (data.success) {
       const extractedText = (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
-      document.getElementById("mediaText").innerHTML = highlightSearchTerms(extractedText);
+      document.getElementById("mediaText").innerHTML = highlightSearchTerms(extractedText, null, escapeHtml);
 
-      const cleanSpa = r.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
-      const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
+      const cleanSpa = r?.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
+      const cleanEng = r?.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
       let transHtml = "";
-      if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanSpa}</span></div>`;
-      if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanEng}</span></div>`;
+      if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanSpa)}</span></div>`;
+      if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanEng)}</span></div>`;
       document.getElementById("mediaTranslations").innerHTML = highlightSearchTerms(transHtml);
 
       document.getElementById("mediaImage").src = data.image_url + "?t=" + new Date().getTime();
@@ -669,7 +683,11 @@ async function extractMedia(id, btnElement) {
       document.getElementById("mediaAudio").play();
       document.getElementById("mediaModal").classList.remove("hidden");
 
-      openExtractionTimeline(id);
+      try {
+        await openExtractionTimeline(id);
+      } catch (err) {
+        console.error("Failed to open extraction timeline", err);
+      }
     } else {
       alert("Extraction failed: " + data.detail);
     }
@@ -758,15 +776,9 @@ async function viewContext(id, pushState = true) {
           const isTarget = group.targets.some((t) => t.id === id);
 
           const firstTarget = group.targets[0];
-          const totalSecs = Math.floor(firstTarget.start_time);
-          const h = Math.floor(totalSecs / 3600);
-          const m = Math.floor((totalSecs % 3600) / 60)
-            .toString()
-            .padStart(h > 0 ? 2 : 1, "0");
-          const s = (totalSecs % 60).toString().padStart(2, "0");
-          const timeStr = h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+          const timeStr = formatTime(firstTarget.start_time);
 
-          const cleanText = group.targets.map((t) => (t.text ? t.text.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "")).join("<br/>");
+          const cleanText = group.targets.map((t) => escapeHtml(t.text ? t.text.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "")).join("<br/>");
           const cleanSec = group.secText ? group.secText.replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ") : "";
 
           const card = document.createElement("div");
@@ -783,7 +795,7 @@ async function viewContext(id, pushState = true) {
           if (cleanSec && group.secLang) {
             const badgeColors = getLangColors(group.secLang);
             const langCode = group.secLang.substring(0, 3).toUpperCase();
-            secondaryHtml = `<div class="text-sm mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${badgeColors.badge} mr-2 align-middle">${langCode}</span>&nbsp;<span class="text-gray-500 dark:text-gray-400 italic align-middle">${cleanSec}</span></div>`;
+            secondaryHtml = `<div class="text-sm mt-1 leading-snug"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${badgeColors.badge} mr-2 align-middle">${langCode}</span>&nbsp;<span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanSec)}</span></div>`;
           }
 
           card.innerHTML = `
@@ -888,13 +900,52 @@ let timelineData = {
   activeHandle: null,
   contextData: null,
 };
+let latestTimelineLoadId = 0;
 
 async function openExtractionTimeline(id) {
+  const timelineLoadId = ++latestTimelineLoadId;
   const timelineContainer = document.getElementById("timelineContainer");
   timelineContainer.innerHTML = '<div class="absolute inset-0 flex justify-center items-center"><div class="animate-spin rounded-full h-5 w-5 border-b-2 border-indigo-600"></div></div>';
 
-  const response = await fetch(`/api/context/${id}`);
-  const contextData = await response.json();
+  timelineData.target = null;
+  timelineData.contextData = null;
+
+  let response;
+  try {
+    response = await fetch(`/api/context/${id}`);
+  } catch {
+    if (timelineLoadId !== latestTimelineLoadId) return;
+    timelineData.target = null;
+    timelineData.contextData = null;
+    timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
+    return;
+  }
+  if (timelineLoadId !== latestTimelineLoadId) return;
+
+  let contextData;
+  if (!response.ok) {
+    timelineData.target = null;
+    timelineData.contextData = null;
+    timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
+    return;
+  }
+  try {
+    contextData = await response.json();
+  } catch {
+    if (timelineLoadId !== latestTimelineLoadId) return;
+    timelineData.target = null;
+    timelineData.contextData = null;
+    timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">Failed to load context.</div>';
+    return;
+  }
+  if (timelineLoadId !== latestTimelineLoadId) return;
+
+  if (!contextData || !contextData.target_context || contextData.target_context.length === 0) {
+    timelineData.target = null;
+    timelineData.contextData = null;
+    timelineContainer.innerHTML = '<div class="text-red-500 text-sm flex justify-center items-center h-full">No context data found.</div>';
+    return;
+  }
 
   let targetSentence = contextData.target_context.find((s) => s.id === id);
   if (!targetSentence) targetSentence = contextData.target_context[0];
@@ -1221,6 +1272,14 @@ function attachTimelineEvents(container, hStart, hEnd) {
  * a perfectly trimmed audio clip and updates the UI with the enclosed subtitle text.
  */
 async function applyTimelineExtraction() {
+  if (!timelineData || !timelineData.target) {
+    showToast("Timeline data is not loaded.", "error");
+    return;
+  }
+  if (timelineData.target.id !== currentExtraction.id) {
+    showToast("Timeline data does not match the current extraction.", "error");
+    return;
+  }
   const targetStart = timelineData.target.start_time || 0;
   const targetEnd = timelineData.target.end_time || targetStart + 2.0;
 
@@ -1839,3 +1898,22 @@ async function searchAnkiCards() {
     }
   }
 }
+
+document.getElementById("ankiCardSearchInput")?.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    toggleModalView("mediaExtractView");
+    e.stopPropagation();
+  }
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    const mediaModal = document.getElementById("mediaModal");
+    const contextModal = document.getElementById("contextModal");
+    if (mediaModal && !mediaModal.classList.contains("hidden")) {
+      closeModal("mediaModal", "mediaAudio");
+    } else if (contextModal && !contextModal.classList.contains("hidden")) {
+      closeModal("contextModal");
+    }
+  }
+});

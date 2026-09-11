@@ -30,4 +30,4 @@ jobs:
 
     - name: Run tests and linting
       run: |
-        PYTHONPATH=. conda run -n hagi pytest
+        PYTHONPATH=src conda run -n hagi pytest

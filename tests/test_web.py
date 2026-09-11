@@ -5,8 +5,8 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-import db
-from web import app
+from hagi import db
+from hagi.web import app
 
 client = TestClient(app)
 
@@ -48,7 +48,7 @@ def test_read_main():
 
 def test_api_sentence(test_db):
     """Test function."""
-    with patch("web.db.get_db", return_value=test_db):
+    with patch("hagi.web.db.get_db", return_value=test_db):
         response = client.get("/api/sentence/1")
         assert response.status_code == 200
         data = response.json()
@@ -60,7 +60,7 @@ def test_api_sentence(test_db):
 
 def test_api_search(test_db):
     """Test function."""
-    with patch("web.db.get_db", return_value=test_db):
+    with patch("hagi.web.db.get_db", return_value=test_db):
         response = client.get("/api/search?q=web")
         assert response.status_code == 200
         data = response.json()
@@ -72,8 +72,8 @@ def test_api_search(test_db):
 def test_api_extract(test_db):
     """Test function."""
     with (
-        patch("web.db.get_db", return_value=test_db),
-        patch("web.exporter.extract_media") as mock_extract,
+        patch("hagi.web.db.get_db", return_value=test_db),
+        patch("hagi.web.exporter.extract_media") as mock_extract,
     ):
         # Make the extract_media function return a successful tuple
         mock_extract.return_value = (
@@ -113,7 +113,7 @@ def dual_audio_db():
 
 def test_api_context_dual_audio(dual_audio_db):
     """Test function for dual audio context alignment."""
-    with patch("web.db.get_db", return_value=dual_audio_db):
+    with patch("hagi.web.db.get_db", return_value=dual_audio_db):
         response = client.get("/api/context/2")
         assert response.status_code == 200
         data = response.json()
@@ -149,10 +149,10 @@ def test_export_anki_endpoint(test_db):
         return open(path, mode, *args, **kwargs)
 
     with (
-        patch("web.db.get_db", return_value=test_db),
+        patch("hagi.web.db.get_db", return_value=test_db),
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
-        patch("web.exporter.export_ankiconnect") as mock_ankiconnect,
+        patch("hagi.web.exporter.export_ankiconnect") as mock_ankiconnect,
     ):
         mock_ankiconnect.return_value = (True, "Successfully updated note", False)
 
@@ -191,10 +191,10 @@ def test_export_anki_endpoint_with_nid(test_db):
         return open(path, mode, *args, **kwargs)
 
     with (
-        patch("web.db.get_db", return_value=test_db),
+        patch("hagi.web.db.get_db", return_value=test_db),
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
-        patch("web.exporter.export_ankiconnect") as mock_ankiconnect,
+        patch("hagi.web.exporter.export_ankiconnect") as mock_ankiconnect,
     ):
         mock_ankiconnect.return_value = (True, "Successfully updated note", False)
 
@@ -252,10 +252,10 @@ def test_export_anki_endpoint_invalid_config(test_db):
         return open(path, mode, *args, **kwargs)
 
     with (
-        patch("web.db.get_db", return_value=test_db),
+        patch("hagi.web.db.get_db", return_value=test_db),
         patch("os.path.exists", mock_exists),
         patch("builtins.open", mock_open),
-        patch("web.exporter.extract_media") as mock_extract,
+        patch("hagi.web.exporter.extract_media") as mock_extract,
     ):
         mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text", False)
 
@@ -293,8 +293,8 @@ def test_export_anki_endpoint_invalid_media_urls():
         with (
             patch("os.path.exists", mock_exists),
             patch("builtins.open", mock_open),
-            patch("web.exporter.export_ankiconnect") as mock_anki,
-            patch("web.exporter.extract_media") as mock_extract,
+            patch("hagi.web.exporter.export_ankiconnect") as mock_anki,
+            patch("hagi.web.exporter.extract_media") as mock_extract,
         ):
             mock_anki.return_value = (True, "Success", False)
             mock_extract.return_value = (True, "Success", "/fake/out/audio.mp3", "/fake/out/img.jpg", "Test Text", False)
@@ -304,7 +304,7 @@ def test_export_anki_endpoint_invalid_media_urls():
 
 def test_api_extract_exception_exposure(test_db):
     """Test that POST /api/extract returns generic 500 errors."""
-    with patch("web.db.get_db", return_value=test_db), patch("web.exporter.extract_media") as mock_extract:
+    with patch("hagi.web.db.get_db", return_value=test_db), patch("hagi.web.exporter.extract_media") as mock_extract:
         # Mock exporter returning a generic string
         mock_extract.return_value = (False, "An internal error occurred during extraction.", None, None, None, False)
 
@@ -332,7 +332,7 @@ def mock_config(monkeypatch):
 
 def test_search_anki_endpoint(mock_config):
     """Test the POST /api/anki/search endpoint."""
-    with patch("web.exporter.search_anki_notes") as mock_search:
+    with patch("hagi.web.exporter.search_anki_notes") as mock_search:
         mock_search.return_value = (True, "Success", [{"noteId": 10002, "fields": {}}])
 
         response = client.post("/api/anki/search", json={"query": "真ん中"})
@@ -346,7 +346,7 @@ def test_search_anki_endpoint(mock_config):
 
 def test_search_anki_endpoint_failure(mock_config):
     """Test the POST /api/anki/search endpoint when exporter fails."""
-    with patch("web.exporter.search_anki_notes") as mock_search:
+    with patch("hagi.web.exporter.search_anki_notes") as mock_search:
         mock_search.return_value = (False, "Search Failed", [])
 
         response = client.post("/api/anki/search", json={"query": "fail"})

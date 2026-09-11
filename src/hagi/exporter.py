@@ -7,11 +7,21 @@ import uuid
 import urllib.request
 import urllib.error
 import json
-
 import logging
+import re
 
-import db
+from . import db
 
+logger = logging.getLogger(__name__)
+
+def clean_text(text: str, lang: str) -> str:
+    """Clean subtitle text by removing or replacing html linebreaks."""
+    if not text:
+        return ""
+    if lang in ("jpn", "ja", "jp", "zho", "zh"):
+        return re.sub(r"<br\s*/?>|[\r\n]+", "", text, flags=re.IGNORECASE)
+    else:
+        return re.sub(r"<br\s*/?>|[\r\n]+", " ", text, flags=re.IGNORECASE)
 
 def anki_request(anki_url, action, timeout=10.0, **params):
     """Execute a local request to AnkiConnect via urllib."""
@@ -45,7 +55,11 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             - str: The sentence text.
             - bool: Whether the media was served from cache.
     """
-    sentence_id = int(sentence_id)
+    try:
+        sentence_id = int(sentence_id)
+    except (TypeError, ValueError):
+        return False, "Invalid sentence ID", None, None, None, False
+
     if not (-9223372036854775808 <= sentence_id <= 9223372036854775807):
         return False, "Sentence not found", None, None, None, False
 
@@ -107,6 +121,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     start = max(0, target["start_time"] - pad_start)
     end = target["end_time"] + pad_end
     duration = end - start
+    if duration <= 0:
+        return False, "Requested clip range is empty. Adjust the padding values.", None, None, None, False
     midpoint = start + (duration / 2)
 
     # Grab overlapping text whose midpoint falls within the padded timeframe (matching UI logic)
@@ -123,16 +139,6 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     ).fetchall()
 
     if overlapping_sentences:
-        import re
-
-        def clean_text(text: str, lang: str) -> str:
-            if not text:
-                return ""
-            if lang in ("jpn", "ja", "jp", "zho", "zh"):
-                return re.sub(r"<br\s*/?>|[\r\n]+", "", text, flags=re.IGNORECASE)
-            else:
-                return re.sub(r"<br\s*/?>|[\r\n]+", " ", text, flags=re.IGNORECASE)
-
         lang = target["language"]
         combined_text = ""
 
@@ -156,14 +162,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                     prev_trimmed += "."
                 combined_text = prev_trimmed + " " + text_val
     else:
-        import re
-
-        text_val = target["text"] if target["text"] else ""
         lang = target["language"]
-        if lang in ("jpn", "ja", "jp", "zho", "zh"):
-            combined_text = re.sub(r"<br\s*/?>|[\r\n]+", "", text_val, flags=re.IGNORECASE)
-        else:
-            combined_text = re.sub(r"<br\s*/?>|[\r\n]+", " ", text_val, flags=re.IGNORECASE)
+        combined_text = clean_text(target["text"] if target["text"] else "", lang)
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
@@ -195,7 +195,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             "a",
             mkv_path,
         ]
-        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True)
+        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
 
         audio_stream_idx = 0
         if probe_res.returncode == 0:
@@ -250,7 +250,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=True,
+            check=True, timeout=120
         )
 
         # Extract Image
@@ -270,7 +270,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=True,
+            check=True, timeout=120
         )
 
         os.replace(audio_tmp, audio_out)
@@ -285,7 +285,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             False,
         )
     except Exception:
-        logging.exception("Media extraction failed for sentence %s", sentence_id)
+        logger.exception("Media extraction failed for sentence %s", sentence_id)
         if "audio_tmp" in locals() and os.path.exists(audio_tmp):
             try:
                 os.remove(audio_tmp)
@@ -509,7 +509,6 @@ def export_ankiconnect(
         if source_field and source_info:
             fields_to_update[source_field] = source_info
 
-        update_params = {"note": {"id": target_note_id, "fields": fields_to_update}}
 
         # Add media
         if audio_field and os.path.exists(audio_out):
@@ -536,6 +535,7 @@ def export_ankiconnect(
                 current = fields_to_update.get(image_field, "")
                 fields_to_update[image_field] = current + f'<img src="{actual_filename}">'
 
+        update_params = {"note": {"id": target_note_id, "fields": fields_to_update}}
         anki_request(anki_url, "updateNoteFields", **update_params)
 
         # Add tags if configured

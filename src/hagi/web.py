@@ -12,9 +12,9 @@ from pydantic import BaseModel, Field
 import json
 import logging
 
-import db
-import exporter
-import nadeshiko
+from . import db
+from . import exporter
+from . import nadeshiko
 
 
 logger = logging.getLogger(__name__)
@@ -77,14 +77,18 @@ if not _has_media_base_url:
         flush=True,
     )
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+TEMPLATES_DIR = os.path.join(BASE_DIR, "templates")
+STATIC_DIR = os.path.join(BASE_DIR, "static")
+
 # Ensure templates directory exists
-os.makedirs("templates", exist_ok=True)
-templates = Jinja2Templates(directory="templates")
+os.makedirs(TEMPLATES_DIR, exist_ok=True)
+templates = Jinja2Templates(directory=TEMPLATES_DIR)
 
 # Mount media folder so UI can serve extracted images/audio
 os.makedirs("media", exist_ok=True)
 app.mount("/media", StaticFiles(directory="media"), name="media")
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
