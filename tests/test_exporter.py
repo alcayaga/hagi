@@ -27,7 +27,8 @@ def test_extract_media(test_db):
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("subprocess.run") as mock_subrun,
         patch("os.replace"),
     ):
@@ -600,7 +601,10 @@ def test_cache_and_cleanup(test_db):
         # Test 1: First extraction
         with (
             patch("hagi.exporter.db.get_db", return_value=test_db),
-            patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+            patch(
+                "hagi.exporter.os.path.exists",
+                side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p
+            ),
             patch("subprocess.run") as mock_run,
         ):
             # Make sure ffprobe succeeds
@@ -808,3 +812,37 @@ def test_search_anki_notes_spaced_field():
 
         req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
         assert '"Example Sentence:test"' in req1["params"]["query"]
+
+def test_extract_media_fallback(test_db):
+    """Test that extract_media falls back to accurate seek if fast-seek fails."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=0),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        mock_subrun.return_value.returncode = 0
+        mock_subrun.return_value.stderr = "output file is empty"
+        mock_subrun.return_value.stdout = "{}"
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+
+        assert success is True
+
+        # Verify it ran 5 times (audio probe, audio, video probe, video fast-seek, video accurate-seek)
+        assert mock_subrun.call_count == 5
+
+        # The 5th call should be the accurate seek fallback (-i BEFORE -ss)
+        fallback_call_args = mock_subrun.call_args_list[4][0][0]
+        assert "ffmpeg" in fallback_call_args
+
+        # In accurate seek, -i should appear before -ss
+        i_idx = fallback_call_args.index("-i")
+        ss_idx = fallback_call_args.index("-ss")
+        assert i_idx < ss_idx
+
