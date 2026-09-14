@@ -352,13 +352,18 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
 
             acc_cmd.append(image_tmp)
             try:
-                subprocess.run(
+                acc_res = subprocess.run(
                     acc_cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,
                     check=True, timeout=300
                 )
+
+                # CodeRabbit Finding: Even accurate seek can fail to decode without crashing
+                if any(term in acc_res.stderr.lower() for term in ["corrupt decoded frame", "error while decoding"]):
+                    raise subprocess.CalledProcessError(0, acc_cmd, output="", stderr=acc_res.stderr)
+
             except subprocess.CalledProcessError as e:
                 logger.error(f"Accurate seek failed: {e.stderr}")
                 raise e

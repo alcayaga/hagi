@@ -855,3 +855,34 @@ def test_extract_media_fallback(test_db):
         ss_idx = fallback_call_args.index("-ss")
         assert i_idx < ss_idx
 
+def test_extract_media_fallback_accurate_corruption(test_db):
+    """Test that extract_media falls back and fails if accurate seek ALSO has a corrupted frame in stderr."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            from subprocess import CompletedProcess
+            cmd = args[0]
+            # Fast seek
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and cmd.index("-ss") < cmd.index("-i"):
+                return CompletedProcess(cmd, 0, stdout="{}", stderr="corrupt decoded frame")
+            # Accurate seek
+            if "ffmpeg" in cmd and "-i" in cmd and "-ss" in cmd and cmd.index("-i") < cmd.index("-ss"):
+                return CompletedProcess(cmd, 0, stdout="{}", stderr="error while decoding")
+            return CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+
+        # It should fail completely because accurate seek also had corruption in stderr
+        assert success is False
+        assert mock_subrun.call_count == 5
