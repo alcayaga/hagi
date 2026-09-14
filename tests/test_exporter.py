@@ -886,3 +886,37 @@ def test_extract_media_fallback_accurate_corruption(test_db):
         # It should fail completely because accurate seek also had corruption in stderr
         assert success is False
         assert mock_subrun.call_count == 5
+
+def test_extract_media_hdr_tonemapping(test_db):
+    """Test that extract_media correctly applies zscale tonemapping for HDR video."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            from subprocess import CompletedProcess
+            cmd = args[0]
+            if "ffprobe" in cmd and "v:0" in cmd:
+                # Return HDR metadata
+                return CompletedProcess(cmd, 0, stdout='{"streams": [{"color_transfer": "smpte2084"}]}', stderr="")
+            return CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+
+        assert success is True
+
+        # Verify the zscale filter was used in the fast-seek ffmpeg command
+        fast_seek_cmd = mock_subrun.call_args_list[3][0][0]
+        assert (
+            "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
+            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p" in fast_seek_cmd
+        )
