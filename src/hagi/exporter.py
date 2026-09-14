@@ -262,7 +262,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             "json",
             "-show_streams",
             "-select_streams",
-            "v:0",
+            "V:0",
             mkv_path,
         ]
         vid_res = subprocess.run(probe_vid_cmd, capture_output=True, text=True, timeout=60)
@@ -286,7 +286,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             "-i",
             mkv_path,
             "-map",
-            "0:v:0",
+            "0:V:0",
             "-vframes",
             "1",
             "-q:v",
@@ -336,7 +336,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 "-ss",
                 str(midpoint),
                 "-map",
-                "0:v:0",
+                "0:V:0",
                 "-vframes",
                 "1",
                 "-q:v",
