@@ -830,6 +830,7 @@ def test_extract_media_fallback(test_db):
         sid = sentence["id"]
 
         def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to simulate a fast-seek failure."""
             from subprocess import CompletedProcess
             cmd = args[0]
             # If it's the fast-seek ffmpeg command (has -ss BEFORE -i)
@@ -869,6 +870,7 @@ def test_extract_media_fallback_accurate_corruption(test_db):
         sid = sentence["id"]
 
         def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to simulate both fast-seek and accurate-seek failures."""
             from subprocess import CompletedProcess
             cmd = args[0]
             # Fast seek
@@ -901,6 +903,7 @@ def test_extract_media_hdr_tonemapping(test_db):
         sid = sentence["id"]
 
         def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to return HDR metadata from ffprobe."""
             from subprocess import CompletedProcess
             cmd = args[0]
             if "ffprobe" in cmd and "v:0" in cmd:
