@@ -105,7 +105,8 @@ def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_ma
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("subprocess.run", side_effect=mock_run_side_effect) as mock_subrun,
         patch("os.replace"),
     ):
@@ -415,7 +416,8 @@ def test_extract_media_concatenation(test_db):
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("subprocess.run"),
         patch("os.replace"),
     ):
@@ -489,11 +491,11 @@ def test_extract_media_external_subtitle(test_db):
 
         def mock_exists(path):
             """Mock os.path.exists so it only returns True for the stripped .mkv path."""
-            if path == "/fake/path/Belle (2021).mkv":
+            if path == "/fake/path/Belle (2021).mkv" or "tmp" in path:
                 return True
             return False
 
-        with patch("os.path.exists", side_effect=mock_exists):
+        with patch("os.path.exists", side_effect=mock_exists), patch("hagi.exporter.os.path.getsize", return_value=1024):
             success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
 
             # Since subprocess.run is mocked, we expect success because the video path resolved
@@ -503,22 +505,22 @@ def test_extract_media_external_subtitle(test_db):
         # Now test the fallback when no video matches the stripped path
         def mock_exists_fallback(path):
             """Mock os.path.exists so it falls back to .en.mkv and finds it."""
-            if path == "/fake/path/Belle (2021).en.mkv":
+            if path == "/fake/path/Belle (2021).en.mkv" or "tmp" in path:
                 return True
             return False
 
-        with patch("os.path.exists", side_effect=mock_exists_fallback):
+        with patch("os.path.exists", side_effect=mock_exists_fallback), patch("hagi.exporter.os.path.getsize", return_value=1024):
             success, msg, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
             assert success is True
 
         # Now test when both exist, stripped is preferred
         def mock_exists_both(path) -> bool:
             """Mock os.path.exists so it returns True for both the stripped and unstripped video paths."""
-            if path in ["/fake/path/Belle (2021).mkv", "/fake/path/Belle (2021).en.mkv"]:
+            if path in ["/fake/path/Belle (2021).mkv", "/fake/path/Belle (2021).en.mkv"] or "tmp" in path:
                 return True
             return False
 
-        with patch("os.path.exists", side_effect=mock_exists_both):
+        with patch("os.path.exists", side_effect=mock_exists_both), patch("hagi.exporter.os.path.getsize", return_value=1024):
             success, _, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
             assert success is True
             # Verify the stripped path was passed to ffprobe
@@ -683,7 +685,8 @@ def test_extract_media_exception_exposure(test_db):
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("hagi.exporter.os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("hagi.exporter.subprocess.run", side_effect=Exception("Secret Database Connection String Leaked")),
     ):
         sid = test_db.execute("SELECT id FROM sentences").fetchone()["id"]
@@ -819,7 +822,7 @@ def test_extract_media_fallback(test_db):
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
         patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
-        patch("hagi.exporter.os.path.getsize", return_value=0),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("subprocess.run") as mock_subrun,
         patch("os.replace"),
     ):

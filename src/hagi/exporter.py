@@ -351,12 +351,20 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 acc_cmd.extend(["-pix_fmt", "yuv420p"])
 
             acc_cmd.append(image_tmp)
-            subprocess.run(
-                acc_cmd,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True, timeout=300
-            )
+            try:
+                subprocess.run(
+                    acc_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=True, timeout=300
+                )
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Accurate seek failed: {e.stderr}")
+                raise e
+
+        if not os.path.exists(image_tmp) or os.path.getsize(image_tmp) == 0:
+            return False, "Failed to extract thumbnail image (output was empty or corrupt).", None, None, None, False
 
         os.replace(audio_tmp, audio_out)
         os.replace(image_tmp, image_out)
