@@ -829,9 +829,15 @@ def test_extract_media_fallback(test_db):
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
-        mock_subrun.return_value.returncode = 0
-        mock_subrun.return_value.stderr = "output file is empty"
-        mock_subrun.return_value.stdout = "{}"
+        def custom_subrun(*args, **kwargs):
+            from subprocess import CompletedProcess
+            cmd = args[0]
+            # If it's the fast-seek ffmpeg command (has -ss BEFORE -i)
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and cmd.index("-ss") < cmd.index("-i"):
+                return CompletedProcess(cmd, 0, stdout="{}", stderr="output file is empty")
+            return CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
 
         success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
 

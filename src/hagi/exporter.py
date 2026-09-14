@@ -364,6 +364,12 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 raise e
 
         if not os.path.exists(image_tmp) or os.path.getsize(image_tmp) == 0:
+            for tmp_path in (audio_tmp, image_tmp):
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
             return False, "Failed to extract thumbnail image (output was empty or corrupt).", None, None, None, False
 
         os.replace(audio_tmp, audio_out)
