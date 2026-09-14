@@ -951,3 +951,35 @@ def test_extract_media_cover_art(test_db):
         assert "V:0" in probe_cmd
         fast_seek_cmd = mock_subrun.call_args_list[3][0][0]
         assert "0:V:0" in fast_seek_cmd
+
+def test_extract_media_fallback_timeout(test_db):
+    """Test that extract_media falls back to accurate seek if fast seek times out."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to raise TimeoutExpired on fast-seek."""
+            import subprocess
+            cmd = args[0]
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and "-vframes" in cmd and cmd.index("-ss") < cmd.index("-i"):
+                raise subprocess.TimeoutExpired(cmd, 120)
+            return subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+        assert success is True
+
+        # Verify accurate seek was called
+        fallback_call_args = mock_subrun.call_args_list[4][0][0]
+        i_idx = fallback_call_args.index("-i")
+        ss_idx = fallback_call_args.index("-ss")
+        assert i_idx < ss_idx

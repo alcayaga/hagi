@@ -304,25 +304,32 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
         img_cmd.append(image_tmp)
 
         # Extract Image
-        img_res = subprocess.run(
-            img_cmd,
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=120
-        )
+        needs_fallback = False
+        try:
+            img_res = subprocess.run(
+                img_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120
+            )
 
-        # Open-GOP / Hi10P videos (like some anime rips) can produce corrupt frames
-        # when fast-seeking to a non-IDR keyframe. Check ffmpeg's stderr for corruption.
-        img_stderr = (img_res.stderr or "").lower()
-        if (
-            img_res.returncode != 0
-            or "corrupt decoded frame" in img_stderr
-            or "error while decoding" in img_stderr
-            or "output file is empty" in img_stderr
-            or not os.path.exists(image_tmp)
-            or os.path.getsize(image_tmp) == 0
-        ):
+            # Open-GOP / Hi10P videos (like some anime rips) can produce corrupt frames
+            # when fast-seeking to a non-IDR keyframe. Check ffmpeg's stderr for corruption.
+            img_stderr = (img_res.stderr or "").lower()
+            if (
+                img_res.returncode != 0
+                or "corrupt decoded frame" in img_stderr
+                or "error while decoding" in img_stderr
+                or "output file is empty" in img_stderr
+                or not os.path.exists(image_tmp)
+                or os.path.getsize(image_tmp) == 0
+            ):
+                needs_fallback = True
+        except subprocess.TimeoutExpired:
+            needs_fallback = True
+
+        if needs_fallback:
             logger.warning(
                 "Fast-seek image extraction produced corrupt frames. "
                 "Falling back to accurate seek (this may take a while)..."
