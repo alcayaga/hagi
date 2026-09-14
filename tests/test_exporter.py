@@ -27,13 +27,18 @@ def test_extract_media(test_db):
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("subprocess.run") as mock_subrun,
         patch("os.replace"),
     ):
         # Get the ID of the mock sentence
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
+
+        mock_subrun.return_value.returncode = 0
+        mock_subrun.return_value.stderr = ""
+        mock_subrun.return_value.stdout = "{}"
 
         success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
 
@@ -44,8 +49,8 @@ def test_extract_media(test_db):
 
         assert text == "This is a test sentence."
 
-        # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)
-        assert mock_subrun.call_count == 3
+        # Verify subprocess.run was called four times (ffprobe audio, ffmpeg audio, ffprobe video, ffmpeg video)
+        assert mock_subrun.call_count == 4
 
         # Verify the ffprobe command
         ffprobe_call_args = mock_subrun.call_args_list[0][0][0]
@@ -100,7 +105,8 @@ def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_ma
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("subprocess.run", side_effect=mock_run_side_effect) as mock_subrun,
         patch("os.replace"),
     ):
@@ -410,7 +416,8 @@ def test_extract_media_concatenation(test_db):
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("subprocess.run"),
         patch("os.replace"),
     ):
@@ -484,11 +491,11 @@ def test_extract_media_external_subtitle(test_db):
 
         def mock_exists(path):
             """Mock os.path.exists so it only returns True for the stripped .mkv path."""
-            if path == "/fake/path/Belle (2021).mkv":
+            if path == "/fake/path/Belle (2021).mkv" or "tmp" in path:
                 return True
             return False
 
-        with patch("os.path.exists", side_effect=mock_exists):
+        with patch("os.path.exists", side_effect=mock_exists), patch("hagi.exporter.os.path.getsize", return_value=1024):
             success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
 
             # Since subprocess.run is mocked, we expect success because the video path resolved
@@ -498,22 +505,22 @@ def test_extract_media_external_subtitle(test_db):
         # Now test the fallback when no video matches the stripped path
         def mock_exists_fallback(path):
             """Mock os.path.exists so it falls back to .en.mkv and finds it."""
-            if path == "/fake/path/Belle (2021).en.mkv":
+            if path == "/fake/path/Belle (2021).en.mkv" or "tmp" in path:
                 return True
             return False
 
-        with patch("os.path.exists", side_effect=mock_exists_fallback):
+        with patch("os.path.exists", side_effect=mock_exists_fallback), patch("hagi.exporter.os.path.getsize", return_value=1024):
             success, msg, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
             assert success is True
 
         # Now test when both exist, stripped is preferred
         def mock_exists_both(path) -> bool:
             """Mock os.path.exists so it returns True for both the stripped and unstripped video paths."""
-            if path in ["/fake/path/Belle (2021).mkv", "/fake/path/Belle (2021).en.mkv"]:
+            if path in ["/fake/path/Belle (2021).mkv", "/fake/path/Belle (2021).en.mkv"] or "tmp" in path:
                 return True
             return False
 
-        with patch("os.path.exists", side_effect=mock_exists_both):
+        with patch("os.path.exists", side_effect=mock_exists_both), patch("hagi.exporter.os.path.getsize", return_value=1024):
             success, _, _, _, _, _ = exporter.extract_media(sid, "/fake/out")
             assert success is True
             # Verify the stripped path was passed to ffprobe
@@ -596,7 +603,10 @@ def test_cache_and_cleanup(test_db):
         # Test 1: First extraction
         with (
             patch("hagi.exporter.db.get_db", return_value=test_db),
-            patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+            patch(
+                "hagi.exporter.os.path.exists",
+                side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p
+            ),
             patch("subprocess.run") as mock_run,
         ):
             # Make sure ffprobe succeeds
@@ -616,6 +626,7 @@ def test_cache_and_cleanup(test_db):
                         f.write("image")
                 res = MagicMock()
                 res.returncode = 0
+                res.stderr = ""
                 return res
 
             mock_run.side_effect = mock_side_effect
@@ -623,7 +634,7 @@ def test_cache_and_cleanup(test_db):
             success, msg, a_out, i_out, text, is_cached = exporter.extract_media(sid, tmpdir)
             assert success is True
             assert is_cached is False
-            assert mock_run.call_count == 3
+            assert mock_run.call_count == 4
 
         # Change mtime of generated files back in time
         import time
@@ -674,7 +685,8 @@ def test_extract_media_exception_exposure(test_db):
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("hagi.exporter.os.makedirs"),
-        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
         patch("hagi.exporter.subprocess.run", side_effect=Exception("Secret Database Connection String Leaked")),
     ):
         sid = test_db.execute("SELECT id FROM sentences").fetchone()["id"]
@@ -803,3 +815,171 @@ def test_search_anki_notes_spaced_field():
 
         req1 = json.loads(mock_urlopen.call_args_list[0][0][0].data.decode("utf-8"))
         assert '"Example Sentence:test"' in req1["params"]["query"]
+
+def test_extract_media_fallback(test_db):
+    """Test that extract_media falls back to accurate seek if fast-seek fails."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to simulate a fast-seek failure."""
+            from subprocess import CompletedProcess
+            cmd = args[0]
+            # If it's the fast-seek ffmpeg command (has -ss BEFORE -i)
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and cmd.index("-ss") < cmd.index("-i"):
+                return CompletedProcess(cmd, 0, stdout="{}", stderr="output file is empty")
+            return CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+
+        assert success is True
+
+        # Verify it ran 5 times (audio probe, audio, video probe, video fast-seek, video accurate-seek)
+        assert mock_subrun.call_count == 5
+
+        # The 5th call should be the accurate seek fallback (-i BEFORE -ss)
+        fallback_call_args = mock_subrun.call_args_list[4][0][0]
+        assert "ffmpeg" in fallback_call_args
+
+        # In accurate seek, -i should appear before -ss
+        i_idx = fallback_call_args.index("-i")
+        ss_idx = fallback_call_args.index("-ss")
+        assert i_idx < ss_idx
+
+def test_extract_media_fallback_accurate_corruption(test_db):
+    """Test that extract_media falls back and fails if accurate seek ALSO has a corrupted frame in stderr."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to simulate both fast-seek and accurate-seek failures."""
+            from subprocess import CompletedProcess
+            cmd = args[0]
+            # Fast seek
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and cmd.index("-ss") < cmd.index("-i"):
+                return CompletedProcess(cmd, 0, stdout="{}", stderr="corrupt decoded frame")
+            # Accurate seek
+            if "ffmpeg" in cmd and "-i" in cmd and "-ss" in cmd and cmd.index("-i") < cmd.index("-ss"):
+                return CompletedProcess(cmd, 0, stdout="{}", stderr="error while decoding")
+            return CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+
+        # It should fail completely because accurate seek also had corruption in stderr
+        assert success is False
+        assert mock_subrun.call_count == 5
+
+def test_extract_media_hdr_tonemapping(test_db):
+    """Test that extract_media correctly applies zscale tonemapping for HDR video."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to return HDR metadata from ffprobe."""
+            from subprocess import CompletedProcess
+            cmd = args[0]
+            if "ffprobe" in cmd and "V:0" in cmd:
+                # Return HDR metadata
+                return CompletedProcess(cmd, 0, stdout='{"streams": [{"color_transfer": "smpte2084"}]}', stderr="")
+            return CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+
+        assert success is True
+
+        # Verify the zscale filter was used in the fast-seek ffmpeg command
+        fast_seek_cmd = mock_subrun.call_args_list[3][0][0]
+        assert (
+            "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
+            "zscale=t=bt709:m=bt709:r=tv,format=yuv420p" in fast_seek_cmd
+        )
+
+def test_extract_media_cover_art(test_db):
+    """Test that extract_media excludes cover art by using V:0 instead of v:0."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run for cover art test."""
+            from subprocess import CompletedProcess
+            return CompletedProcess(args[0], 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+        assert success is True
+
+        probe_cmd = mock_subrun.call_args_list[2][0][0]
+        assert "V:0" in probe_cmd
+        fast_seek_cmd = mock_subrun.call_args_list[3][0][0]
+        assert "0:V:0" in fast_seek_cmd
+
+def test_extract_media_fallback_timeout(test_db):
+    """Test that extract_media falls back to accurate seek if fast seek times out."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        def custom_subrun(*args, **kwargs):
+            """Mock subprocess.run to raise TimeoutExpired on fast-seek."""
+            import subprocess
+            cmd = args[0]
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and "-vframes" in cmd and cmd.index("-ss") < cmd.index("-i"):
+                raise subprocess.TimeoutExpired(cmd, 120)
+            return subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr="")
+
+        mock_subrun.side_effect = custom_subrun
+
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
+        assert success is True
+
+        # Verify accurate seek was called
+        fallback_call_args = mock_subrun.call_args_list[4][0][0]
+        i_idx = fallback_call_args.index("-i")
+        ss_idx = fallback_call_args.index("-ss")
+        assert i_idx < ss_idx

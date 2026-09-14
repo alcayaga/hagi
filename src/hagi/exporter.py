@@ -253,25 +253,136 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             check=True, timeout=120
         )
 
+        # Probe for video stream color info to detect HDR
+        probe_vid_cmd = [
+            "ffprobe",
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_streams",
+            "-select_streams",
+            "V:0",
+            mkv_path,
+        ]
+        vid_res = subprocess.run(probe_vid_cmd, capture_output=True, text=True, timeout=60)
+        is_hdr = False
+        if vid_res.returncode == 0:
+            try:
+                v_streams = json.loads(vid_res.stdout).get("streams", [])
+                if v_streams:
+                    color_trc = v_streams[0].get("color_transfer", "").lower()
+                    if color_trc in ("smpte2084", "arib-std-b67"):
+                        is_hdr = True
+            except Exception:
+                pass
+
+        # Build Image extraction command
+        img_cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(midpoint),
+            "-i",
+            mkv_path,
+            "-map",
+            "0:V:0",
+            "-vframes",
+            "1",
+            "-q:v",
+            "2",
+        ]
+
+        if is_hdr:
+            img_cmd.extend([
+                "-vf",
+                "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+            ])
+        else:
+            img_cmd.extend(["-pix_fmt", "yuv420p"])
+
+        img_cmd.append(image_tmp)
+
         # Extract Image
-        subprocess.run(
-            [
+        needs_fallback = False
+        try:
+            img_res = subprocess.run(
+                img_cmd,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=120
+            )
+
+            # Open-GOP / Hi10P videos (like some anime rips) can produce corrupt frames
+            # when fast-seeking to a non-IDR keyframe. Check ffmpeg's stderr for corruption.
+            img_stderr = (img_res.stderr or "").lower()
+            if (
+                img_res.returncode != 0
+                or "corrupt decoded frame" in img_stderr
+                or "error while decoding" in img_stderr
+                or "output file is empty" in img_stderr
+                or not os.path.exists(image_tmp)
+                or os.path.getsize(image_tmp) == 0
+            ):
+                needs_fallback = True
+        except subprocess.TimeoutExpired:
+            needs_fallback = True
+
+        if needs_fallback:
+            logger.warning(
+                "Fast-seek image extraction produced corrupt frames. "
+                "Falling back to accurate seek (this may take a while)..."
+            )
+            # Build accurate seek command (-i BEFORE -ss)
+            acc_cmd = [
                 "ffmpeg",
                 "-y",
-                "-ss",
-                str(midpoint),
                 "-i",
                 mkv_path,
+                "-ss",
+                str(midpoint),
+                "-map",
+                "0:V:0",
                 "-vframes",
                 "1",
                 "-q:v",
                 "2",
-                image_tmp,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True, timeout=120
-        )
+            ]
+            if is_hdr:
+                acc_cmd.extend([
+                    "-vf",
+                    "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+                ])
+            else:
+                acc_cmd.extend(["-pix_fmt", "yuv420p"])
+
+            acc_cmd.append(image_tmp)
+            try:
+                acc_res = subprocess.run(
+                    acc_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=True, timeout=300
+                )
+
+                # CodeRabbit Finding: Even accurate seek can fail to decode without crashing
+                if any(term in acc_res.stderr.lower() for term in ["corrupt decoded frame", "error while decoding"]):
+                    raise subprocess.CalledProcessError(0, acc_cmd, output="", stderr=acc_res.stderr)
+
+            except subprocess.CalledProcessError as e:
+                logger.error(f"Accurate seek failed: {e.stderr}")
+                raise e
+
+        if not os.path.exists(image_tmp) or os.path.getsize(image_tmp) == 0:
+            for tmp_path in (audio_tmp, image_tmp):
+                if os.path.exists(tmp_path):
+                    try:
+                        os.remove(tmp_path)
+                    except OSError:
+                        pass
+            return False, "Failed to extract thumbnail image (output was empty or corrupt).", None, None, None, False
 
         os.replace(audio_tmp, audio_out)
         os.replace(image_tmp, image_out)
