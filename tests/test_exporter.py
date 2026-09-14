@@ -35,6 +35,10 @@ def test_extract_media(test_db):
         sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
         sid = sentence["id"]
 
+        mock_subrun.return_value.returncode = 0
+        mock_subrun.return_value.stderr = ""
+        mock_subrun.return_value.stdout = "{}"
+
         success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
 
         assert success is True
@@ -44,8 +48,8 @@ def test_extract_media(test_db):
 
         assert text == "This is a test sentence."
 
-        # Verify subprocess.run was called three times (ffprobe, ffmpeg audio, ffmpeg video)
-        assert mock_subrun.call_count == 3
+        # Verify subprocess.run was called four times (ffprobe audio, ffmpeg audio, ffprobe video, ffmpeg video)
+        assert mock_subrun.call_count == 4
 
         # Verify the ffprobe command
         ffprobe_call_args = mock_subrun.call_args_list[0][0][0]
@@ -616,6 +620,7 @@ def test_cache_and_cleanup(test_db):
                         f.write("image")
                 res = MagicMock()
                 res.returncode = 0
+                res.stderr = ""
                 return res
 
             mock_run.side_effect = mock_side_effect
@@ -623,7 +628,7 @@ def test_cache_and_cleanup(test_db):
             success, msg, a_out, i_out, text, is_cached = exporter.extract_media(sid, tmpdir)
             assert success is True
             assert is_cached is False
-            assert mock_run.call_count == 3
+            assert mock_run.call_count == 4
 
         # Change mtime of generated files back in time
         import time
