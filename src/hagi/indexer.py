@@ -164,10 +164,10 @@ def get_plex_metadata(file_path):
                 suffix_parts = suffix.split("-")
                 base_suffix = suffix_parts[0]
 
-                # Check if it's a valid base locale. If it has a region, ensure the region is <= 3 chars.
+                # Check if it's a valid base locale. If it has a region, ensure the region is 1-3 chars.
                 is_valid = base_suffix in SUPPORTED_LOCALES
                 if len(suffix_parts) > 1:
-                    is_valid = is_valid and len(suffix_parts[1]) <= 3 and len(suffix_parts) == 2
+                    is_valid = is_valid and 1 <= len(suffix_parts[1]) <= 3 and len(suffix_parts) == 2
 
                 if is_valid:
                     stripped = parts[0]
