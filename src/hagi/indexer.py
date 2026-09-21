@@ -136,7 +136,7 @@ def build_plex_cache():
         print(f"Error building Plex cache: {e}")
 
 
-SUPPORTED_LOCALES = {"en", "eng", "ja", "jpn", "es", "spa", "pt", "por", "fr", "fre", "de", "ger", "it", "ita", "ru", "rus", "zh", "chi", "ko", "kor", "ar", "ara"}
+SUPPORTED_LOCALES = {"en", "eng", "ja", "jpn", "es", "spa", "pt", "por", "fr", "fre", "fra", "de", "ger", "deu", "it", "ita", "ru", "rus", "zh", "chi", "zho", "ko", "kor", "ar", "ara"}
 
 def get_plex_metadata(file_path):
     """Get Plex metadata, accounting for external subtitle language codes.
