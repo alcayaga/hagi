@@ -104,19 +104,25 @@ def build_plex_cache():
                     for media in movie.media:
                         for part in media.parts:
                             cache_key = os.path.splitext(part.file)[0]
-                            plex_path_cache[cache_key] = (movie.title, 1, 1, movie.title)
+                            base_key = os.path.basename(cache_key)
+                            val = (movie.title, 1, 1, movie.title)
+                            plex_path_cache[cache_key] = val
+                            plex_path_cache[base_key] = val
             elif section.type == "show":
                 episodes = section.search(libtype="episode")
                 for ep in episodes:
                     for media in ep.media:
                         for part in media.parts:
                             cache_key = os.path.splitext(part.file)[0]
-                            plex_path_cache[cache_key] = (
+                            base_key = os.path.basename(cache_key)
+                            val = (
                                 ep.grandparentTitle,
                                 ep.parentIndex,
                                 ep.index,
                                 ep.title,
                             )
+                            plex_path_cache[cache_key] = val
+                            plex_path_cache[base_key] = val
         _plex_cache_built = True
     except Exception as e:
         print(f"Error building Plex cache: {e}")
@@ -135,11 +141,14 @@ def get_plex_metadata(file_path):
     info = plex_path_cache.get(cache_key)
     if not info:
         base_name = os.path.basename(cache_key)
-        if "." in base_name:
+        info = plex_path_cache.get(base_name)
+        if not info and "." in base_name:
             # Strip language code (e.g. .ja from .ja.srt)
             stripped = base_name.rsplit(".", 1)[0]
             cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
             info = plex_path_cache.get(cache_key_stripped)
+            if not info:
+                info = plex_path_cache.get(stripped)
     return info or (None, None, None, None)
 
 
