@@ -473,9 +473,13 @@ def test_get_plex_metadata_external_subtitles():
     res5 = indexer.get_plex_metadata("/different/mount/Detective Conan - S34E27.en.srt")
     assert res5 == ("Detective Conan", 34, 27, "Witness")
 
+    # Regional locale should be stripped
+    res6 = indexer.get_plex_metadata("/different/mount/Detective Conan - S34E27.en-US.srt")
+    assert res6 == ("Detective Conan", 34, 27, "Witness")
+
     # Non-locale suffix should NOT inherit metadata
-    res6 = indexer.get_plex_metadata("/fake/path/Belle (2021).commentary.srt")
-    assert res6 == (None, None, None, None)
+    res7 = indexer.get_plex_metadata("/fake/path/Belle (2021).commentary.srt")
+    assert res7 == (None, None, None, None)
 
 
 def test_load_and_sanitize_subs():

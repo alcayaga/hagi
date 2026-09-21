@@ -154,12 +154,17 @@ def get_plex_metadata(file_path):
         info = plex_path_cache.get(base_name)
         if not info and "." in base_name:
             parts = base_name.rsplit(".", 1)
-            if len(parts) == 2 and parts[1].lower() in SUPPORTED_LOCALES:
-                stripped = parts[0]
-                cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
-                info = plex_path_cache.get(cache_key_stripped)
-                if not info:
-                    info = plex_path_cache.get(stripped)
+            if len(parts) == 2:
+                # Support base locales (e.g., 'en') and regional locales (e.g., 'en-us', 'pt_br')
+                suffix = parts[1].lower().replace("_", "-")
+                base_suffix = suffix.split("-")[0]
+                
+                if base_suffix in SUPPORTED_LOCALES:
+                    stripped = parts[0]
+                    cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
+                    info = plex_path_cache.get(cache_key_stripped)
+                    if not info:
+                        info = plex_path_cache.get(stripped)
     return info or (None, None, None, None)
 
 
