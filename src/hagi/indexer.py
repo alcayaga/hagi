@@ -107,7 +107,11 @@ def build_plex_cache():
                             base_key = os.path.basename(cache_key)
                             val = (movie.title, 1, 1, movie.title)
                             plex_path_cache[cache_key] = val
-                            plex_path_cache[base_key] = val
+                            if base_key in plex_path_cache:
+                                if plex_path_cache[base_key] != val:
+                                    plex_path_cache[base_key] = None
+                            else:
+                                plex_path_cache[base_key] = val
             elif section.type == "show":
                 episodes = section.search(libtype="episode")
                 for ep in episodes:
@@ -122,11 +126,17 @@ def build_plex_cache():
                                 ep.title,
                             )
                             plex_path_cache[cache_key] = val
-                            plex_path_cache[base_key] = val
+                            if base_key in plex_path_cache:
+                                if plex_path_cache[base_key] != val:
+                                    plex_path_cache[base_key] = None
+                            else:
+                                plex_path_cache[base_key] = val
         _plex_cache_built = True
     except Exception as e:
         print(f"Error building Plex cache: {e}")
 
+
+SUPPORTED_LOCALES = {"en", "eng", "ja", "jpn", "es", "spa", "pt", "por", "fr", "fre", "de", "ger", "it", "ita", "ru", "rus", "zh", "chi", "ko", "kor", "ar", "ara"}
 
 def get_plex_metadata(file_path):
     """Get Plex metadata, accounting for external subtitle language codes.
@@ -143,12 +153,13 @@ def get_plex_metadata(file_path):
         base_name = os.path.basename(cache_key)
         info = plex_path_cache.get(base_name)
         if not info and "." in base_name:
-            # Strip language code (e.g. .ja from .ja.srt)
-            stripped = base_name.rsplit(".", 1)[0]
-            cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
-            info = plex_path_cache.get(cache_key_stripped)
-            if not info:
-                info = plex_path_cache.get(stripped)
+            parts = base_name.rsplit(".", 1)
+            if len(parts) == 2 and parts[1].lower() in SUPPORTED_LOCALES:
+                stripped = parts[0]
+                cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
+                info = plex_path_cache.get(cache_key_stripped)
+                if not info:
+                    info = plex_path_cache.get(stripped)
     return info or (None, None, None, None)
 
 
