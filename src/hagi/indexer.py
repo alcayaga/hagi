@@ -155,8 +155,9 @@ def get_plex_metadata(file_path):
     info = plex_path_cache.get(cache_key)
     if not info:
         base_name = os.path.basename(cache_key)
-        info = plex_path_cache.get(base_name)
-        if not info and "." in base_name:
+        if base_name in plex_path_cache:
+            info = plex_path_cache[base_name]
+        elif "." in base_name:
             parts = base_name.rsplit(".", 1)
             if len(parts) == 2:
                 # Support base locales (e.g., 'en') and regional locales (e.g., 'en-us', 'pt_br')
