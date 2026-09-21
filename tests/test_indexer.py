@@ -485,6 +485,13 @@ def test_get_plex_metadata_external_subtitles():
     res8 = indexer.get_plex_metadata("/different/mount/Detective Conan - S34E27.en-commentary.srt")
     assert res8 == (None, None, None, None)
 
+    # Invalid regional suffixes should NOT inherit metadata
+    res9 = indexer.get_plex_metadata("/different/mount/Movie.en-a.srt")
+    assert res9 == (None, None, None, None)
+
+    res10 = indexer.get_plex_metadata("/different/mount/Movie.en-abc.srt")
+    assert res10 == (None, None, None, None)
+
 
 def test_load_and_sanitize_subs():
     """Ensure load_and_sanitize_subs clamps negative timestamps to 0 and parses successfully."""
