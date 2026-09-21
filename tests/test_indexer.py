@@ -481,6 +481,10 @@ def test_get_plex_metadata_external_subtitles():
     res7 = indexer.get_plex_metadata("/fake/path/Belle (2021).commentary.srt")
     assert res7 == (None, None, None, None)
 
+    # Malformed tail should NOT inherit metadata
+    res8 = indexer.get_plex_metadata("/different/mount/Detective Conan - S34E27.en-commentary.srt")
+    assert res8 == (None, None, None, None)
+
 
 def test_load_and_sanitize_subs():
     """Ensure load_and_sanitize_subs clamps negative timestamps to 0 and parses successfully."""

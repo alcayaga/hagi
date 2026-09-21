@@ -983,3 +983,29 @@ def test_extract_media_fallback_timeout(test_db):
         i_idx = fallback_call_args.index("-i")
         ss_idx = fallback_call_args.index("-ss")
         assert i_idx < ss_idx
+
+
+@patch("urllib.request.urlopen")
+@patch("subprocess.run")
+def test_anki_request_curl_fallback(mock_subrun, mock_urlopen):
+    """Test that anki_request falls back to curl on Errno 65."""
+    import urllib.error
+
+    # Simulate Errno 65 from urllib
+    mock_urlopen.side_effect = urllib.error.URLError("[Errno 65] No route to host")
+
+    # Mock successful curl fallback
+    mock_subrun.return_value = MagicMock(
+        returncode=0,
+        stdout=b'{"result": "success", "error": null}'
+    )
+
+    from hagi.exporter import anki_request
+    res = anki_request("http://localhost:8765", "deckNames")
+
+    assert res == "success"
+    mock_subrun.assert_called_once()
+
+    # Verify curl payload was passed correctly via input
+    call_kwargs = mock_subrun.call_args.kwargs
+    assert b"deckNames" in call_kwargs["input"]

@@ -34,6 +34,7 @@ def anki_request(anki_url, action, timeout=10.0, **params):
         # macOS Local Network Privacy blocks background Python daemons (e.g. pm2) from reaching
         # LAN IPs, causing Errno 65 (No route to host). Apple's native curl is exempt.
         if "No route to host" in str(e) or "Errno 65" in str(e) or "Host is down" in str(e):
+            logging.warning(f"urllib AnkiConnect request failed: {e}. Attempting curl fallback...")
             try:
                 curl_cmd = [
                     "curl", "-s", "-X", "POST",

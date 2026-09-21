@@ -136,7 +136,11 @@ def build_plex_cache():
         print(f"Error building Plex cache: {e}")
 
 
-SUPPORTED_LOCALES = {"en", "eng", "ja", "jpn", "es", "spa", "pt", "por", "fr", "fre", "fra", "de", "ger", "deu", "it", "ita", "ru", "rus", "zh", "chi", "zho", "ko", "kor", "ar", "ara"}
+SUPPORTED_LOCALES = {
+    "en", "eng", "ja", "jp", "jpn", "es", "spa", "pt", "por", "fr", "fre", "fra",
+    "de", "ger", "deu", "it", "ita", "ru", "rus", "zh", "chi", "zho", "ko", "kor",
+    "ar", "ara"
+}
 
 def get_plex_metadata(file_path):
     """Get Plex metadata, accounting for external subtitle language codes.
@@ -157,9 +161,15 @@ def get_plex_metadata(file_path):
             if len(parts) == 2:
                 # Support base locales (e.g., 'en') and regional locales (e.g., 'en-us', 'pt_br')
                 suffix = parts[1].lower().replace("_", "-")
-                base_suffix = suffix.split("-")[0]
-                
-                if base_suffix in SUPPORTED_LOCALES:
+                suffix_parts = suffix.split("-")
+                base_suffix = suffix_parts[0]
+
+                # Check if it's a valid base locale. If it has a region, ensure the region is <= 3 chars.
+                is_valid = base_suffix in SUPPORTED_LOCALES
+                if len(suffix_parts) > 1:
+                    is_valid = is_valid and len(suffix_parts[1]) <= 3 and len(suffix_parts) == 2
+
+                if is_valid:
                     stripped = parts[0]
                     cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
                     info = plex_path_cache.get(cache_key_stripped)
