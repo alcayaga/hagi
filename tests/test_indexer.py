@@ -486,6 +486,7 @@ def test_get_plex_metadata_external_subtitles():
     assert res8 == (None, None, None, None)
 
     # Invalid regional suffixes should NOT inherit metadata
+    indexer.plex_path_cache["Movie"] = ("Mock Movie", None, None, "Mock Title")
     res9 = indexer.get_plex_metadata("/different/mount/Movie.en-a.srt")
     assert res9 == (None, None, None, None)
 
