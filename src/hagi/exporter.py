@@ -30,8 +30,30 @@ def anki_request(anki_url, action, timeout=10.0, **params):
     try:
         with urllib.request.urlopen(req, timeout=timeout) as response:
             res = json.loads(response.read().decode("utf-8"))
+    except urllib.error.URLError as e:
+        # macOS Local Network Privacy blocks background Python daemons (e.g. pm2) from reaching
+        # LAN IPs, causing Errno 65 (No route to host). Apple's native curl is exempt.
+        if "No route to host" in str(e) or "Errno 65" in str(e) or "Host is down" in str(e):
+            logging.warning(f"urllib AnkiConnect request failed: {e}. Attempting curl fallback...")
+            try:
+                curl_cmd = [
+                    "curl", "-s", "-X", "POST",
+                    "-H", "Content-Type: application/json",
+                    "--data-binary", "@-",
+                    anki_url
+                ]
+                proc = subprocess.run(curl_cmd, input=req_data, capture_output=True, timeout=timeout)
+                if proc.returncode == 0:
+                    res = json.loads(proc.stdout.decode("utf-8"))
+                else:
+                    raise Exception(f"AnkiConnect error: {e} (curl fallback also failed: {proc.stderr.decode('utf-8')})")
+            except Exception as curl_err:
+                raise Exception(f"AnkiConnect error: {e} (curl fallback exception: {curl_err})")
+        else:
+            raise Exception(f"AnkiConnect error: {e}")
     except Exception as e:
         raise Exception(f"AnkiConnect error: {e}")
+
     if res.get("error"):
         raise Exception(f"AnkiConnect error: {res['error']}")
     return res.get("result")

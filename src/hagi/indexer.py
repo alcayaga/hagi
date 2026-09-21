@@ -104,23 +104,43 @@ def build_plex_cache():
                     for media in movie.media:
                         for part in media.parts:
                             cache_key = os.path.splitext(part.file)[0]
-                            plex_path_cache[cache_key] = (movie.title, 1, 1, movie.title)
+                            base_key = os.path.basename(cache_key)
+                            val = (movie.title, 1, 1, movie.title)
+                            plex_path_cache[cache_key] = val
+                            if base_key in plex_path_cache:
+                                if plex_path_cache[base_key] != val:
+                                    plex_path_cache[base_key] = None
+                            else:
+                                plex_path_cache[base_key] = val
             elif section.type == "show":
                 episodes = section.search(libtype="episode")
                 for ep in episodes:
                     for media in ep.media:
                         for part in media.parts:
                             cache_key = os.path.splitext(part.file)[0]
-                            plex_path_cache[cache_key] = (
+                            base_key = os.path.basename(cache_key)
+                            val = (
                                 ep.grandparentTitle,
                                 ep.parentIndex,
                                 ep.index,
                                 ep.title,
                             )
+                            plex_path_cache[cache_key] = val
+                            if base_key in plex_path_cache:
+                                if plex_path_cache[base_key] != val:
+                                    plex_path_cache[base_key] = None
+                            else:
+                                plex_path_cache[base_key] = val
         _plex_cache_built = True
     except Exception as e:
         print(f"Error building Plex cache: {e}")
 
+
+SUPPORTED_LOCALES = {
+    "en", "eng", "ja", "jp", "jpn", "es", "spa", "pt", "por", "fr", "fre", "fra",
+    "de", "ger", "deu", "it", "ita", "ru", "rus", "zh", "chi", "zho", "ko", "kor",
+    "ar", "ara"
+}
 
 def get_plex_metadata(file_path):
     """Get Plex metadata, accounting for external subtitle language codes.
@@ -135,11 +155,29 @@ def get_plex_metadata(file_path):
     info = plex_path_cache.get(cache_key)
     if not info:
         base_name = os.path.basename(cache_key)
-        if "." in base_name:
-            # Strip language code (e.g. .ja from .ja.srt)
-            stripped = base_name.rsplit(".", 1)[0]
-            cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
-            info = plex_path_cache.get(cache_key_stripped)
+        if base_name in plex_path_cache:
+            info = plex_path_cache[base_name]
+        elif "." in base_name:
+            parts = base_name.rsplit(".", 1)
+            if len(parts) == 2:
+                # Support base locales (e.g., 'en') and regional locales (e.g., 'en-us', 'pt_br')
+                suffix = parts[1].lower().replace("_", "-")
+                suffix_parts = suffix.split("-")
+                base_suffix = suffix_parts[0]
+
+                # Check if it's a valid base locale. If it has a region, ensure it is 2-letter alpha or 3-digit numeric
+                is_valid = base_suffix in SUPPORTED_LOCALES
+                if len(suffix_parts) > 1:
+                    region = suffix_parts[1]
+                    valid_region = (len(region) == 2 and region.isalpha()) or (len(region) == 3 and region.isdigit())
+                    is_valid = is_valid and valid_region and len(suffix_parts) == 2
+
+                if is_valid:
+                    stripped = parts[0]
+                    cache_key_stripped = os.path.join(os.path.dirname(file_path), stripped)
+                    info = plex_path_cache.get(cache_key_stripped)
+                    if not info:
+                        info = plex_path_cache.get(stripped)
     return info or (None, None, None, None)
 
 
