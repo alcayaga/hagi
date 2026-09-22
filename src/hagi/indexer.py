@@ -567,7 +567,7 @@ def refresh_file(file_path: str):
         try:
             subs = load_and_sanitize_subs(abs_path, encoding=enc)
             break
-        except UnicodeDecodeError:
+        except UnicodeError:
             continue
         except Exception as e:
             print(f"Error parsing subtitle file {abs_path}: {e}")
@@ -577,20 +577,17 @@ def refresh_file(file_path: str):
         print(f"Failed to read subtitle file {abs_path} with known encodings.")
         return False
 
-    new_lang = detect_language(subs)
-
     # Parse new sentences
     new_sentences = []
     for line in subs:
         text = line.plaintext.strip()
         if text:
-            new_sentences.append(
-                {"language": new_lang, "start_time": line.start / 1000.0, "end_time": line.end / 1000.0, "text": text}
-            )
+            new_sentences.append({"start_time": line.start / 1000.0, "end_time": line.end / 1000.0, "text": text})
 
     # Fetch existing sentences (chronologically ordered for the monotonic DP alignment)
     existing = conn.execute(
-        "SELECT id, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, end_time, id", (media_id,)
+        "SELECT id, language, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, end_time, id",
+        (media_id,),
     ).fetchall()
 
     existing_list = [dict(row) for row in existing]
@@ -600,9 +597,13 @@ def refresh_file(file_path: str):
 
     # We use a banded dynamic programming approach to find the optimal monotonic alignment
     # between the new and existing sentences. A full N x M grid would use quadratic memory,
-    # so we restrict the search window (j) around the current index (i) since valid matches
-    # are bounded by REFRESH_THRESHOLD_SECONDS (max a few sentences apart).
-    WINDOW = 50
+    # so we restrict the search window (j) around the current index (i) based on time.
+    # Since subtitles use absolute time, matching lines must have similar timestamps regardless
+    # of how many lines were inserted or deleted before them.
+    import bisect
+
+    existing_times = [ex["start_time"] for ex in existing_list]
+
     dp = {}
     dp[(0, 0)] = 0.0
 
@@ -612,9 +613,20 @@ def refresh_file(file_path: str):
     C_del = 1000.0
 
     for i in range(N + 1):
-        # Only iterate over a sliding window to keep memory and time linear
-        start_j = max(0, i - WINDOW)
-        end_j = min(M, i + WINDOW)
+        if i == 0:
+            start_j, end_j = 0, min(M, 50)
+        else:
+            new_time = new_sentences[i - 1]["start_time"]
+            # Search within a generous 15-second time band to route around massive insertions/deletions
+            start_j = bisect.bisect_left(existing_times, new_time - 15.0)
+            end_j = bisect.bisect_right(existing_times, new_time + 15.0)
+            # Ensure the window includes the previous row's boundaries to keep the DP graph connected
+            if i > 1:
+                prev_time = new_sentences[i - 2]["start_time"]
+                start_j = min(start_j, bisect.bisect_left(existing_times, prev_time - 15.0))
+                end_j = max(end_j, bisect.bisect_right(existing_times, prev_time + 15.0))
+
+        # Only iterate over the time-based window to keep memory and time linear
         for j in range(start_j, end_j + 1):
             if i == 0 and j == 0:
                 continue
@@ -686,12 +698,14 @@ def refresh_file(file_path: str):
     inserts = []
     matched_existing_indices = set(matches.values())
 
+    stored_lang = existing_list[0]["language"] if existing_list else detect_language(subs)
+
     for idx, new_s in enumerate(new_sentences):
         if idx in matches:
             ex = existing_list[matches[idx]]
-            updates.append((new_s["language"], new_s["start_time"], new_s["end_time"], new_s["text"], ex["id"]))
+            updates.append((ex["language"], new_s["start_time"], new_s["end_time"], new_s["text"], ex["id"]))
         else:
-            inserts.append((media_id, new_s["language"], new_s["start_time"], new_s["end_time"], new_s["text"]))
+            inserts.append((media_id, stored_lang, new_s["start_time"], new_s["end_time"], new_s["text"]))
 
     deletes = [(existing_list[k]["id"],) for k in range(M) if k not in matched_existing_indices]
 
