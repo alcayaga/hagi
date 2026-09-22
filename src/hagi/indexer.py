@@ -588,19 +588,30 @@ def refresh_file(file_path: str):
                 {"language": new_lang, "start_time": line.start / 1000.0, "end_time": line.end / 1000.0, "text": text}
             )
 
-    # Fetch existing sentences
-    existing = conn.execute("SELECT id, start_time, end_time, text FROM sentences WHERE media_id = ?", (media_id,)).fetchall()
+    # Fetch existing sentences (chronologically ordered for the monotonic DP alignment)
+    existing = conn.execute(
+        "SELECT id, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, end_time, id",
+        (media_id,)
+    ).fetchall()
 
     existing_list = [dict(row) for row in existing]
 
     N = len(new_sentences)
     M = len(existing_list)
 
+    # We use dynamic programming to find the optimal monotonic alignment between
+    # the new and existing sentences. This prevents greedy mismatches where one line
+    # incorrectly "steals" the ID of a nearby line just because it was processed first.
     dp = [[float("inf")] * (M + 1) for _ in range(N + 1)]
     dp[0][0] = 0.0
 
+    # back_ptr tracks the decisions made to reach the optimal state:
+    # 0 = match, 1 = insert (skip new), 2 = delete (skip old)
     back_ptr = [[None] * (M + 1) for _ in range(N + 1)]
 
+    # Insertion and deletion penalties must be significantly higher than any valid match
+    # cost (< 2.0s) to guarantee the algorithm strictly prefers matching sentences over
+    # deleting and recreating them, which preserves internal IDs and permalinks.
     C_ins = 1000.0
     C_del = 1000.0
 
@@ -610,18 +621,27 @@ def refresh_file(file_path: str):
                 ex = existing_list[j - 1]
                 new_s = new_sentences[i - 1]
                 dist_start = abs(ex["start_time"] - new_s["start_time"])
+
+                # Only allow matching if the start time is within the user's expected drift.
+                # This explicitly bounds the DP so it doesn't align completely unrelated scenes.
                 if dist_start <= REFRESH_THRESHOLD_SECONDS:
                     dist_end = abs(ex["end_time"] - new_s["end_time"])
+
+                    # End time changes are less destructive than start time changes.
+                    # We weight it at 10% (0.1) so it acts as a tie-breaker when multiple
+                    # sentences share similar start times (e.g. overlapping dialogue).
                     cost = dist_start + dist_end * 0.1
                     if dp[i - 1][j - 1] + cost < dp[i][j]:
                         dp[i][j] = dp[i - 1][j - 1] + cost
                         back_ptr[i][j] = 0
 
+            # Option to insert a new sentence (leaving the new sentence unmatched)
             if i > 0:
                 if dp[i - 1][j] + C_ins < dp[i][j]:
                     dp[i][j] = dp[i - 1][j] + C_ins
                     back_ptr[i][j] = 1
 
+            # Option to delete an old sentence (leaving the old sentence unmatched)
             if j > 0:
                 if dp[i][j - 1] + C_del < dp[i][j]:
                     dp[i][j] = dp[i][j - 1] + C_del
@@ -629,6 +649,8 @@ def refresh_file(file_path: str):
 
     i, j = N, M
     matches = {}
+
+    # Backtrack through the matrix to recover the actual mapping from new -> old.
     while i > 0 or j > 0:
         if i == 0:
             j -= 1
