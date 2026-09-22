@@ -632,8 +632,7 @@ def refresh_file(file_path: str):
                 start_j = min(start_j, bisect.bisect_left(existing_times, prev_time - 15.0))
                 end_j = max(end_j, bisect.bisect_right(existing_times, prev_time + 15.0))
 
-            # Strictly bound the candidate set to prevent O(NxM) in dense timestamps
-            end_j = min(end_j, start_j + 200)
+
 
         # Only iterate over the time-based window to keep memory and time linear
         for j in range(start_j, end_j + 1):

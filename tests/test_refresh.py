@@ -216,3 +216,40 @@ def test_refresh_many_deletions(test_db):
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
+
+def test_refresh_many_overlapping(test_db):
+    """Test that >200 highly dense overlapping sentences are properly matched."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+
+        # Add 250 dummy lines all starting at 5.0 seconds
+        initial_sentences = []
+        for i in range(250):
+            initial_sentences.append(("ja", 5.0, 6.0, f"Dense {i}"))
+
+        add_sentences(conn, media_id, initial_sentences)
+        conn.commit()
+
+        rows = conn.execute("SELECT id FROM sentences ORDER BY id").fetchall()
+        id_first = rows[0]["id"]
+
+        # New SRT contains the same 250 lines
+        new_lines = []
+        for i in range(250):
+            new_lines.append({"start": "00:00:05,000", "end": "00:00:06,000", "text": f"Dense {i}"})
+
+        create_srt(srt_path, new_lines)
+
+        refresh_file(srt_path)
+
+        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        assert len(rows) == 250
+        assert rows[0]["id"] == id_first
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
