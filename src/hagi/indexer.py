@@ -590,8 +590,7 @@ def refresh_file(file_path: str):
 
     # Fetch existing sentences (chronologically ordered for the monotonic DP alignment)
     existing = conn.execute(
-        "SELECT id, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, end_time, id",
-        (media_id,)
+        "SELECT id, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, end_time, id", (media_id,)
     ).fetchall()
 
     existing_list = [dict(row) for row in existing]
@@ -599,9 +598,9 @@ def refresh_file(file_path: str):
     N = len(new_sentences)
     M = len(existing_list)
 
-    # We use a banded dynamic programming approach to find the optimal monotonic alignment 
-    # between the new and existing sentences. A full N x M grid would use quadratic memory, 
-    # so we restrict the search window (j) around the current index (i) since valid matches 
+    # We use a banded dynamic programming approach to find the optimal monotonic alignment
+    # between the new and existing sentences. A full N x M grid would use quadratic memory,
+    # so we restrict the search window (j) around the current index (i) since valid matches
     # are bounded by REFRESH_THRESHOLD_SECONDS (max a few sentences apart).
     WINDOW = 50
     dp = {}
@@ -619,7 +618,7 @@ def refresh_file(file_path: str):
         for j in range(start_j, end_j + 1):
             if i == 0 and j == 0:
                 continue
-                
+
             best_cost = float("inf")
             best_back = None
 
@@ -628,7 +627,7 @@ def refresh_file(file_path: str):
                 ex = existing_list[j - 1]
                 new_s = new_sentences[i - 1]
                 dist_start = abs(ex["start_time"] - new_s["start_time"])
-                
+
                 if dist_start <= REFRESH_THRESHOLD_SECONDS:
                     dist_end = min(abs(ex["end_time"] - new_s["end_time"]), REFRESH_THRESHOLD_SECONDS)
                     match_cost = dp[(i - 1, j - 1)] + dist_start + dist_end * 0.1
@@ -654,7 +653,7 @@ def refresh_file(file_path: str):
                 dp[(i, j)] = best_cost
                 back_ptr[(i, j)] = best_back
 
-    # If the exact end state wasn't reached due to the window size, 
+    # If the exact end state wasn't reached due to the window size,
     # find the closest reached state at the boundaries to backtrack from.
     if (N, M) not in back_ptr:
         valid_states = [state for state in dp.keys() if state[0] == N or state[1] == M]
@@ -663,14 +662,16 @@ def refresh_file(file_path: str):
         i, j = N, M
 
     matches = {}
-    
+
     # Backtrack through the sparse matrix to recover the actual mapping from new -> old.
     while i > 0 or j > 0:
         if (i, j) not in back_ptr:
-            if i > 0: i -= 1
-            else: j -= 1
+            if i > 0:
+                i -= 1
+            else:
+                j -= 1
             continue
-            
+
         b = back_ptr[(i, j)]
         if b == 0:
             matches[i - 1] = j - 1
