@@ -604,15 +604,19 @@ def refresh_file(file_path: str):
 
     existing_times = [ex["start_time"] for ex in existing_list]
 
-    dp = {}
-    dp[(0, 0)] = 0.0
+    prev_dp = {}
+    curr_dp = {0: 0.0}
 
-    back_ptr = {}
+    back_ptr = [{} for _ in range(N + 1)]
 
     C_ins = 1000.0
     C_del = 1000.0
 
     for i in range(N + 1):
+        if i > 0:
+            prev_dp = curr_dp
+            curr_dp = {}
+            
         if i == 0:
             start_j, end_j = 0, M
         else:
@@ -635,41 +639,41 @@ def refresh_file(file_path: str):
             best_back = None
 
             # 1. Match new_s[i-1] with existing[j-1]
-            if i > 0 and j > 0 and (i - 1, j - 1) in dp:
+            if i > 0 and j > 0 and (j - 1) in prev_dp:
                 ex = existing_list[j - 1]
                 new_s = new_sentences[i - 1]
                 dist_start = abs(ex["start_time"] - new_s["start_time"])
 
                 if dist_start <= REFRESH_THRESHOLD_SECONDS:
                     dist_end = min(abs(ex["end_time"] - new_s["end_time"]), REFRESH_THRESHOLD_SECONDS)
-                    match_cost = dp[(i - 1, j - 1)] + dist_start + dist_end * 0.1
+                    match_cost = prev_dp[j - 1] + dist_start + dist_end * 0.1
                     if match_cost < best_cost:
                         best_cost = match_cost
                         best_back = 0
 
             # 2. Insert new_s[i-1] (skip new)
-            if i > 0 and (i - 1, j) in dp:
-                ins_cost = dp[(i - 1, j)] + C_ins
+            if i > 0 and j in prev_dp:
+                ins_cost = prev_dp[j] + C_ins
                 if ins_cost < best_cost:
                     best_cost = ins_cost
                     best_back = 1
 
             # 3. Delete existing[j-1] (skip old)
-            if j > 0 and (i, j - 1) in dp:
-                del_cost = dp[(i, j - 1)] + C_del
+            if j > 0 and (j - 1) in curr_dp:
+                del_cost = curr_dp[j - 1] + C_del
                 if del_cost < best_cost:
                     best_cost = del_cost
                     best_back = 2
 
             if best_cost != float("inf"):
-                dp[(i, j)] = best_cost
-                back_ptr[(i, j)] = best_back
+                curr_dp[j] = best_cost
+                back_ptr[i][j] = best_back
 
     # If the exact end state wasn't reached due to the window size,
     # find the closest reached state at the boundaries to backtrack from.
-    if (N, M) not in back_ptr:
-        valid_states = [state for state in dp.keys() if state[0] == N or state[1] == M]
-        i, j = min(valid_states, key=lambda s: dp[s] + (N - s[0]) * C_ins + (M - s[1]) * C_del) if valid_states else (0, 0)
+    if M not in back_ptr[N]:
+        j = max(curr_dp.keys()) if curr_dp else 0
+        i = N
     else:
         i, j = N, M
 
@@ -677,14 +681,14 @@ def refresh_file(file_path: str):
 
     # Backtrack through the sparse matrix to recover the actual mapping from new -> old.
     while i > 0 or j > 0:
-        if (i, j) not in back_ptr:
+        if j not in back_ptr[i]:
             if i > 0:
                 i -= 1
             else:
                 j -= 1
             continue
 
-        b = back_ptr[(i, j)]
+        b = back_ptr[i][j]
         if b == 0:
             matches[i - 1] = j - 1
             i -= 1
