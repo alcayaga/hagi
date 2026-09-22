@@ -642,13 +642,20 @@ def refresh_file(file_path: str):
         running_min_norm = (float("inf"), float("inf"))
         running_min_k = None
         
-        # Initialize running minimum with all k <= start_j - 1
+        # We also need a running minimum up to k <= j for insertions
+        running_min_norm_ins = (float("inf"), float("inf"))
+        running_min_k_ins = None
+        
+        # Initialize running minimums
         for k, p_cost in prev_dp.items():
+            norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
             if k <= start_j - 1:
-                norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
                 if norm < running_min_norm:
                     running_min_norm = norm
                     running_min_k = k
+                if norm < running_min_norm_ins:
+                    running_min_norm_ins = norm
+                    running_min_k_ins = k
 
         curr_backs = {}
 
@@ -659,6 +666,27 @@ def refresh_file(file_path: str):
 
             best_cost = (float("inf"), float("inf"))
             best_back = None
+            
+            if i > 0:
+                # Update insertion running minimum with k = j
+                if j in prev_dp:
+                    k = j
+                    p_cost = prev_dp[k]
+                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
+                    if norm < running_min_norm_ins:
+                        running_min_norm_ins = norm
+                        running_min_k_ins = k
+
+                # 2. Insert new_s[i-1] (skip new)
+                # We can jump from any retained k <= j in prev_dp and then insert
+                if running_min_k_ins is not None:
+                    ins_cost = (
+                        running_min_norm_ins[0] + j * C_del[0] + C_ins[0],
+                        running_min_norm_ins[1] + j * C_del[1] + C_ins[1]
+                    )
+                    if ins_cost < best_cost:
+                        best_cost = ins_cost
+                        best_back = 1
 
             # 1. Match new_s[i-1] with existing[j-1]
             if i > 0 and j > 0:
@@ -695,14 +723,6 @@ def refresh_file(file_path: str):
                             best_cost = match_cost
                             best_back = (0, best_k)
 
-            # 2. Insert new_s[i-1] (skip new)
-            if i > 0 and j in prev_dp:
-                prev_cost = prev_dp[j]
-                ins_cost = (prev_cost[0] + C_ins[0], prev_cost[1] + C_ins[1])
-                if ins_cost < best_cost:
-                    best_cost = ins_cost
-                    best_back = 1
-
             # 3. Delete existing[j-1] (skip old)
             if j > 0 and (j - 1) in curr_dp:
                 prev_cost = curr_dp[j - 1]
@@ -717,22 +737,14 @@ def refresh_file(file_path: str):
 
         # Prune the state space to a strictly bounded beam width to prevent O(NxM) memory
         # We normalize the pruning key by subtracting `j * C_del` (the baseline deletion cost)
-        # to prevent unfairly penalizing advanced states that have already consumed old rows.
+        # and we break ties by favoring advanced states (larger j) for connectivity.
         if len(curr_dp) > 300:
             def pruning_key(item):
                 j_idx, cost = item
-                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1])
+                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1], -j_idx)
             
             best_items = sorted(curr_dp.items(), key=pruning_key)[:300]
-            retained_keys = {k for k, _ in best_items}
-            
-            # Ensure states inside the current row's base window are always retained
-            for window_j in range(start_j, end_j + 1):
-                if window_j in curr_dp and window_j not in retained_keys:
-                    best_items.append((window_j, curr_dp[window_j]))
-                    retained_keys.add(window_j)
-                    
-            if 0 in curr_dp and 0 not in retained_keys:
+            if 0 in curr_dp and 0 not in dict(best_items):
                 best_items.append((0, curr_dp[0]))
                 
             curr_dp = dict(best_items)
