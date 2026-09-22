@@ -235,8 +235,8 @@ def test_refresh_many_overlapping(test_db):
         add_sentences(conn, media_id, initial_sentences)
         conn.commit()
 
-        rows = conn.execute("SELECT id FROM sentences ORDER BY id").fetchall()
-        id_first = rows[0]["id"]
+        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        id_mapping = {row["text"]: row["id"] for row in rows}
 
         # New SRT contains the same 250 lines
         new_lines = []
@@ -245,11 +245,12 @@ def test_refresh_many_overlapping(test_db):
 
         create_srt(srt_path, new_lines)
 
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
-        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
-        assert len(rows) == 250
-        assert rows[0]["id"] == id_first
+        final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        assert len(final_rows) == 250
+        for row in final_rows:
+            assert row["id"] == id_mapping[row["text"]]
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
@@ -366,6 +367,50 @@ def test_refresh_massive_gap_deletion(test_db):
 
         assert final_rows[1]["text"] == "Fourth"
         assert final_rows[1]["id"] == id_fourth
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
+
+
+def test_refresh_many_leading_insertions(test_db):
+    """Test that pruning does not discard the identity j=0 state when >300 leading insertions occur."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+        add_sentences(conn, media_id, [("ja", 100.0, 101.0, "Existing 1"), ("ja", 102.0, 103.0, "Existing 2")])
+        conn.commit()
+
+        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        id_mapping = {row["text"]: row["id"] for row in rows}
+
+        # New SRT inserts 350 sentences before the existing ones
+        new_lines = []
+        for i in range(350):
+            sec1 = i % 10
+            sec2 = sec1 + 1
+            new_lines.append({"start": f"00:00:0{sec1},000", "end": f"00:00:{sec2:02d},000", "text": f"New {i}"})
+
+        new_lines.append({"start": "00:01:40,000", "end": "00:01:41,000", "text": "Existing 1"})
+        new_lines.append({"start": "00:01:42,000", "end": "00:01:43,000", "text": "Existing 2"})
+
+        create_srt(srt_path, new_lines)
+
+        assert refresh_file(srt_path) is True
+
+        final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time, id").fetchall()
+        print(f"FINAL ROWS LEN IS {len(final_rows)}")
+        assert len(final_rows) == 352
+
+        # Verify the original sentences retained their IDs
+        matched = 0
+        for row in final_rows:
+            if row["text"] in id_mapping:
+                assert row["id"] == id_mapping[row["text"]]
+                matched += 1
+        assert matched == 2
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)

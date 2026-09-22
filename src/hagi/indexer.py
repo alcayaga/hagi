@@ -700,6 +700,9 @@ def refresh_file(file_path: str):
         # This keeps the DP sparse and strictly O(N) even for infinitely dense timestamp windows.
         if len(curr_dp) > 300:
             best_items = sorted(curr_dp.items(), key=lambda x: x[1])[:300]
+            # Ensure j=0 is always retained to support unlimited leading insertions
+            if 0 in curr_dp and 0 not in dict(best_items):
+                best_items[-1] = (0, curr_dp[0])
             curr_dp = dict(best_items)
             back_ptr[i] = {k: back_ptr[i][k] for k, _ in best_items if k in back_ptr[i]}
 
