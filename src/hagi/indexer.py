@@ -641,11 +641,11 @@ def refresh_file(file_path: str):
         # This reduces the predecessor search from O(W^2) to O(W).
         running_min_norm = (float("inf"), float("inf"))
         running_min_k = None
-        
+
         # We also need a running minimum up to k <= j for insertions
         running_min_norm_ins = (float("inf"), float("inf"))
         running_min_k_ins = None
-        
+
         # Initialize running minimums
         for k, p_cost in prev_dp.items():
             norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
@@ -666,7 +666,7 @@ def refresh_file(file_path: str):
 
             best_cost = (float("inf"), float("inf"))
             best_back = None
-            
+
             if i > 0:
                 # Update insertion running minimum with k = j
                 if j in prev_dp:
@@ -677,16 +677,15 @@ def refresh_file(file_path: str):
                         running_min_norm_ins = norm
                         running_min_k_ins = k
 
-                # 2. Insert new_s[i-1] (skip new)
                 # We can jump from any retained k <= j in prev_dp and then insert
                 if running_min_k_ins is not None:
                     ins_cost = (
                         running_min_norm_ins[0] + j * C_del[0] + C_ins[0],
-                        running_min_norm_ins[1] + j * C_del[1] + C_ins[1]
+                        running_min_norm_ins[1] + j * C_del[1] + C_ins[1],
                     )
                     if ins_cost < best_cost:
                         best_cost = ins_cost
-                        best_back = 1
+                        best_back = (1, running_min_k_ins)
 
             # 1. Match new_s[i-1] with existing[j-1]
             if i > 0 and j > 0:
@@ -711,13 +710,13 @@ def refresh_file(file_path: str):
 
                     # Recover the actual jump cost from the normalized minimum
                     if running_min_k is not None:
-                        best_k_cost = (
-                            running_min_norm[0] + (j - 1) * C_del[0],
-                            running_min_norm[1] + (j - 1) * C_del[1]
-                        )
+                        best_k_cost = (running_min_norm[0] + (j - 1) * C_del[0], running_min_norm[1] + (j - 1) * C_del[1])
                         best_k = running_min_k
-                        
-                        match_cost = (best_k_cost[0] + dist_start + dist_end * 0.1 + text_penalty * 20.0, best_k_cost[1] + text_penalty)
+
+                        match_cost = (
+                            best_k_cost[0] + dist_start + dist_end * 0.1 + text_penalty * 20.0,
+                            best_k_cost[1] + text_penalty,
+                        )
 
                         if match_cost < best_cost:
                             best_cost = match_cost
@@ -739,16 +738,17 @@ def refresh_file(file_path: str):
         # We normalize the pruning key by subtracting `j * C_del` (the baseline deletion cost)
         # and we break ties by favoring advanced states (larger j) for connectivity.
         if len(curr_dp) > 300:
+
             def pruning_key(item):
                 j_idx, cost = item
                 return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1], -j_idx)
-            
+
             best_items = sorted(curr_dp.items(), key=pruning_key)[:300]
             if 0 in curr_dp and 0 not in dict(best_items):
                 best_items.append((0, curr_dp[0]))
-                
+
             curr_dp = dict(best_items)
-            
+
         # Only store back_ptr for the surviving states to enforce strict O(N * BeamWidth) memory
         back_ptr[i] = {k: curr_backs[k] for k in curr_dp if k in curr_backs}
 
@@ -780,8 +780,9 @@ def refresh_file(file_path: str):
             matches[i - 1] = j - 1
             i -= 1
             j = b[1]
-        elif b == 1:
+        elif isinstance(b, tuple) and b[0] == 1:
             i -= 1
+            j = b[1]
         else:
             j -= 1
 
