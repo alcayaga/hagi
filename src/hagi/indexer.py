@@ -558,7 +558,7 @@ def refresh_file(file_path: str):
         return False
     media_id = row["id"]
 
-    if not abs_path.endswith((".ass", ".srt")):
+    if not abs_path.lower().endswith((".ass", ".srt")):
         print("Refresh is currently only supported for standalone subtitle files (.srt, .ass).")
         return False
 
@@ -614,7 +614,7 @@ def refresh_file(file_path: str):
 
     for i in range(N + 1):
         if i == 0:
-            start_j, end_j = 0, min(M, 50)
+            start_j, end_j = 0, M
         else:
             new_time = new_sentences[i - 1]["start_time"]
             # Search within a generous 15-second time band to route around massive insertions/deletions

@@ -9,6 +9,7 @@ from hagi import db
 from hagi.db import add_media, add_sentences
 from hagi.indexer import refresh_file
 
+
 @pytest.fixture
 def test_db(tmp_path):
     """Create a temporary database for testing."""
@@ -21,6 +22,7 @@ def test_db(tmp_path):
     conn.close()
     db.DB_PATH = old_db_path
 
+
 def create_srt(path, lines):
     """Create a temporary SRT file for testing."""
     with open(path, "w", encoding="utf-8") as f:
@@ -28,6 +30,7 @@ def create_srt(path, lines):
             f.write(f"{i}\n")
             f.write(f"{line['start']} --> {line['end']}\n")
             f.write(f"{line['text']}\n\n")
+
 
 def test_refresh_perfect_1_to_1(test_db):
     """Test replacing an SRT with exact same timestamps but fixed text."""
@@ -70,6 +73,7 @@ def test_refresh_perfect_1_to_1(test_db):
         if os.path.exists(srt_path):
             os.remove(srt_path)
 
+
 def test_refresh_retiming(test_db):
     """Test replacing an SRT with shifted timestamps within threshold."""
     conn = test_db
@@ -101,6 +105,7 @@ def test_refresh_retiming(test_db):
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
 
 def test_refresh_line_splits(test_db):
     """Test when one old line splits into two new lines."""
@@ -167,6 +172,47 @@ def test_refresh_line_merges(test_db):
         assert rows[0]["text"] == "Merged text"
 
         # Verify the other was deleted (by checking total count is 1, already done)
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
+
+
+def test_refresh_many_deletions(test_db):
+    """Test that a large number of leading deletions does not break the DP alignment window."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+
+        # Add 60 dummy lines
+        initial_sentences = []
+        for i in range(60):
+            initial_sentences.append(("ja", float(i), float(i) + 0.5, f"Dummy {i}"))
+
+        # Add a final line that we expect to keep
+        initial_sentences.append(("ja", 100.0, 101.0, "Keep this"))
+
+        add_sentences(conn, media_id, initial_sentences)
+        conn.commit()
+
+        rows = conn.execute("SELECT id FROM sentences WHERE start_time = 100.0").fetchall()
+        id_keep = rows[0]["id"]
+
+        # New SRT only contains the final line (60 leading deletions)
+        new_lines = [
+            {"start": "00:01:40,000", "end": "00:01:41,000", "text": "Keep this"},
+        ]
+        create_srt(srt_path, new_lines)
+
+        refresh_file(srt_path)
+
+        # Ensure only 1 line remains and it has the correct ID
+        rows = conn.execute("SELECT id, text FROM sentences").fetchall()
+        assert len(rows) == 1
+        assert rows[0]["id"] == id_keep
+        assert rows[0]["text"] == "Keep this"
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
