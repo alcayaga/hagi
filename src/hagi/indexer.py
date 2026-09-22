@@ -13,6 +13,8 @@ from .db import add_media, add_sentences, get_db
 
 load_dotenv()
 
+REFRESH_THRESHOLD_SECONDS = 2.0
+
 
 def load_and_sanitize_subs(file_path, encoding="utf-8"):
     """Load a subtitle file and sanitize invalid negative timestamps.
@@ -518,3 +520,100 @@ def index_directory(directory_path: str):
                     print(f"Error extracting from {file_path}: {e}")
 
     conn.commit()
+
+
+def refresh_file(file_path: str):
+    """Smart refresh an existing subtitle file, mapping new sentences to old ones to preserve IDs."""
+    conn = get_db()
+    abs_path = os.path.abspath(file_path)
+    
+    row = conn.execute("SELECT id FROM media WHERE path = ?", (abs_path,)).fetchone()
+    if not row:
+        print(f"File '{abs_path}' not found in database. Please run 'hagi index' instead.")
+        return
+    media_id = row["id"]
+
+    if not abs_path.endswith((".ass", ".srt")):
+        print("Refresh is currently only supported for standalone subtitle files (.srt, .ass).")
+        return
+
+    subs = None
+    for enc in ["utf-8-sig", "utf-8", "utf-16", "shift_jis", "latin-1"]:
+        try:
+            subs = load_and_sanitize_subs(abs_path, encoding=enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    
+    if not subs:
+        print(f"Failed to decode subtitle file: {abs_path}")
+        return
+
+    new_lang = detect_language(subs)
+    
+    # Parse new sentences
+    new_sentences = []
+    for line in subs:
+        text = line.plaintext.strip()
+        if text:
+            new_sentences.append({
+                "language": new_lang,
+                "start_time": line.start / 1000.0,
+                "end_time": line.end / 1000.0,
+                "text": text
+            })
+    
+    # Fetch existing sentences
+    existing = conn.execute(
+        "SELECT id, start_time, end_time, text FROM sentences WHERE media_id = ?", 
+        (media_id,)
+    ).fetchall()
+    
+    unmatched_existing = {row["id"]: dict(row) for row in existing}
+    
+    updates = []
+    inserts = []
+    
+    # Map new lines to closest old lines
+    for new_s in new_sentences:
+        best_match_id = None
+        best_distance = float('inf')
+        
+        for eid, ex in unmatched_existing.items():
+            dist = abs(ex["start_time"] - new_s["start_time"])
+            if dist <= REFRESH_THRESHOLD_SECONDS:
+                total_dist = dist + abs(ex["end_time"] - new_s["end_time"])
+                if total_dist < best_distance:
+                    best_distance = total_dist
+                    best_match_id = eid
+        
+        if best_match_id is not None:
+            updates.append((
+                new_s["language"], 
+                new_s["start_time"], 
+                new_s["end_time"], 
+                new_s["text"], 
+                best_match_id
+            ))
+            del unmatched_existing[best_match_id]
+        else:
+            inserts.append((
+                media_id,
+                new_s["language"], 
+                new_s["start_time"], 
+                new_s["end_time"], 
+                new_s["text"]
+            ))
+    
+    deletes = [(did,) for did in unmatched_existing.keys()]
+    
+    if updates:
+        conn.executemany("UPDATE sentences SET language=?, start_time=?, end_time=?, text=? WHERE id=?", updates)
+    if inserts:
+        conn.executemany("INSERT INTO sentences (media_id, language, start_time, end_time, text) VALUES (?, ?, ?, ?, ?)", inserts)
+    if deletes:
+        conn.executemany("DELETE FROM sentences WHERE id=?", deletes)
+        print(f"Deleted the following unmatched sentence IDs: {[d[0] for d in deletes]}")
+        
+    conn.commit()
+    print(f"Refresh complete: {len(updates)} updated, {len(inserts)} inserted, {len(deletes)} deleted.")

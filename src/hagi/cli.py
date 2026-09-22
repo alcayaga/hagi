@@ -320,6 +320,16 @@ def anki(
 
 
 @app.command()
+def refresh(
+    path: str = typer.Argument(..., help="Path to the subtitle file to refresh."),
+):
+    """Smart refresh an existing subtitle file in the database."""
+    db.init_db()
+    console.print(f"[yellow]Refreshing {path}...[/yellow]")
+    indexer.refresh_file(path)
+
+
+@app.command()
 def ui(port: int = 8000, host: str = "127.0.0.1"):
     """Launch the Hagi local web interface."""
     import uvicorn
