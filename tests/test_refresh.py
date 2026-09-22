@@ -314,6 +314,12 @@ def test_refresh_tie_breaker(test_db):
         final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
         assert len(final_rows) == 3
 
+        # Verify the complete expected set of sentence texts
+        texts = [row["text"] for row in final_rows]
+        assert "Inserted Sentence!" in texts
+        assert "This is sentence A" in texts
+        assert "This is sentence B" in texts
+
         # Verify IDs mapped correctly
         for row in final_rows:
             if row["text"] == "This is sentence A":
@@ -415,42 +421,139 @@ def test_refresh_many_leading_insertions(test_db):
             os.remove(srt_path)
 
 
-def test_refresh_delete_plus_retime(test_db):
-    """Test that text similarity overrides minor timestamp shifts after a deletion."""
+
+def test_refresh_many_deletions_then_insertion(test_db):
+    """Test normalized beam pruning when >300 consecutive deletions are followed by an insertion."""
     conn = test_db
     with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
         srt_path = tf.name
 
     try:
         media_id = add_media(conn, srt_path, "subtitle")
-        add_sentences(
-            conn, media_id, [("ja", 10.0, 11.0, "Sentence A"), ("ja", 11.0, 12.0, "Sentence B"), ("ja", 12.0, 13.0, "Sentence C")]
-        )
+        old_lines = []
+        for i in range(350):
+            old_lines.append(("ja", float(i), float(i) + 0.5, f"Old {i}"))
+
+        add_sentences(conn, media_id, old_lines)
         conn.commit()
 
-        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
-        id_a = rows[0]["id"]
-        id_c = rows[2]["id"]
-
-        # New SRT deletes B, and retimes C to be closer to where B used to be.
-        create_srt(
-            srt_path,
-            [
-                {"start": "00:00:10,000", "end": "00:00:11,000", "text": "Sentence A"},
-                {"start": "00:00:11,200", "end": "00:00:12,200", "text": "Sentence C"},
-            ],
-        )
+        # New SRT deletes all 350 old lines, and inserts ONE new unmatched line at the end
+        new_lines = [{"start": "01:00:00,000", "end": "01:00:01,000", "text": "New Unmatched"}]
+        create_srt(srt_path, new_lines)
 
         assert refresh_file(srt_path) is True
 
         final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time, id").fetchall()
+        assert len(final_rows) == 1
+        assert final_rows[0]["text"] == "New Unmatched"
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
+
+
+def test_refresh_near_timestamps(test_db):
+    """Test when there are two candidates with near but unequal timestamps.
+
+    The one with the closer timestamp is selected, regardless of text similarity.
+    This enforces edit_cost > timestamp_cost > text_penalty.
+    """
+    import tempfile
+    import os
+    from hagi.indexer import refresh_file
+    from hagi.db import add_media, add_sentences
+
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "Test Show")
+
+        # Existing sentence 1: starts at 10.0, exact text match but worse timestamp
+        # Existing sentence 2: starts at 11.0, bad text match but better timestamp
+        add_sentences(conn, media_id, [("en", 10.0, 12.0, "Hello world"), ("en", 11.0, 13.0, "Completely different text")])
+        conn.commit()
+
+        rows = conn.execute("SELECT id FROM sentences WHERE media_id = ? ORDER BY start_time", (media_id,)).fetchall()
+        id_second = rows[1]["id"]
+
+        # New subtitle: starts at 11.1, text is "Hello world"
+        # Sentence 1 diff: timestamp = 1.1s, text = exact match
+        # Sentence 2 diff: timestamp = 0.1s, text = terrible match
+        # Because timestamp_cost is primary, it MUST match with Sentence 2.
+
+        srt_content = "1\n00:00:11,100 --> 00:00:13,100\nHello world\n"
+
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_content)
+
+        assert refresh_file(srt_path) is True
+
+        sentences = conn.execute(
+            "SELECT id, start_time, text FROM sentences WHERE media_id = ? ORDER BY start_time", (media_id,)
+        ).fetchall()
+
+        assert len(sentences) == 1
+
+        # The single new sentence matched the second one, so the first one was deleted.
+        assert sentences[0]["id"] == id_second
+        assert sentences[0]["start_time"] == 11.1
+        assert sentences[0]["text"] == "Hello world"
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
+
+
+def test_refresh_many_deletions_beam_pruning(test_db):
+    """Test that back pointers correctly survive pruning.
+
+    Ensures backpointers survive when there are more than 300
+    consecutive deletions between matches.
+    """
+    from hagi.db import add_media, add_sentences
+    from hagi.indexer import refresh_file
+    import tempfile
+    import os
+
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "Beam Test")
+
+        # Insert 350 existing sentences very close together (0.01s apart) to trigger dense memory pruning
+        sentences = []
+        for i in range(350):
+            start = 10.0 + i * 0.01
+            end = start + 0.005
+            sentences.append(("en", start, end, f"Sentence {i}"))
+
+        add_sentences(conn, media_id, sentences)
+        conn.commit()
+
+        rows = conn.execute("SELECT id FROM sentences WHERE media_id = ? ORDER BY start_time", (media_id,)).fetchall()
+        id_first = rows[0]["id"]
+        id_last = rows[-1]["id"]
+
+        # New subtitle file only has the very first and very last sentence!
+        # This forces the DP to match 0, delete 1..348, and match 349.
+        # Since beam width is 300, the path MUST cross a pruned window and survive via self-contained back pointers.
+        srt_content = "1\n00:00:10,000 --> 00:00:10,005\nSentence 0\n\n2\n00:00:13,490 --> 00:00:13,495\nSentence 349\n\n"
+
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_content)
+
+        assert refresh_file(srt_path) is True
+
+        final_rows = conn.execute("SELECT id, text FROM sentences WHERE media_id = ? ORDER BY start_time", (media_id,)).fetchall()
+
         assert len(final_rows) == 2
+        assert final_rows[0]["id"] == id_first
+        assert final_rows[0]["text"] == "Sentence 0"
 
-        assert final_rows[0]["text"] == "Sentence A"
-        assert final_rows[0]["id"] == id_a
-
-        assert final_rows[1]["text"] == "Sentence C"
-        assert final_rows[1]["id"] == id_c
+        assert final_rows[1]["id"] == id_last
+        assert final_rows[1]["text"] == "Sentence 349"
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
@@ -480,6 +583,57 @@ def test_refresh_many_deletions_then_insertion(test_db):
         final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time, id").fetchall()
         assert len(final_rows) == 1
         assert final_rows[0]["text"] == "New Unmatched"
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
+
+def test_refresh_300_equal_time_sentences(test_db):
+    """Test that pruning preserves low-index viable alignments.
+
+    Ensures that when there are more than 300 identical items, matches survive across rows.
+    """
+    import tempfile
+    import os
+    from hagi.indexer import refresh_file
+    from hagi.db import add_media, add_sentences
+
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "Dense Show")
+
+        # Insert 350 identical sentences, same timestamp, same text.
+        # This stresses the tie-breaker in beam pruning.
+        sentences = []
+        for i in range(350):
+            sentences.append(("en", 10.0, 11.0, f"Dense {i}"))
+        add_sentences(conn, media_id, sentences)
+        conn.commit()
+
+        rows = conn.execute("SELECT id FROM sentences WHERE media_id = ? ORDER BY id", (media_id,)).fetchall()
+
+        # New SRT has the EXACT SAME 350 sentences.
+        # It should perfectly 1-to-1 match them and retain all IDs.
+        srt_content = ""
+        for i in range(350):
+            srt_content += f"{i + 1}\n00:00:10,000 --> 00:00:11,000\nDense {i}\n\n"
+
+        with open(srt_path, "w", encoding="utf-8") as f:
+            f.write(srt_content)
+
+        assert refresh_file(srt_path) is True
+
+        final_rows = conn.execute(
+            "SELECT id, text FROM sentences WHERE media_id = ? ORDER BY start_time, id", (media_id,)
+        ).fetchall()
+        assert len(final_rows) == 350
+
+        # Verify that ALL sentences retained their original IDs and text
+        for i, (orig_row, final_row) in enumerate(zip(rows, final_rows)):
+            assert final_row["id"] == orig_row["id"], f"ID mismatch at index {i}"
+            assert final_row["text"] == f"Dense {i}", f"Text mismatch at index {i}"
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)

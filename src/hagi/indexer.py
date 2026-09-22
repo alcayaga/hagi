@@ -563,18 +563,23 @@ def refresh_file(file_path: str):
         return False
 
     subs = None
+    last_error = None
     for enc in ["utf-8-sig", "utf-8", "utf-16", "shift_jis", "latin-1"]:
         try:
             subs = load_and_sanitize_subs(abs_path, encoding=enc)
             break
-        except UnicodeError:
-            continue
-        except Exception as e:
-            print(f"Error parsing subtitle file {abs_path}: {e}")
+        except (IOError, OSError) as e:
+            print(f"Error accessing file {abs_path}: {e}")
             return False
+        except Exception as e:
+            last_error = e
+            continue
 
     if subs is None:
-        print(f"Failed to read subtitle file {abs_path} with known encodings.")
+        if last_error:
+            print(f"Failed to read or parse subtitle file {abs_path}. Last error: {last_error}")
+        else:
+            print(f"Failed to read subtitle file {abs_path} with known encodings.")
         return False
 
     # Parse new sentences
@@ -588,11 +593,14 @@ def refresh_file(file_path: str):
         print("Aborting refresh: no valid sentences found in the subtitle file.")
         return False
 
-    new_sentences.sort(key=lambda s: (s["start_time"], s["end_time"]))
+    # Sort strictly by start_time. Python's sort is stable, so this preserves physical file order
+    # for sentences that start at the exact same time, preventing end-time changes from swapping IDs.
+    new_sentences.sort(key=lambda s: s["start_time"])
 
     # Fetch existing sentences (chronologically ordered for the monotonic DP alignment)
+    # Ordered by start_time and id (which acts as a proxy for original insertion/file order).
     existing = conn.execute(
-        "SELECT id, language, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, end_time, id",
+        "SELECT id, language, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, id",
         (media_id,),
     ).fetchall()
 
@@ -612,12 +620,12 @@ def refresh_file(file_path: str):
     existing_times = [ex["start_time"] for ex in existing_list]
 
     prev_dp = {}
-    curr_dp = {0: (0.0, 0.0)}
+    curr_dp = {0: (0.0, 0.0, 0.0)}
 
     back_ptr = [{} for _ in range(N + 1)]
 
-    C_ins = (1000.0, 0.0)
-    C_del = (1000.0, 0.0)
+    C_ins = (1.0, 0.0, 0.0)
+    C_del = (1.0, 0.0, 0.0)
 
     for i in range(N + 1):
         if i > 0:
@@ -639,16 +647,16 @@ def refresh_file(file_path: str):
 
         # Maintain a running minimum of (prev_cost - k * C_del) for eligible k <= j - 1
         # This reduces the predecessor search from O(W^2) to O(W).
-        running_min_norm = (float("inf"), float("inf"))
+        running_min_norm = (float("inf"), float("inf"), float("inf"))
         running_min_k = None
 
         # We also need a running minimum up to k <= j for insertions
-        running_min_norm_ins = (float("inf"), float("inf"))
+        running_min_norm_ins = (float("inf"), float("inf"), float("inf"))
         running_min_k_ins = None
 
         # Initialize running minimums
         for k, p_cost in prev_dp.items():
-            norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
+            norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1], p_cost[2] - k * C_del[2])
             if k <= start_j - 1:
                 if norm < running_min_norm:
                     running_min_norm = norm
@@ -664,7 +672,7 @@ def refresh_file(file_path: str):
             if i == 0 and j == 0:
                 continue
 
-            best_cost = (float("inf"), float("inf"))
+            best_cost = (float("inf"), float("inf"), float("inf"))
             best_back = None
 
             if i > 0:
@@ -672,7 +680,7 @@ def refresh_file(file_path: str):
                 if j in prev_dp:
                     k = j
                     p_cost = prev_dp[k]
-                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
+                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1], p_cost[2] - k * C_del[2])
                     if norm < running_min_norm_ins:
                         running_min_norm_ins = norm
                         running_min_k_ins = k
@@ -682,6 +690,7 @@ def refresh_file(file_path: str):
                     ins_cost = (
                         running_min_norm_ins[0] + j * C_del[0] + C_ins[0],
                         running_min_norm_ins[1] + j * C_del[1] + C_ins[1],
+                        running_min_norm_ins[2] + j * C_del[2] + C_ins[2],
                     )
                     if ins_cost < best_cost:
                         best_cost = ins_cost
@@ -693,7 +702,7 @@ def refresh_file(file_path: str):
                 if (j - 1) in prev_dp:
                     k = j - 1
                     p_cost = prev_dp[k]
-                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
+                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1], p_cost[2] - k * C_del[2])
                     if norm < running_min_norm:
                         running_min_norm = norm
                         running_min_k = k
@@ -710,12 +719,17 @@ def refresh_file(file_path: str):
 
                     # Recover the actual jump cost from the normalized minimum
                     if running_min_k is not None:
-                        best_k_cost = (running_min_norm[0] + (j - 1) * C_del[0], running_min_norm[1] + (j - 1) * C_del[1])
+                        best_k_cost = (
+                            running_min_norm[0] + (j - 1) * C_del[0],
+                            running_min_norm[1] + (j - 1) * C_del[1],
+                            running_min_norm[2] + (j - 1) * C_del[2],
+                        )
                         best_k = running_min_k
 
                         match_cost = (
-                            best_k_cost[0] + dist_start + dist_end * 0.1 + text_penalty * 20.0,
-                            best_k_cost[1] + text_penalty,
+                            best_k_cost[0],
+                            best_k_cost[1] + dist_start + dist_end * 0.1,
+                            best_k_cost[2] + text_penalty,
                         )
 
                         if match_cost < best_cost:
@@ -725,10 +739,14 @@ def refresh_file(file_path: str):
             # 3. Delete existing[j-1] (skip old)
             if j > 0 and (j - 1) in curr_dp:
                 prev_cost = curr_dp[j - 1]
-                del_cost = (prev_cost[0] + C_del[0], prev_cost[1] + C_del[1])
+                del_cost = (prev_cost[0] + C_del[0], prev_cost[1] + C_del[1], prev_cost[2] + C_del[2])
                 if del_cost < best_cost:
                     best_cost = del_cost
-                    best_back = 2
+                    prev_back = curr_backs.get(j - 1)
+                    if isinstance(prev_back, tuple) and prev_back[0] == 2:
+                        best_back = prev_back
+                    else:
+                        best_back = (2, j - 1, prev_back)
 
             if best_cost[0] != float("inf"):
                 curr_dp[j] = best_cost
@@ -739,13 +757,19 @@ def refresh_file(file_path: str):
         # and we break ties by favoring advanced states (larger j) for connectivity.
         if len(curr_dp) > 300:
 
-            def pruning_key(item):
+            def pruning_key_high(item):
                 j_idx, cost = item
-                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1], -j_idx)
+                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1], cost[2] - j_idx * C_del[2], -j_idx)
 
-            best_items = sorted(curr_dp.items(), key=pruning_key)[:300]
-            if 0 in curr_dp and 0 not in dict(best_items):
-                best_items.append((0, curr_dp[0]))
+            def pruning_key_low(item):
+                j_idx, cost = item
+                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1], cost[2] - j_idx * C_del[2], j_idx)
+
+            best_items = dict(sorted(curr_dp.items(), key=pruning_key_high)[:150])
+            best_items.update(dict(sorted(curr_dp.items(), key=pruning_key_low)[:150]))
+
+            if 0 in curr_dp and 0 not in best_items:
+                best_items[0] = curr_dp[0]
 
             curr_dp = dict(best_items)
 
@@ -776,13 +800,28 @@ def refresh_file(file_path: str):
             continue
 
         b = back_ptr[i][j]
-        if isinstance(b, tuple) and b[0] == 0:
-            matches[i - 1] = j - 1
-            i -= 1
-            j = b[1]
-        elif isinstance(b, tuple) and b[0] == 1:
-            i -= 1
-            j = b[1]
+        if isinstance(b, tuple):
+            if b[0] == 0:
+                matches[i - 1] = j - 1
+                i -= 1
+                j = b[1]
+            elif b[0] == 1:
+                i -= 1
+                j = b[1]
+            elif b[0] == 2:
+                origin_j, prev_back = b[1], b[2]
+                if isinstance(prev_back, tuple):
+                    if prev_back[0] == 0:
+                        matches[i - 1] = origin_j - 1
+                        i -= 1
+                        j = prev_back[1]
+                    elif prev_back[0] == 1:
+                        i -= 1
+                        j = prev_back[1]
+                    else:
+                        j -= 1
+                else:
+                    j -= 1
         else:
             j -= 1
 
