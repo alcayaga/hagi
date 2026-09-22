@@ -326,7 +326,9 @@ def refresh(
     """Smart refresh an existing subtitle file in the database."""
     db.init_db()
     console.print(f"[yellow]Refreshing {path}...[/yellow]")
-    indexer.refresh_file(path)
+    success = indexer.refresh_file(path)
+    if not success:
+        raise typer.Exit(code=1)
 
 
 @app.command()

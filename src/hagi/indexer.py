@@ -555,12 +555,12 @@ def refresh_file(file_path: str):
     row = conn.execute("SELECT id FROM media WHERE path = ?", (abs_path,)).fetchone()
     if not row:
         print(f"File '{abs_path}' not found in database. Please run 'hagi index' instead.")
-        return
+        return False
     media_id = row["id"]
 
     if not abs_path.endswith((".ass", ".srt")):
         print("Refresh is currently only supported for standalone subtitle files (.srt, .ass).")
-        return
+        return False
 
     subs = None
     for enc in ["utf-8-sig", "utf-8", "utf-16", "shift_jis", "latin-1"]:
@@ -571,11 +571,11 @@ def refresh_file(file_path: str):
             continue
         except Exception as e:
             print(f"Error parsing subtitle file {abs_path}: {e}")
-            return
+            return False
 
     if subs is None:
         print(f"Failed to read subtitle file {abs_path} with known encodings.")
-        return
+        return False
 
     new_lang = detect_language(subs)
 
@@ -599,73 +599,87 @@ def refresh_file(file_path: str):
     N = len(new_sentences)
     M = len(existing_list)
 
-    # We use dynamic programming to find the optimal monotonic alignment between
-    # the new and existing sentences. This prevents greedy mismatches where one line
-    # incorrectly "steals" the ID of a nearby line just because it was processed first.
-    dp = [[float("inf")] * (M + 1) for _ in range(N + 1)]
-    dp[0][0] = 0.0
+    # We use a banded dynamic programming approach to find the optimal monotonic alignment 
+    # between the new and existing sentences. A full N x M grid would use quadratic memory, 
+    # so we restrict the search window (j) around the current index (i) since valid matches 
+    # are bounded by REFRESH_THRESHOLD_SECONDS (max a few sentences apart).
+    WINDOW = 50
+    dp = {}
+    dp[(0, 0)] = 0.0
 
-    # back_ptr tracks the decisions made to reach the optimal state:
-    # 0 = match, 1 = insert (skip new), 2 = delete (skip old)
-    back_ptr = [[None] * (M + 1) for _ in range(N + 1)]
+    back_ptr = {}
 
-    # Insertion and deletion penalties must be significantly higher than any valid match
-    # cost (< 2.0s) to guarantee the algorithm strictly prefers matching sentences over
-    # deleting and recreating them, which preserves internal IDs and permalinks.
     C_ins = 1000.0
     C_del = 1000.0
 
     for i in range(N + 1):
-        for j in range(M + 1):
-            if i > 0 and j > 0:
+        # Only iterate over a sliding window to keep memory and time linear
+        start_j = max(0, i - WINDOW)
+        end_j = min(M, i + WINDOW)
+        for j in range(start_j, end_j + 1):
+            if i == 0 and j == 0:
+                continue
+                
+            best_cost = float("inf")
+            best_back = None
+
+            # 1. Match new_s[i-1] with existing[j-1]
+            if i > 0 and j > 0 and (i - 1, j - 1) in dp:
                 ex = existing_list[j - 1]
                 new_s = new_sentences[i - 1]
                 dist_start = abs(ex["start_time"] - new_s["start_time"])
-
-                # Only allow matching if the start time is within the user's expected drift.
-                # This explicitly bounds the DP so it doesn't align completely unrelated scenes.
+                
                 if dist_start <= REFRESH_THRESHOLD_SECONDS:
-                    dist_end = abs(ex["end_time"] - new_s["end_time"])
+                    dist_end = min(abs(ex["end_time"] - new_s["end_time"]), REFRESH_THRESHOLD_SECONDS)
+                    match_cost = dp[(i - 1, j - 1)] + dist_start + dist_end * 0.1
+                    if match_cost < best_cost:
+                        best_cost = match_cost
+                        best_back = 0
 
-                    # End time changes are less destructive than start time changes.
-                    # We weight it at 10% (0.1) so it acts as a tie-breaker when multiple
-                    # sentences share similar start times (e.g. overlapping dialogue).
-                    cost = dist_start + dist_end * 0.1
-                    if dp[i - 1][j - 1] + cost < dp[i][j]:
-                        dp[i][j] = dp[i - 1][j - 1] + cost
-                        back_ptr[i][j] = 0
+            # 2. Insert new_s[i-1] (skip new)
+            if i > 0 and (i - 1, j) in dp:
+                ins_cost = dp[(i - 1, j)] + C_ins
+                if ins_cost < best_cost:
+                    best_cost = ins_cost
+                    best_back = 1
 
-            # Option to insert a new sentence (leaving the new sentence unmatched)
-            if i > 0:
-                if dp[i - 1][j] + C_ins < dp[i][j]:
-                    dp[i][j] = dp[i - 1][j] + C_ins
-                    back_ptr[i][j] = 1
+            # 3. Delete existing[j-1] (skip old)
+            if j > 0 and (i, j - 1) in dp:
+                del_cost = dp[(i, j - 1)] + C_del
+                if del_cost < best_cost:
+                    best_cost = del_cost
+                    best_back = 2
 
-            # Option to delete an old sentence (leaving the old sentence unmatched)
-            if j > 0:
-                if dp[i][j - 1] + C_del < dp[i][j]:
-                    dp[i][j] = dp[i][j - 1] + C_del
-                    back_ptr[i][j] = 2
+            if best_cost != float("inf"):
+                dp[(i, j)] = best_cost
+                back_ptr[(i, j)] = best_back
 
-    i, j = N, M
+    # If the exact end state wasn't reached due to the window size, 
+    # find the closest reached state at the boundaries to backtrack from.
+    if (N, M) not in back_ptr:
+        valid_states = [state for state in dp.keys() if state[0] == N or state[1] == M]
+        i, j = min(valid_states, key=lambda s: dp[s] + (N - s[0]) * C_ins + (M - s[1]) * C_del) if valid_states else (0, 0)
+    else:
+        i, j = N, M
+
     matches = {}
-
-    # Backtrack through the matrix to recover the actual mapping from new -> old.
+    
+    # Backtrack through the sparse matrix to recover the actual mapping from new -> old.
     while i > 0 or j > 0:
-        if i == 0:
+        if (i, j) not in back_ptr:
+            if i > 0: i -= 1
+            else: j -= 1
+            continue
+            
+        b = back_ptr[(i, j)]
+        if b == 0:
+            matches[i - 1] = j - 1
+            i -= 1
             j -= 1
-        elif j == 0:
+        elif b == 1:
             i -= 1
         else:
-            b = back_ptr[i][j]
-            if b == 0:
-                matches[i - 1] = j - 1
-                i -= 1
-                j -= 1
-            elif b == 1:
-                i -= 1
-            else:
-                j -= 1
+            j -= 1
 
     updates = []
     inserts = []
@@ -678,7 +692,7 @@ def refresh_file(file_path: str):
         else:
             inserts.append((media_id, new_s["language"], new_s["start_time"], new_s["end_time"], new_s["text"]))
 
-    deletes = [(existing_list[j]["id"],) for j in range(M) if j not in matched_existing_indices]
+    deletes = [(existing_list[k]["id"],) for k in range(M) if k not in matched_existing_indices]
 
     if updates:
         conn.executemany("UPDATE sentences SET language=?, start_time=?, end_time=?, text=? WHERE id=?", updates)
@@ -690,3 +704,4 @@ def refresh_file(file_path: str):
 
     conn.commit()
     print(f"Refresh complete: {len(updates)} updated, {len(inserts)} inserted, {len(deletes)} deleted.")
+    return True

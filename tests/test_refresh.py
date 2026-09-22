@@ -127,13 +127,14 @@ def test_refresh_line_splits(test_db):
 
         rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time").fetchall()
         assert len(rows) == 2
-        # One of them should inherit the old ID, the other gets a new one
+        # The first split should inherit the old ID because it matches the start time
         ids = [r["id"] for r in rows]
-        assert id_old in ids
-        assert ids[0] != ids[1]
+        assert ids[0] == id_old
+        assert ids[1] != id_old
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
 
 def test_refresh_line_merges(test_db):
     """Test when two old lines merge into one new line."""
@@ -150,7 +151,7 @@ def test_refresh_line_merges(test_db):
         add_sentences(conn, media_id, initial_sentences)
         conn.commit()
         rows = conn.execute("SELECT id FROM sentences ORDER BY start_time").fetchall()
-        id1, id2 = rows[0]["id"], rows[1]["id"]
+        id1 = rows[0]["id"]
 
         new_lines = [
             {"start": "00:00:01,000", "end": "00:00:03,000", "text": "Merged text"},
@@ -161,8 +162,8 @@ def test_refresh_line_merges(test_db):
 
         rows = conn.execute("SELECT id, text FROM sentences").fetchall()
         assert len(rows) == 1
-        # The new line should have matched one of the old IDs
-        assert rows[0]["id"] in (id1, id2)
+        # The new line should specifically match the first old ID because of start time alignment
+        assert rows[0]["id"] == id1
         assert rows[0]["text"] == "Merged text"
 
         # Verify the other was deleted (by checking total count is 1, already done)
