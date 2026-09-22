@@ -650,6 +650,8 @@ def refresh_file(file_path: str):
                     running_min_norm = norm
                     running_min_k = k
 
+        curr_backs = {}
+
         # Only iterate over the time-based window to keep memory and time linear
         for j in range(start_j, end_j + 1):
             if i == 0 and j == 0:
@@ -711,10 +713,32 @@ def refresh_file(file_path: str):
 
             if best_cost[0] != float("inf"):
                 curr_dp[j] = best_cost
-                back_ptr[i][j] = best_back
+                curr_backs[j] = best_back
 
-        # The state space memory is strictly O(N) because the inner j loop is bounded by
-        # the time-based window (start_j to end_j), naturally keeping the beam narrow.
+        # Prune the state space to a strictly bounded beam width to prevent O(NxM) memory
+        # We normalize the pruning key by subtracting `j * C_del` (the baseline deletion cost)
+        # to prevent unfairly penalizing advanced states that have already consumed old rows.
+        if len(curr_dp) > 300:
+            def pruning_key(item):
+                j_idx, cost = item
+                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1])
+            
+            best_items = sorted(curr_dp.items(), key=pruning_key)[:300]
+            retained_keys = {k for k, _ in best_items}
+            
+            # Ensure states inside the current row's base window are always retained
+            for window_j in range(start_j, end_j + 1):
+                if window_j in curr_dp and window_j not in retained_keys:
+                    best_items.append((window_j, curr_dp[window_j]))
+                    retained_keys.add(window_j)
+                    
+            if 0 in curr_dp and 0 not in retained_keys:
+                best_items.append((0, curr_dp[0]))
+                
+            curr_dp = dict(best_items)
+            
+        # Only store back_ptr for the surviving states to enforce strict O(N * BeamWidth) memory
+        back_ptr[i] = {k: curr_backs[k] for k in curr_dp if k in curr_backs}
 
     if M > 0 and not curr_dp:
         print("Refresh aborted: Could not align subtitle sentences (no valid paths).")
