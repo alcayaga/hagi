@@ -612,12 +612,12 @@ def refresh_file(file_path: str):
     existing_times = [ex["start_time"] for ex in existing_list]
 
     prev_dp = {}
-    curr_dp = {0: 0.0}
+    curr_dp = {0: (0.0, 0.0)}
 
     back_ptr = [{} for _ in range(N + 1)]
 
-    C_ins = 1000.0
-    C_del = 1000.0
+    C_ins = (1000.0, 0.0)
+    C_del = (1000.0, 0.0)
 
     for i in range(N + 1):
         if i > 0:
@@ -642,7 +642,7 @@ def refresh_file(file_path: str):
             if i == 0 and j == 0:
                 continue
 
-            best_cost = float("inf")
+            best_cost = (float("inf"), float("inf"))
             best_back = None
 
             # 1. Match new_s[i-1] with existing[j-1]
@@ -653,30 +653,34 @@ def refresh_file(file_path: str):
 
                 if dist_start <= REFRESH_THRESHOLD_SECONDS:
                     dist_end = min(abs(ex["end_time"] - new_s["end_time"]), REFRESH_THRESHOLD_SECONDS)
-
+                    
                     text_ratio = difflib.SequenceMatcher(None, ex["text"], new_s["text"]).ratio()
-                    text_penalty = (1.0 - text_ratio) * 0.05
-
-                    match_cost = prev_dp[j - 1] + dist_start + dist_end * 0.1 + text_penalty
+                    text_penalty = 1.0 - text_ratio
+                    
+                    prev_cost = prev_dp[j - 1]
+                    match_cost = (prev_cost[0] + dist_start + dist_end * 0.1, prev_cost[1] + text_penalty)
+                    
                     if match_cost < best_cost:
                         best_cost = match_cost
                         best_back = 0
 
             # 2. Insert new_s[i-1] (skip new)
             if i > 0 and j in prev_dp:
-                ins_cost = prev_dp[j] + C_ins
+                prev_cost = prev_dp[j]
+                ins_cost = (prev_cost[0] + C_ins[0], prev_cost[1] + C_ins[1])
                 if ins_cost < best_cost:
                     best_cost = ins_cost
                     best_back = 1
 
             # 3. Delete existing[j-1] (skip old)
             if j > 0 and (j - 1) in curr_dp:
-                del_cost = curr_dp[j - 1] + C_del
+                prev_cost = curr_dp[j - 1]
+                del_cost = (prev_cost[0] + C_del[0], prev_cost[1] + C_del[1])
                 if del_cost < best_cost:
                     best_cost = del_cost
                     best_back = 2
 
-            if best_cost != float("inf"):
+            if best_cost[0] != float("inf"):
                 curr_dp[j] = best_cost
                 back_ptr[i][j] = best_back
 
