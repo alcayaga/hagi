@@ -670,7 +670,7 @@ def refresh_file(file_path: str):
                                 best_k = k
 
                     if best_k is not None:
-                        match_cost = (best_k_cost[0] + dist_start + dist_end * 0.1, best_k_cost[1] + text_penalty)
+                        match_cost = (best_k_cost[0] + dist_start + dist_end * 0.1 + text_penalty * 20.0, best_k_cost[1] + text_penalty)
 
                         if match_cost < best_cost:
                             best_cost = match_cost

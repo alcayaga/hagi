@@ -414,3 +414,44 @@ def test_refresh_many_leading_insertions(test_db):
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
+
+def test_refresh_delete_plus_retime(test_db):
+    """Test that text similarity overrides minor timestamp shifts after a deletion."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+        add_sentences(
+            conn, media_id, [("ja", 10.0, 11.0, "Sentence A"), ("ja", 11.0, 12.0, "Sentence B"), ("ja", 12.0, 13.0, "Sentence C")]
+        )
+        conn.commit()
+
+        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        id_a = rows[0]["id"]
+        id_c = rows[2]["id"]
+
+        # New SRT deletes B, and retimes C to be closer to where B used to be.
+        create_srt(
+            srt_path,
+            [
+                {"start": "00:00:10,000", "end": "00:00:11,000", "text": "Sentence A"},
+                {"start": "00:00:11,200", "end": "00:00:12,200", "text": "Sentence C"},
+            ],
+        )
+
+        assert refresh_file(srt_path) is True
+
+        final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time, id").fetchall()
+        assert len(final_rows) == 2
+
+        assert final_rows[0]["text"] == "Sentence A"
+        assert final_rows[0]["id"] == id_a
+
+        assert final_rows[1]["text"] == "Sentence C"
+        assert final_rows[1]["id"] == id_c
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
