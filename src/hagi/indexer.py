@@ -684,6 +684,13 @@ def refresh_file(file_path: str):
                 curr_dp[j] = best_cost
                 back_ptr[i][j] = best_back
 
+        # Prune the state space to a strictly bounded beam width to prevent O(NxM) memory
+        # This keeps the DP sparse and strictly O(N) even for infinitely dense timestamp windows.
+        if len(curr_dp) > 300:
+            best_items = sorted(curr_dp.items(), key=lambda x: x[1])[:300]
+            curr_dp = dict(best_items)
+            back_ptr[i] = {k: back_ptr[i][k] for k, _ in best_items if k in back_ptr[i]}
+
     # If the exact end state wasn't reached due to the window size,
     # find the closest reached state at the boundaries to backtrack from.
     if M not in back_ptr[N]:
