@@ -455,3 +455,32 @@ def test_refresh_delete_plus_retime(test_db):
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
+
+def test_refresh_many_deletions_then_insertion(test_db):
+    """Test normalized beam pruning when >300 consecutive deletions are followed by an insertion."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+        old_lines = []
+        for i in range(350):
+            old_lines.append(("ja", float(i), float(i) + 0.5, f"Old {i}"))
+
+        add_sentences(conn, media_id, old_lines)
+        conn.commit()
+
+        # New SRT deletes all 350 old lines, and inserts ONE new unmatched line at the end
+        new_lines = [{"start": "01:00:00,000", "end": "01:00:01,000", "text": "New Unmatched"}]
+        create_srt(srt_path, new_lines)
+
+        assert refresh_file(srt_path) is True
+
+        final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time, id").fetchall()
+        assert len(final_rows) == 1
+        assert final_rows[0]["text"] == "New Unmatched"
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)

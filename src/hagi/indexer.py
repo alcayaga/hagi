@@ -697,14 +697,31 @@ def refresh_file(file_path: str):
                 back_ptr[i][j] = best_back
 
         # Prune the state space to a strictly bounded beam width to prevent O(NxM) memory
-        # This keeps the DP sparse and strictly O(N) even for infinitely dense timestamp windows.
+        # We normalize the pruning key by subtracting `j * C_del` (the baseline deletion cost)
+        # to prevent unfairly penalizing advanced states that have already consumed old rows.
         if len(curr_dp) > 300:
-            best_items = sorted(curr_dp.items(), key=lambda x: x[1])[:300]
-            # Ensure j=0 is always retained to support unlimited leading insertions
-            if 0 in curr_dp and 0 not in dict(best_items):
-                best_items[-1] = (0, curr_dp[0])
+            def pruning_key(item):
+                j_idx, cost = item
+                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1])
+            
+            best_items = sorted(curr_dp.items(), key=pruning_key)[:300]
+            retained_keys = {k for k, _ in best_items}
+            
+            # Ensure states inside the current row's base window (and j=0) are retained
+            for window_j in range(start_j, end_j + 1):
+                if window_j in curr_dp and window_j not in retained_keys:
+                    best_items.append((window_j, curr_dp[window_j]))
+                    retained_keys.add(window_j)
+                    
+            if 0 in curr_dp and 0 not in retained_keys:
+                best_items.append((0, curr_dp[0]))
+                
             curr_dp = dict(best_items)
             back_ptr[i] = {k: back_ptr[i][k] for k, _ in best_items if k in back_ptr[i]}
+
+    if M > 0 and not curr_dp:
+        print("Refresh aborted: Could not align subtitle sentences (no valid paths).")
+        return False
 
     # If the exact end state wasn't reached due to the window size,
     # find the closest reached state at the boundaries to backtrack from.
