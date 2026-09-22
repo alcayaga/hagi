@@ -322,3 +322,50 @@ def test_refresh_tie_breaker(test_db):
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
+
+def test_refresh_massive_gap_deletion(test_db):
+    """Test that deleting many sentences across a massive time gap preserves the connected DP graph."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+        add_sentences(
+            conn,
+            media_id,
+            [
+                ("ja", 1.0, 2.0, "First"),
+                ("ja", 30.0, 31.0, "Second"),
+                ("ja", 60.0, 61.0, "Third"),
+                ("ja", 100.0, 101.0, "Fourth"),
+            ],
+        )
+        conn.commit()
+
+        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        id_first = rows[0]["id"]
+        id_fourth = rows[3]["id"]
+
+        # New SRT drops Second and Third, leaving a massive 99-second gap
+        create_srt(
+            srt_path,
+            [
+                {"start": "00:00:01,000", "end": "00:00:02,000", "text": "First"},
+                {"start": "00:01:40,000", "end": "00:01:41,000", "text": "Fourth"},
+            ],
+        )
+
+        refresh_file(srt_path)
+
+        final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        assert len(final_rows) == 2
+        assert final_rows[0]["text"] == "First"
+        assert final_rows[0]["id"] == id_first
+
+        assert final_rows[1]["text"] == "Fourth"
+        assert final_rows[1]["id"] == id_fourth
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)

@@ -646,23 +646,35 @@ def refresh_file(file_path: str):
             best_back = None
 
             # 1. Match new_s[i-1] with existing[j-1]
-            if i > 0 and j > 0 and (j - 1) in prev_dp:
+            if i > 0 and j > 0:
                 ex = existing_list[j - 1]
                 new_s = new_sentences[i - 1]
                 dist_start = abs(ex["start_time"] - new_s["start_time"])
 
                 if dist_start <= REFRESH_THRESHOLD_SECONDS:
                     dist_end = min(abs(ex["end_time"] - new_s["end_time"]), REFRESH_THRESHOLD_SECONDS)
-                    
+
                     text_ratio = difflib.SequenceMatcher(None, ex["text"], new_s["text"]).ratio()
                     text_penalty = 1.0 - text_ratio
-                    
-                    prev_cost = prev_dp[j - 1]
-                    match_cost = (prev_cost[0] + dist_start + dist_end * 0.1, prev_cost[1] + text_penalty)
-                    
-                    if match_cost < best_cost:
-                        best_cost = match_cost
-                        best_back = 0
+
+                    # Find the best previous state k <= j - 1 to transition from.
+                    # This bridges massive time gaps by directly charging C_del for skipped rows.
+                    best_k_cost = (float("inf"), float("inf"))
+                    best_k = None
+                    for k, p_cost in prev_dp.items():
+                        if k <= j - 1:
+                            jump = j - 1 - k
+                            jump_cost = (p_cost[0] + jump * C_del[0], p_cost[1] + jump * C_del[1])
+                            if jump_cost < best_k_cost:
+                                best_k_cost = jump_cost
+                                best_k = k
+
+                    if best_k is not None:
+                        match_cost = (best_k_cost[0] + dist_start + dist_end * 0.1, best_k_cost[1] + text_penalty)
+
+                        if match_cost < best_cost:
+                            best_cost = match_cost
+                            best_back = (0, best_k)
 
             # 2. Insert new_s[i-1] (skip new)
             if i > 0 and j in prev_dp:
@@ -711,10 +723,10 @@ def refresh_file(file_path: str):
             continue
 
         b = back_ptr[i][j]
-        if b == 0:
+        if isinstance(b, tuple) and b[0] == 0:
             matches[i - 1] = j - 1
             i -= 1
-            j -= 1
+            j = b[1]
         elif b == 1:
             i -= 1
         else:
