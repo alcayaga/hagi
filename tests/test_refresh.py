@@ -253,3 +253,29 @@ def test_refresh_many_overlapping(test_db):
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
+
+def test_refresh_empty_file(test_db):
+    """Test that refreshing with an empty subtitle file aborts and does not delete existing lines."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+        add_sentences(conn, media_id, [("ja", 1.0, 2.0, "Test Line")])
+        conn.commit()
+
+        # The new SRT file is completely empty (no valid subtitles)
+        create_srt(srt_path, [])
+
+        # It should return False because it aborted
+        assert refresh_file(srt_path) is False
+
+        # The existing sentence must still exist
+        rows = conn.execute("SELECT text FROM sentences").fetchall()
+        assert len(rows) == 1
+        assert rows[0]["text"] == "Test Line"
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)
