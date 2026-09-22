@@ -569,9 +569,12 @@ def refresh_file(file_path: str):
             break
         except UnicodeDecodeError:
             continue
+        except Exception as e:
+            print(f"Error parsing subtitle file {abs_path}: {e}")
+            return
 
-    if not subs:
-        print(f"Failed to decode subtitle file: {abs_path}")
+    if subs is None:
+        print(f"Failed to read subtitle file {abs_path} with known encodings.")
         return
 
     new_lang = detect_language(subs)
@@ -588,31 +591,72 @@ def refresh_file(file_path: str):
     # Fetch existing sentences
     existing = conn.execute("SELECT id, start_time, end_time, text FROM sentences WHERE media_id = ?", (media_id,)).fetchall()
 
-    unmatched_existing = {row["id"]: dict(row) for row in existing}
+    existing_list = [dict(row) for row in existing]
+
+    N = len(new_sentences)
+    M = len(existing_list)
+
+    dp = [[float("inf")] * (M + 1) for _ in range(N + 1)]
+    dp[0][0] = 0.0
+
+    back_ptr = [[None] * (M + 1) for _ in range(N + 1)]
+
+    C_ins = 1000.0
+    C_del = 1000.0
+
+    for i in range(N + 1):
+        for j in range(M + 1):
+            if i > 0 and j > 0:
+                ex = existing_list[j - 1]
+                new_s = new_sentences[i - 1]
+                dist_start = abs(ex["start_time"] - new_s["start_time"])
+                if dist_start <= REFRESH_THRESHOLD_SECONDS:
+                    dist_end = abs(ex["end_time"] - new_s["end_time"])
+                    cost = dist_start + dist_end * 0.1
+                    if dp[i - 1][j - 1] + cost < dp[i][j]:
+                        dp[i][j] = dp[i - 1][j - 1] + cost
+                        back_ptr[i][j] = 0
+
+            if i > 0:
+                if dp[i - 1][j] + C_ins < dp[i][j]:
+                    dp[i][j] = dp[i - 1][j] + C_ins
+                    back_ptr[i][j] = 1
+
+            if j > 0:
+                if dp[i][j - 1] + C_del < dp[i][j]:
+                    dp[i][j] = dp[i][j - 1] + C_del
+                    back_ptr[i][j] = 2
+
+    i, j = N, M
+    matches = {}
+    while i > 0 or j > 0:
+        if i == 0:
+            j -= 1
+        elif j == 0:
+            i -= 1
+        else:
+            b = back_ptr[i][j]
+            if b == 0:
+                matches[i - 1] = j - 1
+                i -= 1
+                j -= 1
+            elif b == 1:
+                i -= 1
+            else:
+                j -= 1
 
     updates = []
     inserts = []
+    matched_existing_indices = set(matches.values())
 
-    # Map new lines to closest old lines
-    for new_s in new_sentences:
-        best_match_id = None
-        best_distance = float("inf")
-
-        for eid, ex in unmatched_existing.items():
-            dist = abs(ex["start_time"] - new_s["start_time"])
-            if dist <= REFRESH_THRESHOLD_SECONDS:
-                total_dist = dist + abs(ex["end_time"] - new_s["end_time"])
-                if total_dist < best_distance:
-                    best_distance = total_dist
-                    best_match_id = eid
-
-        if best_match_id is not None:
-            updates.append((new_s["language"], new_s["start_time"], new_s["end_time"], new_s["text"], best_match_id))
-            del unmatched_existing[best_match_id]
+    for idx, new_s in enumerate(new_sentences):
+        if idx in matches:
+            ex = existing_list[matches[idx]]
+            updates.append((new_s["language"], new_s["start_time"], new_s["end_time"], new_s["text"], ex["id"]))
         else:
             inserts.append((media_id, new_s["language"], new_s["start_time"], new_s["end_time"], new_s["text"]))
 
-    deletes = [(did,) for did in unmatched_existing.keys()]
+    deletes = [(existing_list[j]["id"],) for j in range(M) if j not in matched_existing_indices]
 
     if updates:
         conn.executemany("UPDATE sentences SET language=?, start_time=?, end_time=?, text=? WHERE id=?", updates)
