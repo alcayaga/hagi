@@ -616,7 +616,7 @@ def refresh_file(file_path: str):
         if i > 0:
             prev_dp = curr_dp
             curr_dp = {}
-            
+
         if i == 0:
             start_j, end_j = 0, M
         else:
