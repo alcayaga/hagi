@@ -279,3 +279,46 @@ def test_refresh_empty_file(test_db):
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
+
+
+def test_refresh_tie_breaker(test_db):
+    """Test that text similarity correctly tie-breaks overlapping sentences."""
+    conn = test_db
+    with tempfile.NamedTemporaryFile(suffix=".srt", delete=False) as tf:
+        srt_path = tf.name
+
+    try:
+        media_id = add_media(conn, srt_path, "subtitle")
+        # Add two exact overlapping sentences with different text
+        add_sentences(conn, media_id, [("ja", 1.0, 2.0, "This is sentence A"), ("ja", 1.0, 2.0, "This is sentence B")])
+        conn.commit()
+
+        rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        id_a = rows[0]["id"]
+        id_b = rows[1]["id"]
+
+        # New SRT inserts a sentence between them, but the timestamps overlap perfectly
+        create_srt(
+            srt_path,
+            [
+                {"start": "00:00:01,000", "end": "00:00:02,000", "text": "This is sentence A"},
+                {"start": "00:00:01,000", "end": "00:00:02,000", "text": "Inserted Sentence!"},
+                {"start": "00:00:01,000", "end": "00:00:02,000", "text": "This is sentence B"},
+            ],
+        )
+
+        refresh_file(srt_path)
+
+        # The tie-breaker should match A to A and B to B
+        final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
+        assert len(final_rows) == 3
+
+        # Verify IDs mapped correctly
+        for row in final_rows:
+            if row["text"] == "This is sentence A":
+                assert row["id"] == id_a
+            elif row["text"] == "This is sentence B":
+                assert row["id"] == id_b
+    finally:
+        if os.path.exists(srt_path):
+            os.remove(srt_path)

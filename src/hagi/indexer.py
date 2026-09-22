@@ -607,6 +607,7 @@ def refresh_file(file_path: str):
     # Since subtitles use absolute time, matching lines must have similar timestamps regardless
     # of how many lines were inserted or deleted before them.
     import bisect
+    import difflib
 
     existing_times = [ex["start_time"] for ex in existing_list]
 
@@ -652,7 +653,11 @@ def refresh_file(file_path: str):
 
                 if dist_start <= REFRESH_THRESHOLD_SECONDS:
                     dist_end = min(abs(ex["end_time"] - new_s["end_time"]), REFRESH_THRESHOLD_SECONDS)
-                    match_cost = prev_dp[j - 1] + dist_start + dist_end * 0.1
+
+                    text_ratio = difflib.SequenceMatcher(None, ex["text"], new_s["text"]).ratio()
+                    text_penalty = (1.0 - text_ratio) * 0.05
+
+                    match_cost = prev_dp[j - 1] + dist_start + dist_end * 0.1 + text_penalty
                     if match_cost < best_cost:
                         best_cost = match_cost
                         best_back = 0
