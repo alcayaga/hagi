@@ -637,6 +637,19 @@ def refresh_file(file_path: str):
                 start_j = min(start_j, bisect.bisect_left(existing_times, prev_time - 15.0))
                 end_j = max(end_j, bisect.bisect_right(existing_times, prev_time + 15.0))
 
+        # Maintain a running minimum of (prev_cost - k * C_del) for eligible k <= j - 1
+        # This reduces the predecessor search from O(W^2) to O(W).
+        running_min_norm = (float("inf"), float("inf"))
+        running_min_k = None
+        
+        # Initialize running minimum with all k <= start_j - 1
+        for k, p_cost in prev_dp.items():
+            if k <= start_j - 1:
+                norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
+                if norm < running_min_norm:
+                    running_min_norm = norm
+                    running_min_k = k
+
         # Only iterate over the time-based window to keep memory and time linear
         for j in range(start_j, end_j + 1):
             if i == 0 and j == 0:
@@ -647,6 +660,15 @@ def refresh_file(file_path: str):
 
             # 1. Match new_s[i-1] with existing[j-1]
             if i > 0 and j > 0:
+                # Add newly eligible k = j - 1 to running minimum
+                if (j - 1) in prev_dp:
+                    k = j - 1
+                    p_cost = prev_dp[k]
+                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1])
+                    if norm < running_min_norm:
+                        running_min_norm = norm
+                        running_min_k = k
+
                 ex = existing_list[j - 1]
                 new_s = new_sentences[i - 1]
                 dist_start = abs(ex["start_time"] - new_s["start_time"])
@@ -657,19 +679,14 @@ def refresh_file(file_path: str):
                     text_ratio = difflib.SequenceMatcher(None, ex["text"], new_s["text"]).ratio()
                     text_penalty = 1.0 - text_ratio
 
-                    # Find the best previous state k <= j - 1 to transition from.
-                    # This bridges massive time gaps by directly charging C_del for skipped rows.
-                    best_k_cost = (float("inf"), float("inf"))
-                    best_k = None
-                    for k, p_cost in prev_dp.items():
-                        if k <= j - 1:
-                            jump = j - 1 - k
-                            jump_cost = (p_cost[0] + jump * C_del[0], p_cost[1] + jump * C_del[1])
-                            if jump_cost < best_k_cost:
-                                best_k_cost = jump_cost
-                                best_k = k
-
-                    if best_k is not None:
+                    # Recover the actual jump cost from the normalized minimum
+                    if running_min_k is not None:
+                        best_k_cost = (
+                            running_min_norm[0] + (j - 1) * C_del[0],
+                            running_min_norm[1] + (j - 1) * C_del[1]
+                        )
+                        best_k = running_min_k
+                        
                         match_cost = (best_k_cost[0] + dist_start + dist_end * 0.1 + text_penalty * 20.0, best_k_cost[1] + text_penalty)
 
                         if match_cost < best_cost:
@@ -696,28 +713,8 @@ def refresh_file(file_path: str):
                 curr_dp[j] = best_cost
                 back_ptr[i][j] = best_back
 
-        # Prune the state space to a strictly bounded beam width to prevent O(NxM) memory
-        # We normalize the pruning key by subtracting `j * C_del` (the baseline deletion cost)
-        # to prevent unfairly penalizing advanced states that have already consumed old rows.
-        if len(curr_dp) > 300:
-            def pruning_key(item):
-                j_idx, cost = item
-                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1])
-            
-            best_items = sorted(curr_dp.items(), key=pruning_key)[:300]
-            retained_keys = {k for k, _ in best_items}
-            
-            # Ensure states inside the current row's base window (and j=0) are retained
-            for window_j in range(start_j, end_j + 1):
-                if window_j in curr_dp and window_j not in retained_keys:
-                    best_items.append((window_j, curr_dp[window_j]))
-                    retained_keys.add(window_j)
-                    
-            if 0 in curr_dp and 0 not in retained_keys:
-                best_items.append((0, curr_dp[0]))
-                
-            curr_dp = dict(best_items)
-            back_ptr[i] = {k: back_ptr[i][k] for k, _ in best_items if k in back_ptr[i]}
+        # The state space memory is strictly O(N) because the inner j loop is bounded by
+        # the time-based window (start_j to end_j), naturally keeping the beam narrow.
 
     if M > 0 and not curr_dp:
         print("Refresh aborted: Could not align subtitle sentences (no valid paths).")

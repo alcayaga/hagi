@@ -60,7 +60,7 @@ def test_refresh_perfect_1_to_1(test_db):
         create_srt(srt_path, new_lines)
 
         # Run refresh
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
         # Verify ids are preserved
         rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time").fetchall()
@@ -95,7 +95,7 @@ def test_refresh_retiming(test_db):
         ]
         create_srt(srt_path, new_lines)
 
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
         rows = conn.execute("SELECT id, start_time, text FROM sentences").fetchall()
         assert len(rows) == 1
@@ -128,7 +128,7 @@ def test_refresh_line_splits(test_db):
         ]
         create_srt(srt_path, new_lines)
 
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
         rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time").fetchall()
         assert len(rows) == 2
@@ -163,7 +163,7 @@ def test_refresh_line_merges(test_db):
         ]
         create_srt(srt_path, new_lines)
 
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
         rows = conn.execute("SELECT id, text FROM sentences").fetchall()
         assert len(rows) == 1
@@ -206,7 +206,7 @@ def test_refresh_many_deletions(test_db):
         ]
         create_srt(srt_path, new_lines)
 
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
         # Ensure only 1 line remains and it has the correct ID
         rows = conn.execute("SELECT id, text FROM sentences").fetchall()
@@ -308,7 +308,7 @@ def test_refresh_tie_breaker(test_db):
             ],
         )
 
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
         # The tie-breaker should match A to A and B to B
         final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
@@ -358,7 +358,7 @@ def test_refresh_massive_gap_deletion(test_db):
             ],
         )
 
-        refresh_file(srt_path)
+        assert refresh_file(srt_path) is True
 
         final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY id").fetchall()
         assert len(final_rows) == 2
@@ -401,7 +401,6 @@ def test_refresh_many_leading_insertions(test_db):
         assert refresh_file(srt_path) is True
 
         final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time, id").fetchall()
-        print(f"FINAL ROWS LEN IS {len(final_rows)}")
         assert len(final_rows) == 352
 
         # Verify the original sentences retained their IDs
