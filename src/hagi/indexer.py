@@ -584,6 +584,10 @@ def refresh_file(file_path: str):
         if text:
             new_sentences.append({"start_time": line.start / 1000.0, "end_time": line.end / 1000.0, "text": text})
 
+    if not new_sentences:
+        print("Aborting refresh: no valid sentences found in the subtitle file.")
+        return False
+
     new_sentences.sort(key=lambda s: (s["start_time"], s["end_time"]))
 
     # Fetch existing sentences (chronologically ordered for the monotonic DP alignment)
@@ -631,8 +635,6 @@ def refresh_file(file_path: str):
                 prev_time = new_sentences[i - 2]["start_time"]
                 start_j = min(start_j, bisect.bisect_left(existing_times, prev_time - 15.0))
                 end_j = max(end_j, bisect.bisect_right(existing_times, prev_time + 15.0))
-
-
 
         # Only iterate over the time-based window to keep memory and time linear
         for j in range(start_j, end_j + 1):
