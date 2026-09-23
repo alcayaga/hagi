@@ -27,3 +27,36 @@ def test_node_frontend_suite():
         f"STDOUT:\n{result.stdout}\n"
         f"STDERR:\n{result.stderr}"
     )
+
+
+def test_node_frontend_suite_missing_node(monkeypatch):
+    """Verify that test_node_frontend_suite fails when Node.js is missing from PATH."""
+    monkeypatch.setattr(shutil, "which", lambda cmd: None)
+    with pytest.raises(pytest.fail.Exception, match="Node.js executable not found in PATH"):
+        test_node_frontend_suite()
+
+
+def test_node_frontend_suite_missing_file(monkeypatch):
+    """Verify that test_node_frontend_suite fails when test_main.mjs does not exist."""
+    monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/node")
+    monkeypatch.setattr(
+        Path,
+        "resolve",
+        lambda self: Path("/nonexistent/path/test_frontend.py"),
+    )
+    with pytest.raises(AssertionError, match="Frontend test file missing"):
+        test_node_frontend_suite()
+
+
+def test_node_frontend_suite_failure(monkeypatch):
+    """Verify that test_node_frontend_suite fails when Node test runner returns non-zero."""
+    monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/node")
+    fake_completed = subprocess.CompletedProcess(
+        args=["node", "--test", "fake.mjs"],
+        returncode=1,
+        stdout="FAIL: mock test failure",
+        stderr="mock error trace",
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: fake_completed)
+    with pytest.raises(AssertionError, match="Node frontend tests failed"):
+        test_node_frontend_suite()
