@@ -13,6 +13,8 @@ from .db import add_media, add_sentences, get_db
 
 load_dotenv()
 
+REFRESH_THRESHOLD_SECONDS = 2.0
+
 
 def load_and_sanitize_subs(file_path, encoding="utf-8"):
     """Load a subtitle file and sanitize invalid negative timestamps.
@@ -137,10 +139,34 @@ def build_plex_cache():
 
 
 SUPPORTED_LOCALES = {
-    "en", "eng", "ja", "jp", "jpn", "es", "spa", "pt", "por", "fr", "fre", "fra",
-    "de", "ger", "deu", "it", "ita", "ru", "rus", "zh", "chi", "zho", "ko", "kor",
-    "ar", "ara"
+    "en",
+    "eng",
+    "ja",
+    "jp",
+    "jpn",
+    "es",
+    "spa",
+    "pt",
+    "por",
+    "fr",
+    "fre",
+    "fra",
+    "de",
+    "ger",
+    "deu",
+    "it",
+    "ita",
+    "ru",
+    "rus",
+    "zh",
+    "chi",
+    "zho",
+    "ko",
+    "kor",
+    "ar",
+    "ara",
 }
+
 
 def get_plex_metadata(file_path):
     """Get Plex metadata, accounting for external subtitle language codes.
@@ -249,6 +275,7 @@ def detect_language(subs_obj):
 def prune_database():
     """Verify all media in the database and remove missing files globally."""
     import errno
+
     conn = get_db()
     cursor = conn.execute("SELECT id, path FROM media")
     pruned_count = 0
@@ -329,7 +356,7 @@ def index_directory(directory_path: str):
             if file.endswith((".ass", ".srt")):
                 try:
                     subs = None
-                    for enc in ["utf-8-sig", "utf-8", "utf-16", "shift_jis", "latin-1"]:
+                    for enc in ["utf-8-sig", "utf-8", "utf-16", "cp932", "shift_jis", "latin-1"]:
                         try:
                             subs = load_and_sanitize_subs(file_path, encoding=enc)
                             break
@@ -518,3 +545,309 @@ def index_directory(directory_path: str):
                     print(f"Error extracting from {file_path}: {e}")
 
     conn.commit()
+
+
+def refresh_file(file_path: str):
+    """Smart refresh an existing subtitle file, mapping new sentences to old ones to preserve IDs."""
+    conn = get_db()
+    abs_path = os.path.abspath(file_path)
+
+    row = conn.execute("SELECT id FROM media WHERE path = ?", (abs_path,)).fetchone()
+    if not row:
+        print(f"File '{abs_path}' not found in database. Please run 'hagi index' instead.")
+        return False
+    media_id = row["id"]
+
+    if not abs_path.lower().endswith((".ass", ".srt")):
+        print("Refresh is currently only supported for standalone subtitle files (.srt, .ass).")
+        return False
+
+    subs = None
+    last_error = None
+    for enc in ["utf-8-sig", "utf-8", "utf-16", "cp932", "shift_jis", "latin-1"]:
+        try:
+            subs = load_and_sanitize_subs(abs_path, encoding=enc)
+            break
+        except (IOError, OSError) as e:
+            print(f"Error accessing file {abs_path}: {e}")
+            return False
+        except Exception as e:
+            last_error = e
+            continue
+
+    if subs is None:
+        if last_error:
+            print(f"Failed to read or parse subtitle file {abs_path}. Last error: {last_error}")
+        else:
+            print(f"Failed to read subtitle file {abs_path} with known encodings.")
+        return False
+
+    # Parse new sentences
+    new_sentences = []
+    for line in subs:
+        text = line.plaintext.strip()
+        if text:
+            new_sentences.append({"start_time": line.start / 1000.0, "end_time": line.end / 1000.0, "text": text})
+
+    if not new_sentences:
+        print("Aborting refresh: no valid sentences found in the subtitle file.")
+        return False
+
+    # Sort strictly by start_time. Python's sort is stable, so this preserves physical file order
+    # for sentences that start at the exact same time, preventing end-time changes from swapping IDs.
+    new_sentences.sort(key=lambda s: s["start_time"])
+
+    # Fetch existing sentences (chronologically ordered for the monotonic DP alignment)
+    # Ordered by start_time and id (which acts as a proxy for original insertion/file order).
+    existing = conn.execute(
+        "SELECT id, language, start_time, end_time, text FROM sentences WHERE media_id = ? ORDER BY start_time, id",
+        (media_id,),
+    ).fetchall()
+
+    existing_list = [dict(row) for row in existing]
+
+    N = len(new_sentences)
+    M = len(existing_list)
+
+    # We use a banded dynamic programming approach to find the optimal monotonic alignment
+    # between the new and existing sentences. A full N x M grid would use quadratic memory,
+    # so we restrict the search window (j) around the current index (i) based on time.
+    # Since subtitles use absolute time, matching lines must have similar timestamps regardless
+    # of how many lines were inserted or deleted before them.
+    import bisect
+    import difflib
+
+    existing_times = [ex["start_time"] for ex in existing_list]
+
+    prev_dp = {}
+    curr_dp = {0: (0.0, 0.0, 0.0)}
+
+    back_ptr = [{} for _ in range(N + 1)]
+
+    C_ins = (1.0, 0.0, 0.0)
+    C_del = (1.0, 0.0, 0.0)
+
+    for i in range(N + 1):
+        if i > 0:
+            prev_dp = curr_dp
+            curr_dp = {}
+
+        if i == 0:
+            start_j, end_j = 0, M
+        else:
+            new_time = new_sentences[i - 1]["start_time"]
+            # Search within a generous 15-second time band to route around massive insertions/deletions
+            start_j = bisect.bisect_left(existing_times, new_time - 15.0)
+            end_j = bisect.bisect_right(existing_times, new_time + 15.0)
+            # Ensure the window includes the previous row's boundaries to keep the DP graph connected
+            if i > 1:
+                prev_time = new_sentences[i - 2]["start_time"]
+                start_j = min(start_j, bisect.bisect_left(existing_times, prev_time - 15.0))
+                end_j = max(end_j, bisect.bisect_right(existing_times, prev_time + 15.0))
+
+        # Maintain a running minimum of (prev_cost - k * C_del) for eligible k <= j - 1
+        # This reduces the predecessor search from O(W^2) to O(W).
+        running_min_norm = (float("inf"), float("inf"), float("inf"))
+        running_min_k = None
+
+        # We also need a running minimum up to k <= j for insertions
+        running_min_norm_ins = (float("inf"), float("inf"), float("inf"))
+        running_min_k_ins = None
+
+        # Initialize running minimums
+        for k, p_cost in prev_dp.items():
+            norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1], p_cost[2] - k * C_del[2])
+            if k <= start_j - 1:
+                if norm < running_min_norm:
+                    running_min_norm = norm
+                    running_min_k = k
+                if norm < running_min_norm_ins:
+                    running_min_norm_ins = norm
+                    running_min_k_ins = k
+
+        curr_backs = {}
+
+        # Only iterate over the time-based window to keep memory and time linear
+        for j in range(start_j, end_j + 1):
+            if i == 0 and j == 0:
+                continue
+
+            best_cost = (float("inf"), float("inf"), float("inf"))
+            best_back = None
+
+            if i > 0:
+                # Update insertion running minimum with k = j
+                if j in prev_dp:
+                    k = j
+                    p_cost = prev_dp[k]
+                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1], p_cost[2] - k * C_del[2])
+                    if norm < running_min_norm_ins:
+                        running_min_norm_ins = norm
+                        running_min_k_ins = k
+
+                # We can jump from any retained k <= j in prev_dp and then insert
+                if running_min_k_ins is not None:
+                    ins_cost = (
+                        running_min_norm_ins[0] + j * C_del[0] + C_ins[0],
+                        running_min_norm_ins[1] + j * C_del[1] + C_ins[1],
+                        running_min_norm_ins[2] + j * C_del[2] + C_ins[2],
+                    )
+                    if ins_cost < best_cost:
+                        best_cost = ins_cost
+                        best_back = (1, running_min_k_ins)
+
+            # 1. Match new_s[i-1] with existing[j-1]
+            if i > 0 and j > 0:
+                # Add newly eligible k = j - 1 to running minimum
+                if (j - 1) in prev_dp:
+                    k = j - 1
+                    p_cost = prev_dp[k]
+                    norm = (p_cost[0] - k * C_del[0], p_cost[1] - k * C_del[1], p_cost[2] - k * C_del[2])
+                    if norm < running_min_norm:
+                        running_min_norm = norm
+                        running_min_k = k
+
+                ex = existing_list[j - 1]
+                new_s = new_sentences[i - 1]
+                dist_start = abs(ex["start_time"] - new_s["start_time"])
+
+                if dist_start <= REFRESH_THRESHOLD_SECONDS:
+                    dist_end = min(abs(ex["end_time"] - new_s["end_time"]), REFRESH_THRESHOLD_SECONDS)
+
+                    text_ratio = difflib.SequenceMatcher(None, ex["text"], new_s["text"]).ratio()
+                    text_penalty = 1.0 - text_ratio
+
+                    # Recover the actual jump cost from the normalized minimum
+                    if running_min_k is not None:
+                        best_k_cost = (
+                            running_min_norm[0] + (j - 1) * C_del[0],
+                            running_min_norm[1] + (j - 1) * C_del[1],
+                            running_min_norm[2] + (j - 1) * C_del[2],
+                        )
+                        best_k = running_min_k
+
+                        match_cost = (
+                            best_k_cost[0],
+                            best_k_cost[1] + dist_start + dist_end * 0.1,
+                            best_k_cost[2] + text_penalty,
+                        )
+
+                        if match_cost < best_cost:
+                            best_cost = match_cost
+                            best_back = (0, best_k)
+
+            # 3. Delete existing[j-1] (skip old)
+            if j > 0 and (j - 1) in curr_dp:
+                prev_cost = curr_dp[j - 1]
+                del_cost = (prev_cost[0] + C_del[0], prev_cost[1] + C_del[1], prev_cost[2] + C_del[2])
+                if del_cost < best_cost:
+                    best_cost = del_cost
+                    prev_back = curr_backs.get(j - 1)
+                    if isinstance(prev_back, tuple) and prev_back[0] == 2:
+                        best_back = prev_back
+                    else:
+                        best_back = (2, j - 1, prev_back)
+
+            if best_cost[0] != float("inf"):
+                curr_dp[j] = best_cost
+                curr_backs[j] = best_back
+
+        # Prune the state space to a strictly bounded beam width to prevent O(NxM) memory
+        # We normalize the pruning key by subtracting `j * C_del` (the baseline deletion cost)
+        # and we break ties by favoring advanced states (larger j) for connectivity.
+        if len(curr_dp) > 300:
+
+            def pruning_key_high(item):
+                j_idx, cost = item
+                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1], cost[2] - j_idx * C_del[2], -j_idx)
+
+            def pruning_key_low(item):
+                j_idx, cost = item
+                return (cost[0] - j_idx * C_del[0], cost[1] - j_idx * C_del[1], cost[2] - j_idx * C_del[2], j_idx)
+
+            best_items = dict(sorted(curr_dp.items(), key=pruning_key_high)[:150])
+            best_items.update(dict(sorted(curr_dp.items(), key=pruning_key_low)[:150]))
+
+            if 0 in curr_dp and 0 not in best_items:
+                best_items[0] = curr_dp[0]
+
+            curr_dp = dict(best_items)
+
+        # Only store back_ptr for the surviving states to enforce strict O(N * BeamWidth) memory
+        back_ptr[i] = {k: curr_backs[k] for k in curr_dp if k in curr_backs}
+
+    if M > 0 and not curr_dp:
+        print("Refresh aborted: Could not align subtitle sentences (no valid paths).")
+        return False
+
+    # If the exact end state wasn't reached due to the window size,
+    # find the closest reached state at the boundaries to backtrack from.
+    if M not in back_ptr[N]:
+        j = max(curr_dp.keys()) if curr_dp else 0
+        i = N
+    else:
+        i, j = N, M
+
+    matches = {}
+
+    # Backtrack through the sparse matrix to recover the actual mapping from new -> old.
+    while i > 0 or j > 0:
+        if j not in back_ptr[i]:
+            if i > 0:
+                i -= 1
+            else:
+                j -= 1
+            continue
+
+        b = back_ptr[i][j]
+        if isinstance(b, tuple):
+            if b[0] == 0:
+                matches[i - 1] = j - 1
+                i -= 1
+                j = b[1]
+            elif b[0] == 1:
+                i -= 1
+                j = b[1]
+            elif b[0] == 2:
+                origin_j, prev_back = b[1], b[2]
+                if isinstance(prev_back, tuple):
+                    if prev_back[0] == 0:
+                        matches[i - 1] = origin_j - 1
+                        i -= 1
+                        j = prev_back[1]
+                    elif prev_back[0] == 1:
+                        i -= 1
+                        j = prev_back[1]
+                    else:
+                        j -= 1
+                else:
+                    j -= 1
+        else:
+            j -= 1
+
+    updates = []
+    inserts = []
+    matched_existing_indices = set(matches.values())
+
+    stored_lang = existing_list[0]["language"] if existing_list else detect_language(subs)
+
+    for idx, new_s in enumerate(new_sentences):
+        if idx in matches:
+            ex = existing_list[matches[idx]]
+            updates.append((ex["language"], new_s["start_time"], new_s["end_time"], new_s["text"], ex["id"]))
+        else:
+            inserts.append((media_id, stored_lang, new_s["start_time"], new_s["end_time"], new_s["text"]))
+
+    deletes = [(existing_list[k]["id"],) for k in range(M) if k not in matched_existing_indices]
+
+    if updates:
+        conn.executemany("UPDATE sentences SET language=?, start_time=?, end_time=?, text=? WHERE id=?", updates)
+    if inserts:
+        conn.executemany("INSERT INTO sentences (media_id, language, start_time, end_time, text) VALUES (?, ?, ?, ?, ?)", inserts)
+    if deletes:
+        conn.executemany("DELETE FROM sentences WHERE id=?", deletes)
+        print(f"Deleted the following unmatched sentence IDs: {[d[0] for d in deletes]}")
+
+    conn.commit()
+    print(f"Refresh complete: {len(updates)} updated, {len(inserts)} inserted, {len(deletes)} deleted.")
+    return True
