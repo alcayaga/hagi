@@ -353,3 +353,16 @@ def test_search_anki_endpoint_failure(mock_config):
 
         assert response.status_code == 500
         assert response.json()["detail"] == "Search Failed"
+
+
+def test_static_main_js_translation_spacing():
+    """Verify that main.js contains proper spacing between translation badges and text."""
+    response = client.get("/static/js/main.js")
+    assert response.status_code == 200
+    assert 'SPA</span> <span' in response.text
+    assert 'ENG</span> <span' in response.text
+    assert "${langLabel}</span> <span" in response.text
+    assert " ${highlightText(cleanSpa)}" in response.text
+    assert " ${highlightText(cleanEng)}" in response.text
+
+

@@ -100,3 +100,45 @@ test("an older timeline error cannot replace newer timeline output", async () =>
   assert.deepEqual(runtime.renderedIds, [2]);
   assert.equal(runtime.context.getTimelineTargetId(), 2);
 });
+
+test("translation badge and text formatting includes space separator in extraction and search", () => {
+  assert.match(mainSource, /SPA<\/span><span[^>]*> \$\{highlightText\(cleanSpa\)\}/);
+  assert.match(mainSource, /ENG<\/span><span[^>]*> \$\{highlightText\(cleanEng\)\}/);
+  assert.match(mainSource, /SPA<\/span> <span[^>]*>\$\{escapeHtml\(cleanSpa\)\}/);
+  assert.match(mainSource, /ENG<\/span> <span[^>]*>\$\{escapeHtml\(cleanEng\)\}/);
+  assert.match(mainSource, /\$\{langLabel\}<\/span> <span[^>]*>\$\{newSecondaryText\}/);
+});
+
+test("updateEncompassedText renders secondary translation badge followed by a space", () => {
+  const elements = {
+    mediaText: { innerHTML: "" },
+    mediaTranslations: { innerHTML: "" },
+  };
+  const context = {
+    timelineData: {
+      selectedStart: 0,
+      selectedEnd: 10,
+      target: { text: "テスト" },
+      contextData: {
+        target_lang: "jpn",
+        target_context: [{ text: "テスト", start_time: 1, end_time: 2 }],
+        secondary_lang: "eng",
+        secondary_context: [{ text: "Test translation.", start_time: 1, end_time: 2 }],
+      },
+    },
+    document: {
+      getElementById: (id) => elements[id] || { innerHTML: "" },
+    },
+    escapeHtml: (str) => str,
+    highlightSearchTerms: (str) => str,
+    getLangColors: () => ({ badge: "bg-emerald-600 text-white shadow-sm" }),
+  };
+
+  const updateFuncStart = mainSource.indexOf("function updateEncompassedText()");
+  const updateFuncEnd = mainSource.indexOf("/**\n * Binds mouse and touch events", updateFuncStart);
+  const updateFuncSource = mainSource.slice(updateFuncStart, updateFuncEnd);
+
+  vm.runInNewContext(updateFuncSource + "\nupdateEncompassedText();", context);
+
+  assert.match(elements.mediaTranslations.innerHTML, /<span [^>]*>ENG<\/span> <span [^>]*>Test translation.<\/span>/);
+});

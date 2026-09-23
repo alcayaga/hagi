@@ -541,8 +541,8 @@ function renderResults() {
         
         <!-- Translations -->
         <div class="flex flex-col gap-2">
-          ${cleanSpa ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed">${highlightText(cleanSpa)}</span></div>` : ""}
-          ${cleanEng ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed">${highlightText(cleanEng)}</span></div>` : ""}
+          ${cleanSpa ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanSpa)}</span></div>` : ""}
+          ${cleanEng ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanEng)}</span></div>` : ""}
         </div>
       </div>
 
@@ -674,8 +674,8 @@ async function extractMedia(id, btnElement) {
       const cleanSpa = r?.spa_translation ? r.spa_translation.replace(/\n/g, " ") : "";
       const cleanEng = r?.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
       let transHtml = "";
-      if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-2 align-middle">SPA</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanSpa)}</span></div>`;
-      if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-2 align-middle">ENG</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanEng)}</span></div>`;
+      if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-1 align-middle">SPA</span> <span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanSpa)}</span></div>`;
+      if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-1 align-middle">ENG</span> <span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanEng)}</span></div>`;
       document.getElementById("mediaTranslations").innerHTML = highlightSearchTerms(transHtml);
 
       document.getElementById("mediaImage").src = data.image_url + "?t=" + new Date().getTime();
@@ -1206,7 +1206,7 @@ function updateEncompassedText() {
   if (newSecondaryText) {
     const langLabel = (timelineData.contextData.secondary_lang || "sub").toUpperCase();
     const c = getLangColors(timelineData.contextData.secondary_lang);
-    transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-2 align-middle">${langLabel}</span><span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;
+    transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-1 align-middle">${langLabel}</span> <span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;
   }
   document.getElementById("mediaTranslations").innerHTML = highlightSearchTerms(transHtml);
 }
