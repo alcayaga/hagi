@@ -100,3 +100,45 @@ test("an older timeline error cannot replace newer timeline output", async () =>
   assert.deepEqual(runtime.renderedIds, [2]);
   assert.equal(runtime.context.getTimelineTargetId(), 2);
 });
+
+test("translation badge and text formatting includes space separator in extraction and search", () => {
+  assert.ok(mainSource.includes('${cleanSpa ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanSpa)}</span></div>` : ""}'));
+  assert.ok(mainSource.includes('${cleanEng ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanEng)}</span></div>` : ""}'));
+  assert.ok(mainSource.includes('if (cleanSpa) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("spa").badge} mr-1 align-middle">SPA</span> <span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanSpa)}</span></div>`;'));
+  assert.ok(mainSource.includes('if (cleanEng) transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${getLangColors("eng").badge} mr-1 align-middle">ENG</span> <span class="text-gray-500 dark:text-gray-400 italic align-middle">${escapeHtml(cleanEng)}</span></div>`;'));
+  assert.ok(mainSource.includes('transHtml += `<div class="text-sm mt-2"><span class="inline-block px-1.5 py-0.5 rounded text-[0.65rem] font-bold ${c.badge} mr-1 align-middle">${langLabel}</span> <span class="text-gray-500 dark:text-gray-400 italic align-middle">${newSecondaryText}</span></div>`;'));
+});
+
+test("updateEncompassedText renders secondary translation badge followed by a space", () => {
+  const elements = {
+    mediaText: { innerHTML: "" },
+    mediaTranslations: { innerHTML: "" },
+  };
+  const context = {
+    timelineData: {
+      selectedStart: 0,
+      selectedEnd: 10,
+      target: { text: "テスト" },
+      contextData: {
+        target_lang: "jpn",
+        target_context: [{ text: "テスト", start_time: 1, end_time: 2 }],
+        secondary_lang: "eng",
+        secondary_context: [{ text: "Test translation.", start_time: 1, end_time: 2 }],
+      },
+    },
+    document: {
+      getElementById: (id) => elements[id] || { innerHTML: "" },
+    },
+    escapeHtml: (str) => str,
+    highlightSearchTerms: (str) => str,
+    getLangColors: () => ({ badge: "bg-emerald-600 text-white shadow-sm" }),
+  };
+
+  const updateFuncStart = mainSource.indexOf("function updateEncompassedText()");
+  const updateFuncEnd = mainSource.indexOf("/**\n * Binds mouse and touch events", updateFuncStart);
+  const updateFuncSource = mainSource.slice(updateFuncStart, updateFuncEnd);
+
+  vm.runInNewContext(updateFuncSource + "\nupdateEncompassedText();", context);
+
+  assert.match(elements.mediaTranslations.innerHTML, /<span [^>]*>ENG<\/span> <span [^>]*>Test translation.<\/span>/);
+});
