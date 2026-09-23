@@ -356,7 +356,7 @@ def index_directory(directory_path: str):
             if file.endswith((".ass", ".srt")):
                 try:
                     subs = None
-                    for enc in ["utf-8-sig", "utf-8", "utf-16", "shift_jis", "latin-1"]:
+                    for enc in ["utf-8-sig", "utf-8", "utf-16", "cp932", "shift_jis", "latin-1"]:
                         try:
                             subs = load_and_sanitize_subs(file_path, encoding=enc)
                             break
@@ -564,7 +564,7 @@ def refresh_file(file_path: str):
 
     subs = None
     last_error = None
-    for enc in ["utf-8-sig", "utf-8", "utf-16", "shift_jis", "latin-1"]:
+    for enc in ["utf-8-sig", "utf-8", "utf-16", "cp932", "shift_jis", "latin-1"]:
         try:
             subs = load_and_sanitize_subs(abs_path, encoding=enc)
             break

@@ -437,6 +437,9 @@ def test_refresh_many_deletions_then_insertion(test_db):
         add_sentences(conn, media_id, old_lines)
         conn.commit()
 
+        old_rows = conn.execute("SELECT id FROM sentences WHERE media_id = ?", (media_id,)).fetchall()
+        old_ids = {row["id"] for row in old_rows}
+
         # New SRT deletes all 350 old lines, and inserts ONE new unmatched line at the end
         new_lines = [{"start": "01:00:00,000", "end": "01:00:01,000", "text": "New Unmatched"}]
         create_srt(srt_path, new_lines)
@@ -446,6 +449,7 @@ def test_refresh_many_deletions_then_insertion(test_db):
         final_rows = conn.execute("SELECT id, text FROM sentences ORDER BY start_time, id").fetchall()
         assert len(final_rows) == 1
         assert final_rows[0]["text"] == "New Unmatched"
+        assert final_rows[0]["id"] not in old_ids
     finally:
         if os.path.exists(srt_path):
             os.remove(srt_path)
