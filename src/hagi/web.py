@@ -286,7 +286,7 @@ class ExtractConfig(BaseModel):
 
 
 @app.post("/api/extract/{sentence_id}")
-def extract(sentence_id: int, config: ExtractConfig, background_tasks: BackgroundTasks):
+def extract(sentence_id: int, config: ExtractConfig, background_tasks: BackgroundTasks, request: Request = None):
     """Extract audio and image for a given sentence."""
     success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(
         sentence_id, "./media", config.pad_start, config.pad_end
@@ -297,13 +297,76 @@ def extract(sentence_id: int, config: ExtractConfig, background_tasks: Backgroun
     if not success:
         raise HTTPException(status_code=500, detail=msg)
 
+    base_url = None
+    try:
+        app_config = _load_config()
+        base_url = _get_normalized_media_url(app_config)
+    except Exception:
+        pass
+
+    if not base_url and request:
+        base_url = str(request.base_url).rstrip("/")
+
+    audio_fn = os.path.basename(audio_out)
+    image_fn = os.path.basename(image_out)
+    try:
+        source_info = exporter.build_source_info(sentence_id, base_url=base_url)
+    except Exception as e:
+        logger.warning(f"Failed to build source info for sentence {sentence_id}: {e}")
+        source_info = ""
+
     # Return relative URLs that map to the mounted StaticFiles
     return {
         "success": True,
         "message": "Media extracted",
-        "audio_url": f"/media/{os.path.basename(audio_out)}",
-        "image_url": f"/media/{os.path.basename(image_out)}",
+        "audio_url": f"/media/{audio_fn}",
+        "image_url": f"/media/{image_fn}",
+        "audio_filename": audio_fn,
+        "image_filename": image_fn,
+        "source_info": source_info,
         "text": text,
+    }
+
+
+@app.get("/api/anki/config")
+def get_anki_config():
+    """Return the AnkiConnect configuration from config.json or defaults."""
+    try:
+        app_config = _load_config()
+    except HTTPException:
+        app_config = {}
+    except Exception:
+        app_config = {}
+
+    if not isinstance(app_config, dict):
+        app_config = {}
+
+    tags = app_config.get("tags")
+    if not isinstance(tags, list):
+        tags = []
+
+    pad_start = app_config.get("padStart")
+    if isinstance(pad_start, bool) or not isinstance(pad_start, (int, float)) or pad_start < 0:
+        pad_start = 0.25
+
+    pad_end = app_config.get("padEnd")
+    if isinstance(pad_end, bool) or not isinstance(pad_end, (int, float)) or pad_end < 0:
+        pad_end = 0.0
+
+    return {
+        "ankiConnectUrl": app_config.get("ankiConnectUrl", "http://127.0.0.1:8765"),
+        "deck": app_config.get("deck", ""),
+        "noteType": app_config.get("noteType", ""),
+        "wordField": app_config.get("wordField", ""),
+        "definitionField": app_config.get("definitionField", ""),
+        "sentenceField": app_config.get("sentenceField", ""),
+        "sentenceHighlightedField": app_config.get("sentenceHighlightedField", ""),
+        "audioField": app_config.get("audioField", ""),
+        "imageField": app_config.get("imageField", ""),
+        "sourceField": app_config.get("sourceField", ""),
+        "tags": tags,
+        "padStart": pad_start,
+        "padEnd": pad_end,
     }
 
 

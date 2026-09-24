@@ -465,6 +465,78 @@ def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end
         return False, str(e), False
 
 
+def build_source_info(sentence_id: int, base_url: str | None = None) -> str:
+    """Build formatted HTML permalink and source metadata string for a sentence.
+
+    Args:
+        sentence_id (int): Sentence ID.
+        base_url (str, optional): Base URL of the web UI.
+
+    Returns:
+        str: Formatted HTML link with source metadata, or empty string.
+    """
+    import html
+
+    conn = db.get_db()
+    meta = conn.execute(
+        """
+        SELECT m.show_title, m.season, m.episode, m.episode_title, s.start_time
+        FROM sentences s
+        JOIN media m ON s.media_id = m.id
+        WHERE s.id = ?
+        """,
+        (sentence_id,),
+    ).fetchone()
+
+    if not meta:
+        return ""
+
+    show_part = ""
+    if meta["show_title"]:
+        show_part += meta["show_title"]
+
+    ep_part = ""
+    if meta["season"] is not None and meta["episode"] is not None:
+        ep_part = f"S{meta['season']:02d}E{meta['episode']:02d}"
+    elif meta["episode"] is not None:
+        ep_part = f"Ep {meta['episode']:02d}"
+
+    if show_part and ep_part:
+        show_part += f" {ep_part}"
+    elif ep_part:
+        show_part = ep_part
+
+    title_part = ""
+    if meta["episode_title"]:
+        title_part = meta["episode_title"]
+
+    time_str = ""
+    if meta["start_time"] is not None:
+        time_str = f"[{int(meta['start_time'] // 60):02d}:{int(meta['start_time'] % 60):02d}]"
+
+    parts = []
+    if show_part:
+        parts.append(show_part)
+    if title_part:
+        if show_part:
+            parts.append(f"- {title_part}")
+        else:
+            parts.append(title_part)
+    if time_str:
+        parts.append(time_str)
+
+    source_info = " ".join(parts)
+    if not source_info:
+        return ""
+
+    if base_url:
+        link = f"{base_url.rstrip('/')}/sentence/{sentence_id}"
+    else:
+        link = f"http://localhost:8000/sentence/{sentence_id}"
+
+    return f'<a href="{html.escape(link, quote=True)}">{html.escape(source_info)}</a>'
+
+
 def export_ankiconnect(
     sentence_id: int,
     config: dict,
@@ -500,69 +572,8 @@ def export_ankiconnect(
 
     anki_url = config.get("ankiConnectUrl", "http://127.0.0.1:8765")
 
-
-
     try:
-        # Fetch metadata for source_info
-        conn = db.get_db()
-        meta = conn.execute(
-            """
-            SELECT m.show_title, m.season, m.episode, m.episode_title, s.start_time
-            FROM sentences s
-            JOIN media m ON s.media_id = m.id
-            WHERE s.id = ?
-            """,
-            (sentence_id,),
-        ).fetchone()
-
-        source_info = ""
-        if meta:
-            show_part = ""
-            if meta["show_title"]:
-                show_part += meta["show_title"]
-
-            ep_part = ""
-            if meta["season"] is not None and meta["episode"] is not None:
-                ep_part = f"S{meta['season']:02d}E{meta['episode']:02d}"
-            elif meta["episode"] is not None:
-                ep_part = f"Ep {meta['episode']:02d}"
-
-            if show_part and ep_part:
-                show_part += f" {ep_part}"
-            elif ep_part:
-                show_part = ep_part
-
-            title_part = ""
-            if meta["episode_title"]:
-                title_part = meta["episode_title"]
-
-            time_str = ""
-            if meta["start_time"] is not None:
-                time_str = f"[{int(meta['start_time'] // 60):02d}:{int(meta['start_time'] % 60):02d}]"
-
-            parts = []
-            if show_part:
-                parts.append(show_part)
-            if title_part:
-                # If there's a show part, separate with a dash, otherwise just add title
-                if show_part:
-                    parts.append(f"- {title_part}")
-                else:
-                    parts.append(title_part)
-            if time_str:
-                parts.append(time_str)
-
-            source_info = " ".join(parts)
-
-            import html
-
-            # Wrap source_info in an HTML permalink
-            if base_url:
-                link = f"{base_url.rstrip('/')}/sentence/{sentence_id}"
-            else:
-                link = f"http://localhost:8000/sentence/{sentence_id}"
-
-            source_info = f'<a href="{html.escape(link, quote=True)}">{html.escape(source_info)}</a>'
+        source_info = build_source_info(sentence_id, base_url=base_url)
 
         # Resolve note ID
         if not target_note_id:

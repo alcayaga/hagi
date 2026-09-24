@@ -13,25 +13,26 @@ def test_node_frontend_suite():
     if not node_bin:
         pytest.fail("Node.js executable not found in PATH; required for frontend tests.")
 
-    test_file = Path(__file__).resolve().parent / "test_main.mjs"
-    assert test_file.exists(), f"Frontend test file missing: {test_file}"
+    test_files = sorted(Path(__file__).resolve().parent.glob("test_*.mjs"))
+    assert len(test_files) > 0, "Frontend test files missing"
 
-    try:
-        result = subprocess.run(
-            [node_bin, "--test", str(test_file)],
-            capture_output=True,
-            text=True,
-            check=False,
-            timeout=30,
+    for test_file in test_files:
+        try:
+            result = subprocess.run(
+                [node_bin, "--test", str(test_file)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=30,
+            )
+        except subprocess.TimeoutExpired as exc:
+            pytest.fail(f"Node frontend tests ({test_file.name}) timed out after 30 seconds:\n{exc}")
+
+        assert result.returncode == 0, (
+            f"Node frontend tests failed ({test_file.name}) (exit code {result.returncode}):\n"
+            f"STDOUT:\n{result.stdout}\n"
+            f"STDERR:\n{result.stderr}"
         )
-    except subprocess.TimeoutExpired as exc:
-        pytest.fail(f"Node frontend tests timed out after 30 seconds:\n{exc}")
-
-    assert result.returncode == 0, (
-        f"Node frontend tests failed (exit code {result.returncode}):\n"
-        f"STDOUT:\n{result.stdout}\n"
-        f"STDERR:\n{result.stderr}"
-    )
 
 
 def test_node_frontend_suite_missing_node(monkeypatch):
@@ -42,14 +43,14 @@ def test_node_frontend_suite_missing_node(monkeypatch):
 
 
 def test_node_frontend_suite_missing_file(monkeypatch):
-    """Verify that test_node_frontend_suite fails when test_main.mjs does not exist."""
+    """Verify that test_node_frontend_suite fails when frontend test files do not exist."""
     monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/node")
     monkeypatch.setattr(
         Path,
-        "resolve",
-        lambda self: Path("/nonexistent/path/test_frontend.py"),
+        "glob",
+        lambda self, pattern: [],
     )
-    with pytest.raises(AssertionError, match="Frontend test file missing"):
+    with pytest.raises(AssertionError, match="Frontend test files missing"):
         test_node_frontend_suite()
 
 

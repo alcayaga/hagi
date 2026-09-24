@@ -366,3 +366,136 @@ def test_static_main_js_translation_spacing():
     assert " ${highlightText(cleanEng)}" in response.text
 
 
+def test_get_anki_config_success(monkeypatch):
+    """Test GET /api/anki/config returns configuration from config.json."""
+    import json
+    from io import StringIO
+
+    mock_cfg = {
+        "ankiConnectUrl": "http://127.0.0.1:8765",
+        "deck": "Japanese",
+        "noteType": "Mining",
+        "wordField": "Expression",
+        "definitionField": "Meaning",
+        "sentenceField": "Sentence",
+        "sentenceHighlightedField": "SentenceHigh",
+        "audioField": "Audio",
+        "imageField": "Picture",
+        "sourceField": "Source",
+        "tags": ["anime", "vocab"],
+    }
+
+    monkeypatch.setattr("os.path.exists", lambda path: True if path == "config.json" else False)
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: StringIO(json.dumps(mock_cfg)))
+
+    response = client.get("/api/anki/config")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deck"] == "Japanese"
+    assert data["noteType"] == "Mining"
+    assert data["wordField"] == "Expression"
+    assert data["tags"] == ["anime", "vocab"]
+    assert data["ankiConnectUrl"] == "http://127.0.0.1:8765"
+    assert data["padStart"] == 0.25
+    assert data["padEnd"] == 0.0
+
+
+def test_get_anki_config_missing_file(monkeypatch):
+    """Test GET /api/anki/config gracefully returns defaults when config.json is missing."""
+    monkeypatch.setattr("os.path.exists", lambda path: False)
+
+    response = client.get("/api/anki/config")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["ankiConnectUrl"] == "http://127.0.0.1:8765"
+    assert data["deck"] == ""
+    assert data["tags"] == []
+    assert data["padStart"] == 0.25
+    assert data["padEnd"] == 0.0
+
+
+def test_get_anki_config_corrupt_file(monkeypatch):
+    """Test GET /api/anki/config gracefully returns defaults when config.json is invalid JSON."""
+    from io import StringIO
+
+    monkeypatch.setattr("os.path.exists", lambda path: True)
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: StringIO("invalid json content"))
+
+    response = client.get("/api/anki/config")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deck"] == ""
+
+
+def test_get_anki_config_boolean_padding(monkeypatch):
+    """Test GET /api/anki/config rejects boolean padding values and falls back to defaults."""
+    from io import StringIO
+    import json
+
+    mock_cfg = {"padStart": True, "padEnd": False}
+    monkeypatch.setattr("os.path.exists", lambda path: True if path == "config.json" else False)
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: StringIO(json.dumps(mock_cfg)))
+
+    response = client.get("/api/anki/config")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["padStart"] == 0.25
+    assert data["padEnd"] == 0.0
+
+
+def test_api_extract_enriched_fields(test_db):
+    """Test that POST /api/extract returns enriched metadata including source_info and filenames."""
+    with patch("hagi.web.exporter.extract_media") as mock_extract, \
+         patch("hagi.web.exporter.build_source_info") as mock_source_info:
+        mock_extract.return_value = (
+            True,
+            "Success",
+            "/media/audio_sample.mp3",
+            "/media/img_sample.jpg",
+            "テスト文",
+            False,
+        )
+        mock_source_info.return_value = '<a href="http://localhost:8000/sentence/1">Show S01E01 [00:10]</a>'
+
+        response = client.post(
+            "/api/extract/1",
+            json={"pad_start": 0.25, "pad_end": 0.0},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["audio_url"] == "/media/audio_sample.mp3"
+        assert data["image_url"] == "/media/img_sample.jpg"
+        assert data["audio_filename"] == "audio_sample.mp3"
+        assert data["image_filename"] == "img_sample.jpg"
+        assert data["source_info"] == '<a href="http://localhost:8000/sentence/1">Show S01E01 [00:10]</a>'
+        assert data["text"] == "テスト文"
+
+
+def test_api_extract_build_source_info_failure(test_db):
+    """Test that POST /api/extract gracefully handles build_source_info exceptions by setting source_info to empty."""
+    with (
+        patch("hagi.web.exporter.extract_media") as mock_extract,
+        patch("hagi.web.exporter.build_source_info", side_effect=Exception("Database failure")),
+    ):
+        mock_extract.return_value = (
+            True,
+            "Success",
+            "/media/audio_sample.mp3",
+            "/media/img_sample.jpg",
+            "テスト文",
+            False,
+        )
+
+        response = client.post(
+            "/api/extract/1",
+            json={"pad_start": 0.25, "pad_end": 0.0},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["source_info"] == ""
+
+
+
+
