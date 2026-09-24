@@ -346,11 +346,11 @@ def get_anki_config():
         tags = []
 
     pad_start = app_config.get("padStart")
-    if not isinstance(pad_start, (int, float)) or pad_start < 0:
+    if isinstance(pad_start, bool) or not isinstance(pad_start, (int, float)) or pad_start < 0:
         pad_start = 0.25
 
     pad_end = app_config.get("padEnd")
-    if not isinstance(pad_end, (int, float)) or pad_end < 0:
+    if isinstance(pad_end, bool) or not isinstance(pad_end, (int, float)) or pad_end < 0:
         pad_end = 0.0
 
     return {

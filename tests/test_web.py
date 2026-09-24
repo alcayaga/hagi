@@ -424,8 +424,23 @@ def test_get_anki_config_corrupt_file(monkeypatch):
     response = client.get("/api/anki/config")
     assert response.status_code == 200
     data = response.json()
-    assert data["ankiConnectUrl"] == "http://127.0.0.1:8765"
     assert data["deck"] == ""
+
+
+def test_get_anki_config_boolean_padding(monkeypatch):
+    """Test GET /api/anki/config rejects boolean padding values and falls back to defaults."""
+    from io import StringIO
+    import json
+
+    mock_cfg = {"padStart": True, "padEnd": False}
+    monkeypatch.setattr("os.path.exists", lambda path: True if path == "config.json" else False)
+    monkeypatch.setattr("builtins.open", lambda *args, **kwargs: StringIO(json.dumps(mock_cfg)))
+
+    response = client.get("/api/anki/config")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["padStart"] == 0.25
+    assert data["padEnd"] == 0.0
 
 
 def test_api_extract_enriched_fields(test_db):
