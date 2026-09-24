@@ -94,11 +94,12 @@ function resetAnkiConfig() {
  * @param {string} action - AnkiConnect action name.
  * @param {object} params - Action parameters dictionary.
  * @param {number} timeout - Request timeout in milliseconds (default: 8000ms).
+ * @param {string|null} urlOverride - Optional URL override for testing unsaved endpoints.
  * @returns {Promise<any>} The result field from AnkiConnect response.
  */
-async function ankiInvoke(action, params = {}, timeout = 8000) {
+async function ankiInvoke(action, params = {}, timeout = 8000, urlOverride = null) {
   const config = getActiveAnkiConfig();
-  const url = config.ankiConnectUrl || "http://127.0.0.1:8765";
+  const url = urlOverride || config.ankiConnectUrl || "http://127.0.0.1:8765";
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -547,6 +548,14 @@ async function sendToAnki(btn, targetNoteId = null) {
     return;
   }
 
+  const tl = typeof timelineData !== "undefined" ? timelineData : typeof window !== "undefined" ? window.timelineData : null;
+  if (tl && tl.lastExtractedStart !== undefined && tl.selectedStart !== undefined && (Math.abs(tl.selectedStart - tl.lastExtractedStart) > 0.01 || Math.abs(tl.selectedEnd - tl.lastExtractedEnd) > 0.01)) {
+    if (typeof showToast === "function") {
+      showToast("Please click 'Sync Media' before sending to Anki.", "error");
+    }
+    return;
+  }
+
   const originalHtml = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div><span>Sending...</span>`;
@@ -573,7 +582,7 @@ async function sendToAnki(btn, targetNoteId = null) {
       if (!Array.isArray(notes) || notes.length === 0) {
         throw new Error(`No notes found in deck "${deck}" with note type "${noteType}".`);
       }
-      resolvedNoteId = Math.max(...notes);
+      resolvedNoteId = notes.reduce((max, id) => (id > max ? id : max), 0);
     }
 
     // Determine current audio and image filenames/urls
@@ -810,7 +819,7 @@ async function testAnkiConnectionUI() {
 
   const startTime = performance.now();
   try {
-    const version = await ankiInvoke("version", {}, 3000);
+    const version = await ankiInvoke("version", {}, 3000, testUrl);
     const latency = Math.round(performance.now() - startTime);
 
     if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse";
@@ -820,9 +829,9 @@ async function testAnkiConnectionUI() {
     let deckCount = 0;
     let modelCount = 0;
     try {
-      const decks = await ankiInvoke("deckNames", {}, 2000);
+      const decks = await ankiInvoke("deckNames", {}, 2000, testUrl);
       if (Array.isArray(decks)) deckCount = decks.length;
-      const models = await ankiInvoke("modelNames", {}, 2000);
+      const models = await ankiInvoke("modelNames", {}, 2000, testUrl);
       if (Array.isArray(models)) modelCount = models.length;
     } catch (e) {
       // Introspection optional
@@ -1007,5 +1016,6 @@ if (typeof module !== "undefined" && module.exports) {
     buildAnkiSearchQueries,
     stripHtml,
     buildHighlightedSentence,
+    sendToAnki,
   };
 }

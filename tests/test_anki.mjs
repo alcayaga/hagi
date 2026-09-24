@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import ankiModule from "../src/hagi/static/js/anki.js";
 
-const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence } = ankiModule;
+const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence, sendToAnki } = ankiModule;
 
 // Mock localStorage for Node test environment
 let mockStorage = {};
@@ -193,4 +193,57 @@ test("fetchBlobAsBase64 converts response blob to base64 string", async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("ankiInvoke targets urlOverride when provided instead of default config URL", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    const customUrl = "http://192.168.1.100:8765";
+    globalThis.fetch = async (url, opts) => {
+      assert.equal(url, customUrl);
+      const body = JSON.parse(opts.body);
+      assert.equal(body.action, "version");
+      return {
+        ok: true,
+        json: async () => ({ result: 6, error: null }),
+      };
+    };
+
+    const res = await ankiInvoke("version", {}, 3000, customUrl);
+    assert.equal(res, 6);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("sendToAnki prevents export and prompts to sync media when timeline selection is stale", async () => {
+  let toastMsg = null;
+  let toastType = null;
+  globalThis.showToast = (msg, type) => {
+    toastMsg = msg;
+    toastType = type;
+  };
+
+  globalThis.window = {
+    currentExtraction: { id: 42, audioFilename: "audio.mp3", imageFilename: "img.jpg" },
+  };
+
+  globalThis.timelineData = {
+    selectedStart: 10.5,
+    selectedEnd: 15.0,
+    lastExtractedStart: 10.0,
+    lastExtractedEnd: 15.0,
+  };
+
+  const btn = { innerHTML: "Quick Update", disabled: false, classList: { add() {} } };
+
+  await sendToAnki(btn);
+
+  assert.equal(btn.disabled, false);
+  assert.equal(toastType, "error");
+  assert.match(toastMsg, /Sync Media/);
+
+  delete globalThis.showToast;
+  delete globalThis.window;
+  delete globalThis.timelineData;
 });

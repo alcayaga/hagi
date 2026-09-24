@@ -266,7 +266,7 @@ async function performSearch(pushState = true, resetFilters = false) {
 
     allSearchResults = [];
     container.innerHTML = "";
-    document.getElementById("filterControls")?.classList.add("hidden");
+    document.getElementById("filtersAndControlsWrapper")?.classList.add("hidden");
     activeShow = null;
     activeSeason = null;
     activeEp = null;
@@ -340,7 +340,7 @@ async function performSearch(pushState = true, resetFilters = false) {
       }
     }
 
-    document.getElementById("filterControls")?.classList.remove("hidden");
+    document.getElementById("filtersAndControlsWrapper")?.classList.remove("hidden");
     const dropdownDroppedFilters = populateDropdowns();
     if (dropdownDroppedFilters) {
       updateUrl(query, true);
@@ -902,6 +902,9 @@ let timelineData = {
   activeHandle: null,
   contextData: null,
 };
+if (typeof window !== "undefined") {
+  window.timelineData = timelineData;
+}
 let latestTimelineLoadId = 0;
 
 async function openExtractionTimeline(id) {
@@ -1561,7 +1564,7 @@ window.addEventListener("popstate", async (event) => {
   } else if (path === "/") {
     document.getElementById("searchInput").value = "";
     document.getElementById("resultsList").innerHTML = "";
-    document.getElementById("filterControls")?.classList.add("hidden");
+    document.getElementById("filtersAndControlsWrapper")?.classList.add("hidden");
   } else if (path.startsWith("/sentence/")) {
     const id = path.split("/").pop();
     if (id) {
