@@ -396,6 +396,8 @@ def test_get_anki_config_success(monkeypatch):
     assert data["wordField"] == "Expression"
     assert data["tags"] == ["anime", "vocab"]
     assert data["ankiConnectUrl"] == "http://127.0.0.1:8765"
+    assert data["padStart"] == 0.25
+    assert data["padEnd"] == 0.0
 
 
 def test_get_anki_config_missing_file(monkeypatch):
@@ -408,6 +410,8 @@ def test_get_anki_config_missing_file(monkeypatch):
     assert data["ankiConnectUrl"] == "http://127.0.0.1:8765"
     assert data["deck"] == ""
     assert data["tags"] == []
+    assert data["padStart"] == 0.25
+    assert data["padEnd"] == 0.0
 
 
 def test_get_anki_config_corrupt_file(monkeypatch):

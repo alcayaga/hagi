@@ -345,6 +345,14 @@ def get_anki_config():
     if not isinstance(tags, list):
         tags = []
 
+    pad_start = app_config.get("padStart")
+    if not isinstance(pad_start, (int, float)) or pad_start < 0:
+        pad_start = 0.25
+
+    pad_end = app_config.get("padEnd")
+    if not isinstance(pad_end, (int, float)) or pad_end < 0:
+        pad_end = 0.0
+
     return {
         "ankiConnectUrl": app_config.get("ankiConnectUrl", "http://127.0.0.1:8765"),
         "deck": app_config.get("deck", ""),
@@ -357,6 +365,8 @@ def get_anki_config():
         "imageField": app_config.get("imageField", ""),
         "sourceField": app_config.get("sourceField", ""),
         "tags": tags,
+        "padStart": pad_start,
+        "padEnd": pad_end,
     }
 
 
