@@ -167,6 +167,36 @@ test("ankiInvoke detects CORS / network failure and suggests webCorsOriginList",
   }
 });
 
+test("ankiInvoke sets isTimeout flag on timeout error", async () => {
+  const originalFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async (url, options) => {
+      return new Promise((resolve, reject) => {
+        if (options?.signal) {
+          options.signal.addEventListener("abort", () => {
+            const err = new Error("The operation was aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }
+      });
+    };
+
+    await assert.rejects(
+      async () => {
+        await ankiInvoke("version", {}, 20);
+      },
+      (err) => {
+        assert.match(err.message, /timed out/);
+        assert.equal(err.isTimeout, true);
+        return true;
+      },
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("fetchBlobAsBase64 converts response blob to base64 string", async () => {
   const originalFetch = globalThis.fetch;
   try {

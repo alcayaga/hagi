@@ -136,7 +136,9 @@ async function ankiInvoke(action, params = {}, timeout = 8000, urlOverride = nul
   } catch (err) {
     clearTimeout(timer);
     if (err.name === "AbortError") {
-      throw new Error(`Connection to AnkiConnect timed out after ${timeout}ms.`);
+      const timeoutErr = new Error(`Connection to AnkiConnect timed out after ${timeout}ms.`);
+      timeoutErr.isTimeout = true;
+      throw timeoutErr;
     }
 
     // Identify common browser CORS / network restrictions
@@ -358,7 +360,7 @@ async function searchAnkiCards() {
           }
         }
       } catch (err) {
-        if (err.isCorsOrOffline || err.name === "AbortError") {
+        if (err.isCorsOrOffline || err.isTimeout || err.name === "AbortError") {
           throw err;
         }
         console.debug("Pass 1 search failed, continuing to broad search", err);
@@ -379,7 +381,7 @@ async function searchAnkiCards() {
           }
         }
       } catch (err) {
-        if (err.isCorsOrOffline || err.name === "AbortError") {
+        if (err.isCorsOrOffline || err.isTimeout || err.name === "AbortError") {
           throw err;
         }
         console.debug("Pass 2 search failed", err);
