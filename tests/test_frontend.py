@@ -72,6 +72,8 @@ def test_node_frontend_suite_timeout(monkeypatch):
     monkeypatch.setattr(shutil, "which", lambda cmd: "/usr/bin/node")
 
     def mock_run(*args, **kwargs):
+        """Simulate a subprocess timeout after asserting the timeout duration."""
+        assert kwargs.get("timeout") == 30
         raise subprocess.TimeoutExpired(cmd=args[0], timeout=30)
 
     monkeypatch.setattr(subprocess, "run", mock_run)
