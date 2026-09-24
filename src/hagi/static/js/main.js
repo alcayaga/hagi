@@ -20,17 +20,6 @@ function formatTime(seconds) {
   return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
-let searchAnkiCardsTimeout = null;
-/**
- * Debounced wrapper for Anki search to prevent rapid API calls.
- */
-function debounceSearchAnkiCards() {
-  if (searchAnkiCardsTimeout) clearTimeout(searchAnkiCardsTimeout);
-  searchAnkiCardsTimeout = setTimeout(() => {
-    searchAnkiCards();
-  }, 300);
-}
-
 document.getElementById("searchInput").addEventListener("keypress", function (e) {
   if (e.key === "Enter") performSearch();
 });
@@ -601,6 +590,9 @@ function highlightSearchTerms(text, queryToUse = null, escapeFunc = null) {
 }
 
 let currentExtraction = { id: null, padStart: 0.25, padEnd: 0.0 };
+if (typeof window !== "undefined") {
+  window.currentExtraction = currentExtraction;
+}
 
 /**
  * Calls the backend API to extract audio and snapshot images for a specific sentence.
@@ -668,6 +660,13 @@ async function extractMedia(id, btnElement) {
     const data = await response.json();
 
     if (data.success) {
+      currentExtraction.audioUrl = data.audio_url;
+      currentExtraction.imageUrl = data.image_url;
+      currentExtraction.audioFilename = data.audio_filename;
+      currentExtraction.imageFilename = data.image_filename;
+      currentExtraction.sourceInfo = data.source_info;
+      currentExtraction.text = data.text;
+
       const extractedText = (data.text || "").replace(/<br\s*\/?>/gi, " ").replace(/\n/g, " ");
       document.getElementById("mediaText").innerHTML = highlightSearchTerms(extractedText, null, escapeHtml);
 
@@ -1321,6 +1320,13 @@ async function applyTimelineExtraction() {
     }
 
     if (data.success) {
+      currentExtraction.audioUrl = data.audio_url;
+      currentExtraction.imageUrl = data.image_url;
+      currentExtraction.audioFilename = data.audio_filename;
+      currentExtraction.imageFilename = data.image_filename;
+      currentExtraction.sourceInfo = data.source_info;
+      currentExtraction.text = data.text;
+
       const mediaImage = document.getElementById("mediaImage");
       const mediaAudio = document.getElementById("mediaAudio");
 
@@ -1417,135 +1423,6 @@ function showToast(message, type = "success") {
     toast.classList.add("opacity-0");
     setTimeout(() => toast.remove(), 300);
   }, 3000);
-}
-
-/**
- * Sends the currently extracted media to Anki via the backend API.
- * Uses the exact parameters currently stored in currentExtraction.
- * @param {HTMLElement} btn - The button element that was clicked
- * @param {string|null} targetNoteId - Optional specific NID to update
- */
-async function sendToAnki(btn, targetNoteId = null) {
-  if (!currentExtraction.id) return;
-
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div><span>Sending...</span>`;
-  btn.classList.add("opacity-70");
-
-  try {
-    let sendPadStart = currentExtraction.padStart;
-    let sendPadEnd = currentExtraction.padEnd;
-
-    // If the timeline is open, prefer its current slider state
-    if (timelineData && timelineData.target) {
-      const targetStart = timelineData.target.start_time || 0;
-      const targetEnd = timelineData.target.end_time || targetStart + 2.0;
-      sendPadStart = targetStart - timelineData.selectedStart;
-      sendPadEnd = timelineData.selectedEnd - targetEnd;
-    }
-
-    const payload = {
-      pad_start: sendPadStart,
-      pad_end: sendPadEnd,
-      search_query: document.getElementById("searchInput") ? document.getElementById("searchInput").value.trim() : "",
-    };
-    if (targetNoteId) {
-      payload.target_note_id = Number(targetNoteId);
-    }
-
-    const response = await fetch(`/api/anki/${currentExtraction.id}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await response.json();
-
-    if (data.success) {
-      showToast("Successfully sent to Anki!", "success");
-      if (targetNoteId) toggleModalView("mediaExtractView");
-    } else {
-      showToast(data.detail || "Failed to send to Anki.", "error");
-    }
-  } catch (err) {
-    console.error("Error sending to Anki:", err);
-    showToast("Error connecting to server.", "error");
-  } finally {
-    btn.innerHTML = btn.dataset.origText || originalHtml;
-    if (btn.dataset.origClass) {
-      btn.className = btn.dataset.origClass;
-    }
-    delete btn.dataset.confirming;
-    delete btn.dataset.origText;
-    delete btn.dataset.origClass;
-    if (btn.dataset.confirmTimer) {
-      clearTimeout(Number(btn.dataset.confirmTimer));
-      delete btn.dataset.confirmTimer;
-    }
-    btn.disabled = false;
-    btn.classList.remove("opacity-70");
-  }
-}
-
-/**
- * Handles sending to a specific Anki NID from the UI
- */
-
-/**
- * Toggles the views inside the media extraction modal
- */
-function toggleModalView(viewName) {
-  const extractView = document.getElementById("mediaExtractView");
-  const searchView = document.getElementById("mediaAnkiSearchView");
-  const backBtn = document.getElementById("mediaModalBackButton");
-  const container = document.getElementById("mediaModalContentContainer");
-
-  if (!extractView || !searchView || !backBtn) return;
-
-  if (viewName === "mediaAnkiSearchView") {
-    if (container) {
-      container.style.minHeight = "min(60vh, 600px)";
-    }
-    extractView.classList.add("-translate-x-full");
-    extractView.setAttribute("inert", "");
-    searchView.classList.remove("invisible", "translate-x-full");
-    searchView.removeAttribute("inert");
-    backBtn.classList.remove("opacity-0", "pointer-events-none");
-    backBtn.removeAttribute("tabindex");
-
-    // Auto-search using original query
-    const mainQuery = document.getElementById("searchInput")?.value.trim() || "";
-    const ankiSearchInput = document.getElementById("ankiCardSearchInput");
-    if (ankiSearchInput) {
-      ankiSearchInput.value = mainQuery;
-      searchAnkiCards();
-    }
-
-    setTimeout(() => {
-      if (!document.getElementById("mediaModal").classList.contains("hidden") && extractView.classList.contains("-translate-x-full")) {
-        ankiSearchInput?.focus();
-      }
-    }, 300);
-  } else {
-    if (container) {
-      container.style.minHeight = "";
-    }
-    extractView.classList.remove("-translate-x-full");
-    extractView.removeAttribute("inert");
-    searchView.classList.add("translate-x-full");
-    searchView.setAttribute("inert", "");
-    backBtn.classList.add("opacity-0", "pointer-events-none");
-    backBtn.setAttribute("tabindex", "-1");
-    // Hide completely after transition to prevent blocking clicks
-    setTimeout(() => {
-      if (!extractView.classList.contains("-translate-x-full")) {
-        searchView.classList.add("invisible");
-        if (!document.getElementById("mediaModal").classList.contains("hidden")) {
-          document.getElementById("btnReextract")?.focus();
-        }
-      }
-    }, 300);
-  }
 }
 
 window.addEventListener("DOMContentLoaded", async () => {
@@ -1685,224 +1562,7 @@ window.addEventListener("popstate", async (event) => {
       if (urlParams.has("padEnd")) document.getElementById("padEnd").value = urlParams.get("padEnd");
       extractMedia(parseInt(id), null);
     }
-  } else if (path.startsWith("/context/")) {
-    const id = path.split("/").pop();
     if (id) viewContext(parseInt(id), false);
-  }
-});
-
-let searchAnkiCardsAbortController = null;
-
-/**
- * Searches the user's Anki collection dynamically and renders the results.
- * Handles aborting stale requests when typing rapidly.
- */
-async function searchAnkiCards() {
-  const input = document.getElementById("ankiCardSearchInput");
-  const query = input.value.trim();
-  const resultsContainer = document.getElementById("ankiSearchResults");
-
-  if (!query) {
-    if (searchAnkiCardsAbortController) {
-      searchAnkiCardsAbortController.abort();
-      searchAnkiCardsAbortController = null;
-    }
-    resultsContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-400 text-sm">Please enter a search query.</div>';
-    return;
-  }
-
-  if (searchAnkiCardsAbortController) {
-    searchAnkiCardsAbortController.abort();
-  }
-  const currentController = new AbortController();
-  searchAnkiCardsAbortController = currentController;
-  const signal = currentController.signal;
-
-  resultsContainer.innerHTML = '<div class="flex justify-center mt-8"><div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div></div>';
-
-  try {
-    const res = await fetch("/api/anki/search", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: query }),
-      signal: signal,
-    });
-
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.detail || "Search failed");
-    }
-
-    const data = await res.json();
-
-    // Ignore stale responses
-    if (currentController !== searchAnkiCardsAbortController) return;
-
-    const notes = data.notes;
-    const config = data.config || {};
-
-    if (!notes || notes.length === 0) {
-      resultsContainer.innerHTML = '<div class="flex items-center justify-center h-full text-gray-500 text-sm">No cards found matching your query.</div>';
-      return;
-    }
-
-    resultsContainer.innerHTML = "";
-
-    const wordField = config.wordField || "";
-    const definitionField = config.definitionField || "";
-    const sentenceField = config.sentenceHighlightedField || "";
-
-    notes.forEach((note) => {
-      if (!note.fields) return;
-      const fields = Object.keys(note.fields);
-      if (fields.length === 0) return;
-
-      let tier1 = "";
-      let tier2 = "";
-      let tier3 = "";
-
-      // Determine Tier 1 (Word)
-      if (wordField && note.fields[wordField]) {
-        tier1 = note.fields[wordField].value || "";
-      } else if (note.fields[fields[0]]) {
-        tier1 = note.fields[fields[0]].value || "";
-      }
-
-      // Determine Tier 2 (Definition)
-      if (definitionField && note.fields[definitionField]) {
-        tier2 = note.fields[definitionField].value || "";
-      } else if (fields.length > 1 && note.fields[fields[1]]) {
-        tier2 = note.fields[fields[1]].value || "";
-      }
-
-      // Determine Tier 3 (Sentence)
-      if (sentenceField && note.fields[sentenceField]) {
-        tier3 = note.fields[sentenceField].value || "";
-      }
-
-      /**
-       * Safely strips HTML from Anki fields and formats lists with commas.
-       * @param {string} html - The raw HTML string.
-       * @returns {string} The cleaned text.
-       */
-      const stripHtml = (html) => {
-        if (!html) return "";
-        let clean = html.replace(/\[sound:[^\]]+\]/g, ""); // remove sound tags
-        // Add commas for line breaks and list items so words don't merge
-        clean = clean.replace(/<br\s*\/?>/gi, ", ");
-        clean = clean.replace(/<\/li>/gi, ", </li>");
-        clean = clean.replace(/<\/(div|p|h[1-6])>/gi, " </$1>");
-
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(clean, "text/html");
-        let text = doc.body.textContent || "";
-
-        // Clean up excessive spaces and trailing commas
-        text = text.replace(/\s+/g, " ").trim();
-        text = text.replace(/,\s*(?=[,])/g, ""); // remove consecutive commas
-        text = text.replace(/,\s*$/, ""); // remove trailing comma
-        return text;
-      };
-
-      const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
-      tier1 = highlightSearchTerms(stripHtml(tier1), currentQuery, escapeHtml);
-      tier2 = highlightSearchTerms(stripHtml(tier2), currentQuery, escapeHtml);
-      tier3 = highlightSearchTerms(stripHtml(tier3), currentQuery, escapeHtml);
-
-      const el = document.createElement("div");
-      el.className = "shrink-0 w-full text-left p-4 rounded-xl dark:bg-gray-800 bg-white border border-gray-100 dark:border-gray-700 shadow-sm flex justify-between items-center group relative overflow-hidden";
-
-      const contentDiv = document.createElement("div");
-      contentDiv.className = "flex-1 overflow-hidden pr-2 z-10 pl-1";
-
-      if (tier1) {
-        const t1 = document.createElement("div");
-        t1.className = "text-lg font-bold text-gray-900 dark:text-gray-100 truncate";
-        t1.innerHTML = tier1;
-        contentDiv.appendChild(t1);
-      }
-
-      if (tier2) {
-        const t2 = document.createElement("div");
-        t2.className = "text-sm text-gray-500 dark:text-gray-400 truncate mt-1";
-        t2.innerHTML = tier2;
-        contentDiv.appendChild(t2);
-      }
-
-      if (tier3) {
-        const t3 = document.createElement("div");
-        t3.className = "text-xs text-gray-400 dark:text-gray-500 mt-2 italic truncate border-l-2 border-indigo-200 dark:border-indigo-900/50 pl-2 py-0.5";
-        t3.innerHTML = tier3;
-        contentDiv.appendChild(t3);
-      }
-
-      const selectBadge = document.createElement("button");
-      selectBadge.type = "button";
-      selectBadge.className = "update-badge ml-2 px-4 py-2 bg-indigo-100 text-indigo-700 hover:bg-indigo-200 dark:bg-indigo-900/50 dark:text-indigo-300 dark:hover:bg-indigo-900/80 text-xs font-bold rounded-lg shadow-sm flex items-center gap-1 z-10 relative cursor-pointer opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100 md:focus:opacity-100 transition-opacity duration-300";
-      selectBadge.textContent = "Update";
-
-      selectBadge.onclick = (e) => {
-        e.stopPropagation();
-
-        if (selectBadge.dataset.confirmTimer) {
-          clearTimeout(Number(selectBadge.dataset.confirmTimer));
-          delete selectBadge.dataset.confirmTimer;
-        }
-
-        if (selectBadge.dataset.confirming === "true") {
-          selectBadge.dataset.confirming = "sending";
-          if (!currentExtraction.id) {
-            selectBadge.className = selectBadge.dataset.origClass;
-            selectBadge.textContent = selectBadge.dataset.origText;
-            delete selectBadge.dataset.confirming;
-            delete selectBadge.dataset.origText;
-            delete selectBadge.dataset.origClass;
-            return;
-          }
-          sendToAnki(selectBadge, note.noteId);
-        } else {
-          selectBadge.dataset.confirming = "true";
-          selectBadge.dataset.origText = selectBadge.textContent;
-          selectBadge.dataset.origClass = selectBadge.className;
-
-          selectBadge.className = "update-badge ml-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-lg transition shadow-sm flex items-center gap-1 z-10 relative cursor-pointer animate-pulse";
-          selectBadge.textContent = "Confirm?";
-
-          // Use closure variable 'selectBadge' safely inside the timeout
-          selectBadge.dataset.confirmTimer = setTimeout(() => {
-            if (selectBadge.dataset.confirming === "true") {
-              selectBadge.className = selectBadge.dataset.origClass;
-              selectBadge.textContent = selectBadge.dataset.origText;
-              delete selectBadge.dataset.confirming;
-              delete selectBadge.dataset.origText;
-              delete selectBadge.dataset.origClass;
-              delete selectBadge.dataset.confirmTimer;
-            }
-          }, 3000);
-        }
-      };
-
-      el.appendChild(contentDiv);
-      el.appendChild(selectBadge);
-
-      resultsContainer.appendChild(el);
-    });
-  } catch (err) {
-    if (err.name !== "AbortError") {
-      if (currentController !== searchAnkiCardsAbortController) return;
-      const errorElement = document.createElement("div");
-      errorElement.className = "flex items-center justify-center h-full text-red-500 text-sm";
-      errorElement.textContent = `Error: ${err.message}`;
-      resultsContainer.innerHTML = "";
-      resultsContainer.appendChild(errorElement);
-    }
-  }
-}
-
-document.getElementById("ankiCardSearchInput")?.addEventListener("keydown", (e) => {
-  if (e.key === "Escape") {
-    toggleModalView("mediaExtractView");
-    e.stopPropagation();
   }
 });
 
@@ -1910,7 +1570,10 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
     const mediaModal = document.getElementById("mediaModal");
     const contextModal = document.getElementById("contextModal");
-    if (mediaModal && !mediaModal.classList.contains("hidden")) {
+    const ankiModal = document.getElementById("ankiSettingsModal");
+    if (ankiModal && !ankiModal.classList.contains("hidden")) {
+      closeAnkiSettingsModal();
+    } else if (mediaModal && !mediaModal.classList.contains("hidden")) {
       closeModal("mediaModal", "mediaAudio");
     } else if (contextModal && !contextModal.classList.contains("hidden")) {
       closeModal("contextModal");
