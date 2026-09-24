@@ -47,9 +47,9 @@ When a user searches for a term, the engine doesn't just return the matching sen
   node --test tests/test_main.mjs
   ```
 - **Docstrings & CodeRabbit:** The repository enforces an 80% docstring coverage rule via CodeRabbit PR reviews. You **must** provide standard docstrings for every new function you write, **including** nested mock functions inside your tests.
-- **JS Formatting:** The project does not use a heavy `node_modules` toolchain or a custom JS linting config. When modifying frontend JavaScript (e.g., `static/js/main.js` or `tests/test_main.mjs`), you must format the file using Prettier via `npx` before committing:
+- **JS Formatting:** The project does not use a heavy `node_modules` toolchain or a custom JS linting config. When modifying frontend JavaScript (e.g., `src/hagi/static/js/main.js` or `tests/test_main.mjs`), you must format the file using Prettier via `npx` before committing:
   ```bash
-  npx prettier --write static/js/main.js tests/test_main.mjs
+  npx prettier --write src/hagi/static/js/main.js tests/test_main.mjs
   ```
 ## 🛠️ General Guidelines
 - **Always use the Conda Environment:** Execute all Python, `pytest`, and `ruff` commands strictly via the `hagi` conda environment (e.g., `conda run -n hagi pytest`). Running them globally will cause them to fail due to missing dependencies.
