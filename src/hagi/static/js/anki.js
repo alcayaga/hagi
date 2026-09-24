@@ -76,12 +76,31 @@ async function loadAnkiConfig() {
 
 /**
  * Saves user configuration overrides to localStorage.
+ * Only keys that differ from effective defaults (DEFAULT_ANKI_CONFIG and serverAnkiConfig)
+ * are stored in localStorage to avoid masking future server configuration updates.
  * @param {object} config - Configuration object to save.
  */
 function saveAnkiConfig(config) {
   try {
     activeAnkiConfig = { ...activeAnkiConfig, ...config };
-    localStorage.setItem("hagi_anki_config", JSON.stringify(config));
+    const effectiveDefaults = { ...DEFAULT_ANKI_CONFIG, ...serverAnkiConfig };
+
+    let existingOverrides = {};
+    try {
+      const saved = localStorage.getItem("hagi_anki_config");
+      if (saved) existingOverrides = JSON.parse(saved) || {};
+    } catch {}
+
+    const merged = { ...existingOverrides, ...config };
+    const overrides = {};
+    for (const [key, val] of Object.entries(merged)) {
+      const defaultVal = effectiveDefaults[key];
+      const isDifferent = Array.isArray(val) && Array.isArray(defaultVal) ? JSON.stringify(val) !== JSON.stringify(defaultVal) : val !== defaultVal;
+      if (isDifferent) {
+        overrides[key] = val;
+      }
+    }
+    localStorage.setItem("hagi_anki_config", JSON.stringify(overrides));
   } catch (e) {
     console.error("Failed to write hagi_anki_config to localStorage", e);
   }
@@ -1088,6 +1107,7 @@ if (typeof module !== "undefined" && module.exports) {
     buildAnkiSearchQueries,
     stripHtml,
     buildHighlightedSentence,
+    searchAnkiCards,
     sendToAnki,
     openAnkiSettingsModal,
     closeAnkiSettingsModal,

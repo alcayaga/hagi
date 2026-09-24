@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import ankiModule from "../src/hagi/static/js/anki.js";
 
-const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence, sendToAnki, openAnkiSettingsModal, closeAnkiSettingsModal } = ankiModule;
+const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence, searchAnkiCards, sendToAnki, openAnkiSettingsModal, closeAnkiSettingsModal } = ankiModule;
 
 // Mock localStorage for Node test environment
 let mockStorage = {};
@@ -43,6 +43,10 @@ test("getActiveAnkiConfig merges saved localStorage overrides with defaults", ()
   assert.equal(updated.ankiConnectUrl, "http://127.0.0.1:8765");
   assert.equal(updated.padStart, 0.5);
   assert.equal(updated.padEnd, 0.75);
+
+  const storedOverrides = JSON.parse(globalThis.localStorage.getItem("hagi_anki_config"));
+  assert.equal(storedOverrides.ankiConnectUrl, undefined);
+  assert.equal(storedOverrides.deck, "CustomDeck");
 
   resetAnkiConfig();
   const reset = getActiveAnkiConfig();
@@ -194,6 +198,127 @@ test("ankiInvoke sets isTimeout flag on timeout error", async () => {
     );
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test("searchAnkiCards displays error when pass 1 times out and aborts pass 2", async () => {
+  saveAnkiConfig({
+    deck: "Mining",
+    noteType: "Lapis",
+    wordField: "Expression",
+  });
+
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+
+  const resultsContainer = {
+    innerHTML: "",
+    children: [],
+    appendChild(el) {
+      this.children.push(el);
+    },
+  };
+  const input = { value: "雨" };
+
+  globalThis.document = {
+    getElementById: (id) => {
+      if (id === "ankiCardSearchInput") return input;
+      if (id === "ankiSearchResults") return resultsContainer;
+      return null;
+    },
+    createElement: (tag) => ({
+      tagName: tag,
+      className: "",
+      innerHTML: "",
+    }),
+  };
+
+  let pass2Called = false;
+  globalThis.fetch = async (url, options) => {
+    const body = options?.body ? JSON.parse(options.body) : {};
+    const query = body.params?.query || "";
+    if (query.includes("Expression:")) {
+      const err = new Error("The operation was aborted");
+      err.name = "AbortError";
+      throw err;
+    } else {
+      pass2Called = true;
+      return {
+        ok: true,
+        json: async () => ({ result: [10001], error: null }),
+      };
+    }
+  };
+
+  try {
+    await searchAnkiCards();
+    assert.equal(pass2Called, false, "Pass 2 should not be called when pass 1 times out");
+    assert.equal(resultsContainer.children.length, 1);
+    assert.match(resultsContainer.children[0].innerHTML, /timed out/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.document = originalDocument;
+    resetAnkiConfig();
+  }
+});
+
+test("searchAnkiCards displays error when pass 2 times out", async () => {
+  saveAnkiConfig({
+    deck: "Mining",
+    noteType: "Lapis",
+    wordField: "Expression",
+  });
+
+  const originalFetch = globalThis.fetch;
+  const originalDocument = globalThis.document;
+
+  const resultsContainer = {
+    innerHTML: "",
+    children: [],
+    appendChild(el) {
+      this.children.push(el);
+    },
+  };
+  const input = { value: "雨" };
+
+  globalThis.document = {
+    getElementById: (id) => {
+      if (id === "ankiCardSearchInput") return input;
+      if (id === "ankiSearchResults") return resultsContainer;
+      return null;
+    },
+    createElement: (tag) => ({
+      tagName: tag,
+      className: "",
+      innerHTML: "",
+    }),
+  };
+
+  globalThis.fetch = async (url, options) => {
+    const body = options?.body ? JSON.parse(options.body) : {};
+    const query = body.params?.query || "";
+    if (query.includes("Expression:")) {
+      // Pass 1: returns empty array
+      return {
+        ok: true,
+        json: async () => ({ result: [], error: null }),
+      };
+    } else {
+      // Pass 2: times out
+      const err = new Error("The operation was aborted");
+      err.name = "AbortError";
+      throw err;
+    }
+  };
+
+  try {
+    await searchAnkiCards();
+    assert.equal(resultsContainer.children.length, 1);
+    assert.match(resultsContainer.children[0].innerHTML, /timed out/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    globalThis.document = originalDocument;
+    resetAnkiConfig();
   }
 });
 
