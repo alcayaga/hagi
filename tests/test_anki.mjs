@@ -247,3 +247,104 @@ test("sendToAnki prevents export and prompts to sync media when timeline selecti
   delete globalThis.window;
   delete globalThis.timelineData;
 });
+
+test("sendToAnki aborts export and alerts user when media storage fails", async () => {
+  let toastMsg = null;
+  let toastType = null;
+  globalThis.showToast = (msg, type) => {
+    toastMsg = msg;
+    toastType = type;
+  };
+
+  globalThis.window = {
+    currentExtraction: { id: 42, audioFilename: "audio.mp3", imageFilename: "img.jpg", text: "テスト" },
+  };
+
+  saveAnkiConfig({ deck: "Deck", noteType: "Model", audioField: "Audio" });
+
+  const originalFetch = globalThis.fetch;
+  let updateCalled = false;
+  try {
+    globalThis.fetch = async (url, opts) => {
+      if (url.includes("/media/")) {
+        throw new Error("Disk read error");
+      }
+      const body = JSON.parse(opts.body);
+      if (body.action === "findNotes") {
+        return { ok: true, json: async () => ({ result: [123], error: null }) };
+      }
+      if (body.action === "updateNoteFields") {
+        updateCalled = true;
+        return { ok: true, json: async () => ({ result: null, error: null }) };
+      }
+      return { ok: true, json: async () => ({ result: null, error: null }) };
+    };
+
+    const btn = { innerHTML: "Quick Update", disabled: false, classList: { add() {}, remove() {} } };
+    await sendToAnki(btn);
+
+    assert.equal(updateCalled, false);
+    assert.equal(toastType, "error");
+    assert.match(toastMsg, /Disk read error/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete globalThis.showToast;
+    delete globalThis.window;
+    resetAnkiConfig();
+  }
+});
+
+test("sendToAnki combines sound and image tags when audioField and imageField share the same name", async () => {
+  let toastType = null;
+  globalThis.showToast = (msg, type) => {
+    toastType = type;
+  };
+
+  globalThis.window = {
+    currentExtraction: { id: 42, audioFilename: "audio.mp3", imageFilename: "img.jpg", text: "テスト" },
+  };
+
+  saveAnkiConfig({ deck: "Deck", noteType: "Model", audioField: "Media", imageField: "Media" });
+
+  const originalFetch = globalThis.fetch;
+  let updatedFields = null;
+  try {
+    globalThis.FileReader = class {
+      readAsDataURL() {
+        this.result = "data:text/plain;base64,ZmFrZQ==";
+        this.onloadend();
+      }
+    };
+
+    globalThis.fetch = async (url, opts) => {
+      if (url.includes("/media/")) {
+        return { ok: true, blob: async () => ({ size: 10 }) };
+      }
+      const body = JSON.parse(opts.body);
+      if (body.action === "findNotes") {
+        return { ok: true, json: async () => ({ result: [123], error: null }) };
+      }
+      if (body.action === "storeMediaFile") {
+        return { ok: true, json: async () => ({ result: body.params.filename, error: null }) };
+      }
+      if (body.action === "updateNoteFields") {
+        updatedFields = body.params.note.fields;
+        return { ok: true, json: async () => ({ result: null, error: null }) };
+      }
+      return { ok: true, json: async () => ({ result: null, error: null }) };
+    };
+
+    const btn = { innerHTML: "Quick Update", disabled: false, classList: { add() {}, remove() {} } };
+    await sendToAnki(btn);
+
+    assert.equal(toastType, "success");
+    assert.ok(updatedFields);
+    assert.equal(updatedFields["Media"], '[sound:audio.mp3] <img src="img.jpg">');
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete globalThis.showToast;
+    delete globalThis.window;
+    delete globalThis.FileReader;
+    resetAnkiConfig();
+  }
+});

@@ -596,34 +596,26 @@ async function sendToAnki(btn, targetNoteId = null) {
     let storedImageName = null;
 
     if (config.audioField && audioUrl) {
-      try {
-        const audioBase64 = await fetchBlobAsBase64(audioUrl);
-        storedAudioName = await ankiInvoke("storeMediaFile", {
-          filename: audioFilename,
-          data: audioBase64,
-          deleteExisting: false,
-        });
-      } catch (mediaErr) {
-        console.warn("Failed to store audio in AnkiConnect:", mediaErr);
-      }
+      const audioBase64 = await fetchBlobAsBase64(audioUrl);
+      storedAudioName = await ankiInvoke("storeMediaFile", {
+        filename: audioFilename,
+        data: audioBase64,
+        deleteExisting: false,
+      });
     }
 
     if (config.imageField && imageUrl) {
-      try {
-        const imageBase64 = await fetchBlobAsBase64(imageUrl);
-        storedImageName = await ankiInvoke("storeMediaFile", {
-          filename: imageFilename,
-          data: imageBase64,
-          deleteExisting: false,
-        });
-      } catch (mediaErr) {
-        console.warn("Failed to store image in AnkiConnect:", mediaErr);
-      }
+      const imageBase64 = await fetchBlobAsBase64(imageUrl);
+      storedImageName = await ankiInvoke("storeMediaFile", {
+        filename: imageFilename,
+        data: imageBase64,
+        deleteExisting: false,
+      });
     }
 
     // Prepare fields to update
     const fieldsToUpdate = {};
-    const searchQuery = document.getElementById("searchInput")?.value.trim() || "";
+    const searchQuery = typeof document !== "undefined" ? document.getElementById("searchInput")?.value.trim() || "" : "";
     const rawText = ext.text || "";
     const highlightedText = buildHighlightedSentence(rawText, searchQuery);
 
@@ -636,11 +628,22 @@ async function sendToAnki(btn, targetNoteId = null) {
     if (config.sourceField && ext.sourceInfo) {
       fieldsToUpdate[config.sourceField] = ext.sourceInfo;
     }
-    if (config.audioField && (storedAudioName || audioFilename)) {
-      fieldsToUpdate[config.audioField] = `[sound:${storedAudioName || audioFilename}]`;
-    }
-    if (config.imageField && (storedImageName || imageFilename)) {
-      fieldsToUpdate[config.imageField] = `<img src="${storedImageName || imageFilename}">`;
+
+    const soundRef = storedAudioName ? `[sound:${storedAudioName}]` : "";
+    const imageRef = storedImageName ? `<img src="${storedImageName}">` : "";
+
+    if (config.audioField && config.imageField && config.audioField === config.imageField) {
+      const combinedMedia = [soundRef, imageRef].filter(Boolean).join(" ");
+      if (combinedMedia) {
+        fieldsToUpdate[config.audioField] = combinedMedia;
+      }
+    } else {
+      if (config.audioField && soundRef) {
+        fieldsToUpdate[config.audioField] = soundRef;
+      }
+      if (config.imageField && imageRef) {
+        fieldsToUpdate[config.imageField] = imageRef;
+      }
     }
 
     // Update note fields
@@ -675,19 +678,23 @@ async function sendToAnki(btn, targetNoteId = null) {
       showToast(err.message || "Failed to export to Anki.", "error");
     }
   } finally {
-    btn.innerHTML = btn.dataset.origText || originalHtml;
-    if (btn.dataset.origClass) {
-      btn.className = btn.dataset.origClass;
+    if (btn) {
+      btn.innerHTML = btn.dataset?.origText || originalHtml;
+      if (btn.dataset?.origClass) {
+        btn.className = btn.dataset.origClass;
+      }
+      if (btn.dataset) {
+        delete btn.dataset.confirming;
+        delete btn.dataset.origText;
+        delete btn.dataset.origClass;
+        if (btn.dataset.confirmTimer) {
+          clearTimeout(Number(btn.dataset.confirmTimer));
+          delete btn.dataset.confirmTimer;
+        }
+      }
+      btn.disabled = false;
+      btn.classList?.remove("opacity-70");
     }
-    delete btn.dataset.confirming;
-    delete btn.dataset.origText;
-    delete btn.dataset.origClass;
-    if (btn.dataset.confirmTimer) {
-      clearTimeout(Number(btn.dataset.confirmTimer));
-      delete btn.dataset.confirmTimer;
-    }
-    btn.disabled = false;
-    btn.classList.remove("opacity-70");
   }
 }
 
@@ -966,7 +973,6 @@ async function copyCorsSnippet(btn) {
 if (typeof window !== "undefined") {
   window.addEventListener("DOMContentLoaded", async () => {
     await loadAnkiConfig();
-    await checkAnkiConnection();
 
     // Initialize inline padding inputs from config if they haven't been customized via URL query params
     const urlParams = new URLSearchParams(window.location.search);
@@ -978,6 +984,8 @@ if (typeof window !== "undefined") {
     if (padEndEl && !urlParams.has("padEnd") && activeAnkiConfig.padEnd !== undefined) {
       padEndEl.value = activeAnkiConfig.padEnd;
     }
+
+    await checkAnkiConnection();
 
     document.getElementById("ankiCardSearchInput")?.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {
