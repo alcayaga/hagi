@@ -73,8 +73,8 @@ test("buildAnkiSearchQueries formats pass 1 and pass 2 correctly", () => {
 
   // Test exact search
   const exactQueries = buildAnkiSearchQueries("雨_test*word", config, true);
-  assert.equal(queries.pass1, 'deck:"Mining" note:"Lapis" Expression:"*雨*"');
   assert.equal(exactQueries.pass1, 'deck:"Mining" note:"Lapis" Expression:"雨\\_test\\*word"');
+  assert.equal(exactQueries.pass2, 'deck:"Mining" note:"Lapis" "雨_test*word"');
 });
 
 test("buildAnkiSearchQueries handles empty or whitespace queries", () => {
