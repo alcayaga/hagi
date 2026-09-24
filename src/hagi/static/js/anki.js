@@ -577,7 +577,7 @@ async function sendToAnki(btn, targetNoteId = null) {
     }
 
     const tl = typeof timelineData !== "undefined" ? timelineData : typeof window !== "undefined" ? window.timelineData : null;
-    if (tl && tl.lastExtractedStart !== undefined && tl.selectedStart !== undefined && (Math.abs(tl.selectedStart - tl.lastExtractedStart) > 0.01 || Math.abs(tl.selectedEnd - tl.lastExtractedEnd) > 0.01)) {
+    if (tl && tl.target && tl.target.id === ext.id && tl.lastExtractedStart !== undefined && tl.selectedStart !== undefined && (Math.abs(tl.selectedStart - tl.lastExtractedStart) > 0.01 || Math.abs(tl.selectedEnd - tl.lastExtractedEnd) > 0.01)) {
       if (typeof showToast === "function") {
         showToast("Please click 'Sync Media' before sending to Anki.", "error");
       }

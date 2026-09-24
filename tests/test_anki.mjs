@@ -229,6 +229,7 @@ test("sendToAnki prevents export and prompts to sync media when timeline selecti
   };
 
   globalThis.timelineData = {
+    target: { id: 42 },
     selectedStart: 10.5,
     selectedEnd: 15.0,
     lastExtractedStart: 10.0,
@@ -243,6 +244,40 @@ test("sendToAnki prevents export and prompts to sync media when timeline selecti
     assert.equal(btn.disabled, false);
     assert.equal(toastType, "error");
     assert.match(toastMsg, /Sync Media/);
+  } finally {
+    delete globalThis.showToast;
+    delete globalThis.window;
+    delete globalThis.timelineData;
+  }
+});
+
+test("sendToAnki ignores stale timelineData if target id does not match current extraction id", async () => {
+  let toastMsg = null;
+  let toastType = null;
+  globalThis.showToast = (msg, type) => {
+    toastMsg = msg;
+    toastType = type;
+  };
+
+  globalThis.window = {
+    currentExtraction: { id: 42, audioFilename: "audio.mp3", imageFilename: "img.jpg" },
+  };
+
+  // timeline belongs to sentence 99, not 42
+  globalThis.timelineData = {
+    target: { id: 99 },
+    selectedStart: 10.5,
+    selectedEnd: 15.0,
+    lastExtractedStart: 10.0,
+    lastExtractedEnd: 15.0,
+  };
+
+  const btn = { innerHTML: "Quick Update", disabled: false, classList: { add() {} } };
+
+  try {
+    await sendToAnki(btn);
+    // Should proceed past stale check (and fail on missing config or note, not on "Sync Media")
+    assert.notEqual(toastMsg, "Please click 'Sync Media' before sending to Anki.");
   } finally {
     delete globalThis.showToast;
     delete globalThis.window;
