@@ -286,7 +286,11 @@ function stripHtml(html) {
     const doc = parser.parseFromString(clean, "text/html");
     text = doc.body.textContent || "";
   } else {
-    text = clean.replace(/<[^>]*>/g, "");
+    let sanitized = clean;
+    while (/<[^>]*>/.test(sanitized)) {
+      sanitized = sanitized.replace(/<[^>]*>/g, "");
+    }
+    text = sanitized.replace(/[<>]/g, "");
   }
 
   text = text.replace(/\s+/g, " ").trim();
