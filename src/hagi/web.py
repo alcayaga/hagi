@@ -309,7 +309,11 @@ def extract(sentence_id: int, config: ExtractConfig, background_tasks: Backgroun
 
     audio_fn = os.path.basename(audio_out)
     image_fn = os.path.basename(image_out)
-    source_info = exporter.build_source_info(sentence_id, base_url=base_url)
+    try:
+        source_info = exporter.build_source_info(sentence_id, base_url=base_url)
+    except Exception as e:
+        logger.warning(f"Failed to build source info for sentence {sentence_id}: {e}")
+        source_info = ""
 
     # Return relative URLs that map to the mounted StaticFiles
     return {

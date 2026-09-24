@@ -4,6 +4,16 @@
  * eliminating macOS local network privacy and backend daemon connection issues.
  */
 
+/**
+ * Safely escapes HTML characters to prevent XSS.
+ * @param {string} str - Raw input string.
+ * @returns {string} Escaped HTML string.
+ */
+function ankiEscapeHtml(str) {
+  if (str == null) return "";
+  return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
 // Default configuration fallback
 const DEFAULT_ANKI_CONFIG = {
   ankiConnectUrl: "http://127.0.0.1:8765",
@@ -348,6 +358,9 @@ async function searchAnkiCards() {
           }
         }
       } catch (err) {
+        if (err.isCorsOrOffline || err.name === "AbortError") {
+          throw err;
+        }
         console.debug("Pass 1 search failed, continuing to broad search", err);
       }
     }
@@ -366,6 +379,9 @@ async function searchAnkiCards() {
           }
         }
       } catch (err) {
+        if (err.isCorsOrOffline || err.name === "AbortError") {
+          throw err;
+        }
         console.debug("Pass 2 search failed", err);
       }
     }
@@ -420,7 +436,7 @@ async function searchAnkiCards() {
       }
 
       const currentQuery = document.getElementById("ankiCardSearchInput")?.value.trim() || "";
-      const esc = typeof escapeHtml === "function" ? escapeHtml : (s) => s;
+      const esc = typeof ankiEscapeHtml === "function" ? ankiEscapeHtml : (s) => s;
       const highlightFn = typeof highlightSearchTerms === "function" ? highlightSearchTerms : (s) => s;
 
       tier1 = highlightFn(stripHtml(tier1), currentQuery, esc);
@@ -500,7 +516,7 @@ async function searchAnkiCards() {
     const errorElement = document.createElement("div");
     errorElement.className = "flex flex-col items-center justify-center h-full text-center p-4 gap-2";
     errorElement.innerHTML = `
-      <span class="text-rose-500 text-sm font-semibold">${escapeHtml(err.message)}</span>
+      <span class="text-rose-500 text-sm font-semibold">${ankiEscapeHtml(err.message)}</span>
       <button onclick="openAnkiSettingsModal()" class="mt-2 text-xs font-semibold px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
         Open Anki Settings &amp; Diagnostics
       </button>
@@ -546,27 +562,51 @@ function buildHighlightedSentence(text, searchQuery) {
  * @param {number|string|null} targetNoteId - Specific note ID to update.
  */
 async function sendToAnki(btn, targetNoteId = null) {
-  const ext = window.currentExtraction || {};
-  if (!ext.id) {
-    if (typeof showToast === "function") showToast("No sentence currently extracted.", "error");
-    return;
+  const originalHtml = btn?.innerHTML;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div><span>Sending...</span>`;
+    btn.classList?.add?.("opacity-70");
   }
-
-  const tl = typeof timelineData !== "undefined" ? timelineData : typeof window !== "undefined" ? window.timelineData : null;
-  if (tl && tl.lastExtractedStart !== undefined && tl.selectedStart !== undefined && (Math.abs(tl.selectedStart - tl.lastExtractedStart) > 0.01 || Math.abs(tl.selectedEnd - tl.lastExtractedEnd) > 0.01)) {
-    if (typeof showToast === "function") {
-      showToast("Please click 'Sync Media' before sending to Anki.", "error");
-    }
-    return;
-  }
-
-  const originalHtml = btn.innerHTML;
-  btn.disabled = true;
-  btn.innerHTML = `<div class="animate-spin h-4 w-4 border-b-2 border-current rounded-full"></div><span>Sending...</span>`;
-  btn.classList.add("opacity-70");
 
   try {
+    const ext = (typeof window !== "undefined" && window.currentExtraction) || {};
+    if (!ext.id) {
+      if (typeof showToast === "function") showToast("No sentence currently extracted.", "error");
+      return;
+    }
+
+    const tl = typeof timelineData !== "undefined" ? timelineData : typeof window !== "undefined" ? window.timelineData : null;
+    if (tl && tl.lastExtractedStart !== undefined && tl.selectedStart !== undefined && (Math.abs(tl.selectedStart - tl.lastExtractedStart) > 0.01 || Math.abs(tl.selectedEnd - tl.lastExtractedEnd) > 0.01)) {
+      if (typeof showToast === "function") {
+        showToast("Please click 'Sync Media' before sending to Anki.", "error");
+      }
+      return;
+    }
+
     const config = getActiveAnkiConfig();
+
+    // Validate that distinct fields do not collide
+    const textFieldMappings = [
+      { name: "sentenceField", value: config.sentenceField },
+      { name: "sentenceHighlightedField", value: config.sentenceHighlightedField },
+      { name: "sourceField", value: config.sourceField },
+    ].filter((f) => Boolean(f.value));
+
+    for (let i = 0; i < textFieldMappings.length; i++) {
+      for (let j = i + 1; j < textFieldMappings.length; j++) {
+        if (textFieldMappings[i].value === textFieldMappings[j].value) {
+          throw new Error(`Field collision: "${textFieldMappings[i].name}" and "${textFieldMappings[j].name}" cannot use the same field name ("${textFieldMappings[i].value}").`);
+        }
+      }
+      if (config.audioField && textFieldMappings[i].value === config.audioField) {
+        throw new Error(`Field collision: "${textFieldMappings[i].name}" and "audioField" cannot use the same field name ("${config.audioField}").`);
+      }
+      if (config.imageField && textFieldMappings[i].value === config.imageField) {
+        throw new Error(`Field collision: "${textFieldMappings[i].name}" and "imageField" cannot use the same field name ("${config.imageField}").`);
+      }
+    }
+
     let resolvedNoteId = targetNoteId ? Number(targetNoteId) : null;
 
     // Resolve note ID if unspecified: get the newest note matching deck/noteType
@@ -697,7 +737,7 @@ async function sendToAnki(btn, targetNoteId = null) {
         }
       }
       btn.disabled = false;
-      btn.classList?.remove("opacity-70");
+      btn.classList?.remove?.("opacity-70");
     }
   }
 }
@@ -765,9 +805,14 @@ function openAnkiSettingsModal() {
   const modal = document.getElementById("ankiSettingsModal");
   if (!modal) return;
 
+  const origin = typeof window !== "undefined" && window.location?.origin ? window.location.origin : "http://127.0.0.1:8000";
   const originLabel = document.getElementById("currentOriginLabel");
-  if (originLabel && typeof window !== "undefined") {
-    originLabel.textContent = window.location.origin;
+  if (originLabel) {
+    originLabel.textContent = origin;
+  }
+  const snippetEl = document.getElementById("corsConfigSnippet");
+  if (snippetEl) {
+    snippetEl.textContent = `"webCorsOriginList": [\n  "${origin}"\n]`;
   }
 
   // Populate input fields with active configuration
@@ -805,7 +850,11 @@ function closeAnkiSettingsModal() {
   const modal = document.getElementById("ankiSettingsModal");
   if (modal) modal.classList.add("hidden");
   if (typeof document !== "undefined" && document.body) {
-    document.body.classList.remove("overflow-hidden");
+    const mediaOpen = document.getElementById("mediaModal") && !document.getElementById("mediaModal").classList.contains("hidden");
+    const contextOpen = document.getElementById("contextModal") && !document.getElementById("contextModal").classList.contains("hidden");
+    if (!mediaOpen && !contextOpen) {
+      document.body.classList.remove("overflow-hidden");
+    }
   }
 }
 
@@ -849,17 +898,17 @@ async function testAnkiConnectionUI() {
     }
 
     if (details) {
-      details.innerHTML = `Connected to <b>${escapeHtml(testUrl)}</b> &bull; Found ${deckCount} decks, ${modelCount} note types.`;
+      details.innerHTML = `Connected to <b>${ankiEscapeHtml(testUrl)}</b> &bull; Found ${deckCount} decks, ${modelCount} note types.`;
     }
-    if (corsBox) corsBox.classList.add("hidden");
+    if (corsBox) corsBox.classList?.add("hidden");
     updateAnkiStatusPill("connected", `v${version}`);
   } catch (err) {
     if (dot) dot.className = "w-2.5 h-2.5 rounded-full bg-rose-500";
     if (statusText) statusText.textContent = "Connection Failed";
     if (details) {
-      details.innerHTML = `<span class="text-rose-500">${escapeHtml(err.message)}</span>`;
+      details.innerHTML = `<span class="text-rose-500">${ankiEscapeHtml(err.message)}</span>`;
     }
-    if (corsBox) corsBox.classList.remove("hidden");
+    if (corsBox) corsBox.classList?.remove("hidden");
     updateAnkiStatusPill("disconnected");
   } finally {
     if (testBtn) testBtn.disabled = false;
@@ -976,12 +1025,21 @@ async function copyCorsSnippet(btn) {
 // Initial boot
 if (typeof window !== "undefined") {
   window.addEventListener("DOMContentLoaded", async () => {
-    await loadAnkiConfig();
-
-    // Initialize inline padding inputs from config if they haven't been customized via URL query params
+    // Initialize inline padding inputs from cached/default config immediately before network calls
     const urlParams = new URLSearchParams(window.location.search);
     const padStartEl = document.getElementById("padStart");
     const padEndEl = document.getElementById("padEnd");
+    const initialConfig = getActiveAnkiConfig();
+    if (padStartEl && !urlParams.has("padStart") && initialConfig.padStart !== undefined) {
+      padStartEl.value = initialConfig.padStart;
+    }
+    if (padEndEl && !urlParams.has("padEnd") && initialConfig.padEnd !== undefined) {
+      padEndEl.value = initialConfig.padEnd;
+    }
+
+    await loadAnkiConfig();
+
+    // Re-apply if server config changed padding values and not overridden by URL query
     if (padStartEl && !urlParams.has("padStart") && activeAnkiConfig.padStart !== undefined) {
       padStartEl.value = activeAnkiConfig.padStart;
     }
@@ -1029,5 +1087,7 @@ if (typeof module !== "undefined" && module.exports) {
     stripHtml,
     buildHighlightedSentence,
     sendToAnki,
+    openAnkiSettingsModal,
+    closeAnkiSettingsModal,
   };
 }

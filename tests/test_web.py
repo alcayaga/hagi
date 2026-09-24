@@ -453,4 +453,30 @@ def test_api_extract_enriched_fields(test_db):
         assert data["text"] == "テスト文"
 
 
+def test_api_extract_build_source_info_failure(test_db):
+    """Test that POST /api/extract gracefully handles build_source_info exceptions by setting source_info to empty."""
+    with (
+        patch("hagi.web.exporter.extract_media") as mock_extract,
+        patch("hagi.web.exporter.build_source_info", side_effect=Exception("Database failure")),
+    ):
+        mock_extract.return_value = (
+            True,
+            "Success",
+            "/media/audio_sample.mp3",
+            "/media/img_sample.jpg",
+            "テスト文",
+            False,
+        )
+
+        response = client.post(
+            "/api/extract/1",
+            json={"pad_start": 0.25, "pad_end": 0.0},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert data["source_info"] == ""
+
+
+
 

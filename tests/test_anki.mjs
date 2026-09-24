@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import ankiModule from "../src/hagi/static/js/anki.js";
 
-const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence, sendToAnki } = ankiModule;
+const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence, sendToAnki, openAnkiSettingsModal, closeAnkiSettingsModal } = ankiModule;
 
 // Mock localStorage for Node test environment
 let mockStorage = {};
@@ -237,15 +237,17 @@ test("sendToAnki prevents export and prompts to sync media when timeline selecti
 
   const btn = { innerHTML: "Quick Update", disabled: false, classList: { add() {} } };
 
-  await sendToAnki(btn);
+  try {
+    await sendToAnki(btn);
 
-  assert.equal(btn.disabled, false);
-  assert.equal(toastType, "error");
-  assert.match(toastMsg, /Sync Media/);
-
-  delete globalThis.showToast;
-  delete globalThis.window;
-  delete globalThis.timelineData;
+    assert.equal(btn.disabled, false);
+    assert.equal(toastType, "error");
+    assert.match(toastMsg, /Sync Media/);
+  } finally {
+    delete globalThis.showToast;
+    delete globalThis.window;
+    delete globalThis.timelineData;
+  }
 });
 
 test("sendToAnki aborts export and alerts user when media storage fails", async () => {
@@ -346,5 +348,136 @@ test("sendToAnki combines sound and image tags when audioField and imageField sh
     delete globalThis.window;
     delete globalThis.FileReader;
     resetAnkiConfig();
+  }
+});
+
+test("openAnkiSettingsModal populates corsConfigSnippet without wildcard and sets origin label", async () => {
+  const elements = {
+    ankiSettingsModal: { classList: { remove() {} } },
+    currentOriginLabel: { textContent: "" },
+    corsConfigSnippet: { textContent: "" },
+  };
+
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({ result: 6, error: null }),
+  });
+
+  globalThis.document = {
+    getElementById: (id) => elements[id] || { value: "", setAttribute() {}, classList: { add() {}, remove() {}, contains: () => false } },
+    body: { classList: { add() {} } },
+  };
+  globalThis.window = {
+    location: { origin: "http://127.0.0.1:8000" },
+  };
+
+  try {
+    openAnkiSettingsModal();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    assert.equal(elements.currentOriginLabel.textContent, "http://127.0.0.1:8000");
+    assert.match(elements.corsConfigSnippet.textContent, /"webCorsOriginList":/);
+    assert.match(elements.corsConfigSnippet.textContent, /http:\/\/127\.0\.0\.1:8000/);
+    assert.equal(elements.corsConfigSnippet.textContent.includes("*"), false);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete globalThis.document;
+    delete globalThis.window;
+  }
+});
+
+test("closeAnkiSettingsModal preserves body overflow-hidden if mediaModal is still open", () => {
+  let overflowRemoved = false;
+  const elements = {
+    ankiSettingsModal: { classList: { add() {} } },
+    mediaModal: { classList: { contains: (cls) => cls !== "hidden" } },
+    contextModal: { classList: { contains: (cls) => cls === "hidden" } },
+  };
+
+  globalThis.document = {
+    getElementById: (id) => elements[id] || null,
+    body: {
+      classList: {
+        remove: (cls) => {
+          if (cls === "overflow-hidden") overflowRemoved = true;
+        },
+      },
+    },
+  };
+
+  closeAnkiSettingsModal();
+
+  assert.equal(overflowRemoved, false);
+
+  // When neither mediaModal nor contextModal is open, overflow-hidden should be removed
+  elements.mediaModal.classList.contains = (cls) => cls === "hidden";
+  closeAnkiSettingsModal();
+
+  assert.equal(overflowRemoved, true);
+
+  delete globalThis.document;
+});
+
+test("sendToAnki restores button state on early exit when no extraction exists", async () => {
+  const btn = {
+    innerHTML: "Original Text",
+    disabled: false,
+    className: "btn-confirm",
+    classList: {
+      add() {},
+      remove() {},
+    },
+    dataset: {
+      confirming: "true",
+      origText: "Original Text",
+      origClass: "btn-normal",
+    },
+  };
+
+  globalThis.window = { currentExtraction: null };
+  let toastMsg = null;
+  globalThis.showToast = (msg, type) => {
+    toastMsg = msg;
+  };
+
+  try {
+    await sendToAnki(btn);
+    assert.equal(toastMsg, "No sentence currently extracted.");
+    assert.equal(btn.innerHTML, "Original Text");
+    assert.equal(btn.className, "btn-normal");
+    assert.equal(btn.disabled, false);
+    assert.equal(btn.dataset.confirming, undefined);
+  } finally {
+    delete globalThis.window;
+    delete globalThis.showToast;
+  }
+});
+
+test("sendToAnki detects field collisions and notifies user", async () => {
+  saveAnkiConfig({
+    sentenceField: "TargetField",
+    sentenceHighlightedField: "TargetField",
+  });
+
+  const btn = {
+    innerHTML: "Send",
+    disabled: false,
+    classList: { add() {}, remove() {} },
+  };
+
+  globalThis.window = { currentExtraction: { id: 123 } };
+  let errorMsg = null;
+  globalThis.showToast = (msg, type) => {
+    if (type === "error") errorMsg = msg;
+  };
+
+  try {
+    await sendToAnki(btn);
+    assert.match(errorMsg, /Field collision/);
+  } finally {
+    resetAnkiConfig();
+    delete globalThis.window;
+    delete globalThis.showToast;
   }
 });
