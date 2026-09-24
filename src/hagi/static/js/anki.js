@@ -17,6 +17,8 @@ const DEFAULT_ANKI_CONFIG = {
   imageField: "",
   sourceField: "",
   tags: [],
+  padStart: 0.25,
+  padEnd: 0.0,
 };
 
 let serverAnkiConfig = { ...DEFAULT_ANKI_CONFIG };
@@ -170,20 +172,24 @@ function updateAnkiStatusPill(status, extraInfo = "") {
   const text = document.getElementById("ankiStatusText");
   if (!pill || !dot || !text) return;
 
-  dot.className = "w-2 h-2 rounded-full";
+  dot.className = "w-2.5 h-2.5 sm:w-2 sm:h-2 rounded-full flex-shrink-0";
+  pill.classList.remove("border-amber-300", "dark:border-amber-700", "border-emerald-200", "dark:border-emerald-800/60", "border-rose-200", "dark:border-rose-900/60");
 
   if (status === "connected") {
     dot.classList.add("bg-emerald-500", "animate-pulse");
-    text.textContent = extraInfo ? `Anki Connected (${extraInfo})` : "Anki Connected";
-    pill.classList.remove("border-amber-300", "dark:border-amber-700");
+    const statusLabel = extraInfo ? `Anki Connected (${extraInfo})` : "Anki Connected";
+    text.textContent = statusLabel;
+    pill.title = `${statusLabel} — Click to configure settings`;
     pill.classList.add("border-emerald-200", "dark:border-emerald-800/60");
   } else if (status === "checking") {
     dot.classList.add("bg-amber-400", "animate-ping");
     text.textContent = "Checking Anki...";
+    pill.title = "Checking AnkiConnect... — Click to configure settings";
+    pill.classList.add("border-amber-300", "dark:border-amber-700");
   } else {
     dot.classList.add("bg-rose-500");
     text.textContent = "Anki Offline";
-    pill.classList.remove("border-emerald-200", "dark:border-emerald-800/60");
+    pill.title = "Anki Offline / Unreachable — Click to configure settings";
     pill.classList.add("border-rose-200", "dark:border-rose-900/60");
   }
 }
@@ -748,7 +754,7 @@ function openAnkiSettingsModal() {
   const config = getActiveAnkiConfig();
   const setVal = (id, val) => {
     const el = document.getElementById(id);
-    if (el) el.value = val || "";
+    if (el) el.value = val ?? "";
   };
 
   setVal("cfgAnkiUrl", config.ankiConnectUrl);
@@ -762,8 +768,13 @@ function openAnkiSettingsModal() {
   setVal("cfgImageField", config.imageField);
   setVal("cfgSourceField", config.sourceField);
   setVal("cfgTags", Array.isArray(config.tags) ? config.tags.join(", ") : "");
+  setVal("cfgPadStart", config.padStart ?? 0.25);
+  setVal("cfgPadEnd", config.padEnd ?? 0.0);
 
   modal.classList.remove("hidden");
+  if (typeof document !== "undefined" && document.body) {
+    document.body.classList.add("overflow-hidden");
+  }
   testAnkiConnectionUI();
 }
 
@@ -773,6 +784,9 @@ function openAnkiSettingsModal() {
 function closeAnkiSettingsModal() {
   const modal = document.getElementById("ankiSettingsModal");
   if (modal) modal.classList.add("hidden");
+  if (typeof document !== "undefined" && document.body) {
+    document.body.classList.remove("overflow-hidden");
+  }
 }
 
 /**
@@ -846,6 +860,19 @@ function saveAnkiSettingsFromModal() {
         .filter(Boolean)
     : [];
 
+  const rawPadStart = parseFloat(getVal("cfgPadStart"));
+  const rawPadEnd = parseFloat(getVal("cfgPadEnd"));
+
+  if (!Number.isFinite(rawPadStart) || rawPadStart < 0 || !Number.isFinite(rawPadEnd) || rawPadEnd < 0) {
+    if (typeof showToast === "function") {
+      showToast("Padding values must be valid non-negative numbers.", "error");
+    }
+    return;
+  }
+
+  const padStart = rawPadStart;
+  const padEnd = rawPadEnd;
+
   const newConfig = {
     ankiConnectUrl: getVal("cfgAnkiUrl") || "http://127.0.0.1:8765",
     deck: getVal("cfgDeck"),
@@ -858,12 +885,29 @@ function saveAnkiSettingsFromModal() {
     imageField: getVal("cfgImageField"),
     sourceField: getVal("cfgSourceField"),
     tags: tags,
+    padStart: padStart,
+    padEnd: padEnd,
   };
 
+  const padStartChanged = padStart !== activeAnkiConfig.padStart;
+  const padEndChanged = padEnd !== activeAnkiConfig.padEnd;
+
   saveAnkiConfig(newConfig);
+
+  // Sync with inline extraction padding controls on search screen only if changed in modal and not overridden by URL query
+  const urlParams = new URLSearchParams(window.location.search);
+  const padStartEl = document.getElementById("padStart");
+  const padEndEl = document.getElementById("padEnd");
+  if (padStartEl && !urlParams.has("padStart") && padStartChanged) {
+    padStartEl.value = padStart;
+  }
+  if (padEndEl && !urlParams.has("padEnd") && padEndChanged) {
+    padEndEl.value = padEnd;
+  }
+
   closeAnkiSettingsModal();
   if (typeof showToast === "function") {
-    showToast("Anki settings saved successfully!", "success");
+    showToast("Settings saved successfully!", "success");
   }
   checkAnkiConnection();
 }
@@ -873,9 +917,19 @@ function saveAnkiSettingsFromModal() {
  */
 function resetAnkiSettingsInModal() {
   resetAnkiConfig();
+  const urlParams = new URLSearchParams(window.location.search);
+  const padStartEl = document.getElementById("padStart");
+  const padEndEl = document.getElementById("padEnd");
+  if (padStartEl && !urlParams.has("padStart")) {
+    padStartEl.value = activeAnkiConfig.padStart ?? 0.25;
+  }
+  if (padEndEl && !urlParams.has("padEnd")) {
+    padEndEl.value = activeAnkiConfig.padEnd ?? 0.0;
+  }
+
   openAnkiSettingsModal();
   if (typeof showToast === "function") {
-    showToast("Reset Anki settings to config.json defaults.", "info");
+    showToast("Reset settings to default values.", "info");
   }
 }
 
@@ -904,6 +958,17 @@ if (typeof window !== "undefined") {
   window.addEventListener("DOMContentLoaded", async () => {
     await loadAnkiConfig();
     await checkAnkiConnection();
+
+    // Initialize inline padding inputs from config if they haven't been customized via URL query params
+    const urlParams = new URLSearchParams(window.location.search);
+    const padStartEl = document.getElementById("padStart");
+    const padEndEl = document.getElementById("padEnd");
+    if (padStartEl && !urlParams.has("padStart") && activeAnkiConfig.padStart !== undefined) {
+      padStartEl.value = activeAnkiConfig.padStart;
+    }
+    if (padEndEl && !urlParams.has("padEnd") && activeAnkiConfig.padEnd !== undefined) {
+      padEndEl.value = activeAnkiConfig.padEnd;
+    }
 
     document.getElementById("ankiCardSearchInput")?.addEventListener("keydown", (e) => {
       if (e.key === "Escape") {

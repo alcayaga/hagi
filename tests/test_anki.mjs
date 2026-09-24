@@ -24,23 +24,31 @@ test("DEFAULT_ANKI_CONFIG provides valid standard defaults", () => {
   assert.equal(DEFAULT_ANKI_CONFIG.deck, "");
   assert.equal(DEFAULT_ANKI_CONFIG.noteType, "");
   assert.deepEqual(DEFAULT_ANKI_CONFIG.tags, []);
+  assert.equal(DEFAULT_ANKI_CONFIG.padStart, 0.25);
+  assert.equal(DEFAULT_ANKI_CONFIG.padEnd, 0.0);
 });
 
 test("getActiveAnkiConfig merges saved localStorage overrides with defaults", () => {
   globalThis.localStorage.clear();
   const initial = getActiveAnkiConfig();
   assert.equal(initial.ankiConnectUrl, "http://127.0.0.1:8765");
+  assert.equal(initial.padStart, 0.25);
+  assert.equal(initial.padEnd, 0.0);
 
-  saveAnkiConfig({ deck: "CustomDeck", noteType: "CustomModel", wordField: "Front" });
+  saveAnkiConfig({ deck: "CustomDeck", noteType: "CustomModel", wordField: "Front", padStart: 0.5, padEnd: 0.75 });
   const updated = getActiveAnkiConfig();
   assert.equal(updated.deck, "CustomDeck");
   assert.equal(updated.noteType, "CustomModel");
   assert.equal(updated.wordField, "Front");
   assert.equal(updated.ankiConnectUrl, "http://127.0.0.1:8765");
+  assert.equal(updated.padStart, 0.5);
+  assert.equal(updated.padEnd, 0.75);
 
   resetAnkiConfig();
   const reset = getActiveAnkiConfig();
   assert.equal(reset.deck, "");
+  assert.equal(reset.padStart, 0.25);
+  assert.equal(reset.padEnd, 0.0);
 });
 
 test("buildAnkiSearchQueries formats pass 1 and pass 2 correctly", () => {

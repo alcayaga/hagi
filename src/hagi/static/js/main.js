@@ -266,7 +266,7 @@ async function performSearch(pushState = true, resetFilters = false) {
 
     allSearchResults = [];
     container.innerHTML = "";
-    document.getElementById("filtersAndControlsWrapper").classList.add("hidden");
+    document.getElementById("filterControls")?.classList.add("hidden");
     activeShow = null;
     activeSeason = null;
     activeEp = null;
@@ -340,7 +340,7 @@ async function performSearch(pushState = true, resetFilters = false) {
       }
     }
 
-    document.getElementById("filtersAndControlsWrapper").classList.remove("hidden");
+    document.getElementById("filterControls")?.classList.remove("hidden");
     const dropdownDroppedFilters = populateDropdowns();
     if (dropdownDroppedFilters) {
       updateUrl(query, true);
@@ -681,6 +681,7 @@ async function extractMedia(id, btnElement) {
       document.getElementById("mediaAudio").src = data.audio_url + "?t=" + new Date().getTime();
       document.getElementById("mediaAudio").play();
       document.getElementById("mediaModal").classList.remove("hidden");
+      document.body.classList.add("overflow-hidden");
 
       try {
         await openExtractionTimeline(id);
@@ -711,6 +712,7 @@ async function extractMedia(id, btnElement) {
  */
 async function viewContext(id, pushState = true) {
   document.getElementById("contextModal").classList.remove("hidden");
+  document.body.classList.add("overflow-hidden");
   if (pushState) {
     history.pushState(null, "", `/context/${id}`);
   }
@@ -834,6 +836,7 @@ async function viewContext(id, pushState = true) {
  */
 function closeModal(modalId, audioId = null) {
   document.getElementById(modalId).classList.add("hidden");
+  document.body.classList.remove("overflow-hidden");
   if (audioId) {
     document.getElementById(audioId).pause();
   }
@@ -1535,6 +1538,10 @@ window.addEventListener("popstate", async (event) => {
     document.getElementById("contextModal").classList.add("hidden");
     document.body.classList.remove("overflow-hidden");
   }
+  const ankiModal = document.getElementById("ankiSettingsModal");
+  if (ankiModal && !ankiModal.classList.contains("hidden")) {
+    closeAnkiSettingsModal();
+  }
 
   if (path.startsWith("/search/")) {
     const query = decodeURIComponent(path.split("/").slice(2).join("/"));
@@ -1554,7 +1561,7 @@ window.addEventListener("popstate", async (event) => {
   } else if (path === "/") {
     document.getElementById("searchInput").value = "";
     document.getElementById("resultsList").innerHTML = "";
-    document.getElementById("filtersAndControlsWrapper").classList.add("hidden");
+    document.getElementById("filterControls")?.classList.add("hidden");
   } else if (path.startsWith("/sentence/")) {
     const id = path.split("/").pop();
     if (id) {
