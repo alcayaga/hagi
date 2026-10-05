@@ -42,6 +42,12 @@ def init():
 def index(
     directory: Optional[str] = typer.Argument(None),
     prune: bool = typer.Option(False, "--prune", help="Globally verify all database entries and remove missing media"),
+    timeout: Optional[int] = typer.Option(
+        None,
+        "--timeout",
+        "-t",
+        help="Timeout in seconds for subtitle extraction (default: 1800; 0 for unlimited).",
+    ),
 ):
     """Index a directory or multiple directories from config.json."""
     db.init_db()  # ensure db exists
@@ -74,7 +80,10 @@ def index(
                 continue
 
         console.print(f"Indexing directory: [bold]{dir_path}[/bold]...")
-        indexer.index_directory(dir_path)
+        if timeout is not None:
+            indexer.index_directory(dir_path, extract_timeout=timeout)
+        else:
+            indexer.index_directory(dir_path)
 
     console.print("[green]Indexing complete![/green]")
 

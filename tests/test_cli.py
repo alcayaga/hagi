@@ -63,6 +63,52 @@ def test_index_prune(monkeypatch):
     assert "Running global database prune..." in result.stdout
 
 
+def test_index_with_timeout_option(tmp_path, monkeypatch):
+    """Test that index --timeout forwards extract_timeout to index_directory."""
+    from hagi import db, indexer
+
+    called = {}
+
+    def mock_index_dir(dir_path, extract_timeout=None):
+        """Record the arguments passed to index_directory."""
+        called["dir_path"] = dir_path
+        called["extract_timeout"] = extract_timeout
+
+    monkeypatch.setattr(indexer, "index_directory", mock_index_dir)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    d = tmp_path / "fake_anime_dir"
+    d.mkdir()
+
+    result = runner.invoke(app, ["index", str(d), "--timeout", "3600"])
+    assert result.exit_code == 0
+    assert called["dir_path"] == str(d)
+    assert called["extract_timeout"] == 3600
+
+
+def test_index_with_short_timeout_option(tmp_path, monkeypatch):
+    """Test that index -t forwards extract_timeout to index_directory."""
+    from hagi import db, indexer
+
+    called = {}
+
+    def mock_index_dir(dir_path, extract_timeout=None):
+        """Record the arguments passed to index_directory."""
+        called["dir_path"] = dir_path
+        called["extract_timeout"] = extract_timeout
+
+    monkeypatch.setattr(indexer, "index_directory", mock_index_dir)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    d = tmp_path / "fake_anime_dir"
+    d.mkdir()
+
+    result = runner.invoke(app, ["index", str(d), "-t", "1200"])
+    assert result.exit_code == 0
+    assert called["dir_path"] == str(d)
+    assert called["extract_timeout"] == 1200
+
+
 def test_anki_command(monkeypatch):
     """Test the anki CLI command."""
     import json

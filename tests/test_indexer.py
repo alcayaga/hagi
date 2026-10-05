@@ -547,3 +547,155 @@ The marker is 00:00:-02,000
     finally:
         os.remove(ass_name)
         os.remove(srt_name)
+
+
+def test_mkv_extraction_default_timeout(test_db):
+    """Ensure ffmpeg extraction and ffprobe default to 1800s and 300s timeouts."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+        patch("hagi.indexer._load_config", return_value={}),
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_result = MagicMock(
+            stdout=json.dumps({"streams": [{"index": 1, "tags": {"language": "eng"}}]}),
+            returncode=0,
+        )
+        extraction_result = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_result, extraction_result]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock(plaintext="Hello", start=0, end=1000)
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 2
+        # First call is ffprobe (default 300s)
+        assert mock_subrun.call_args_list[0].kwargs.get("timeout") == 300
+        # Second call is ffmpeg extraction (default 1800s)
+        assert mock_subrun.call_args_list[1].kwargs.get("timeout") == 1800
+
+
+def test_mkv_extraction_custom_timeout_param(test_db):
+    """Ensure custom extract_timeout and probe_timeout parameters are forwarded."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_result = MagicMock(
+            stdout=json.dumps({"streams": [{"index": 1, "tags": {"language": "eng"}}]}),
+            returncode=0,
+        )
+        extraction_result = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_result, extraction_result]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock(plaintext="Hello", start=0, end=1000)
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path", extract_timeout=3600, probe_timeout=600)
+
+        assert mock_subrun.call_count == 2
+        assert mock_subrun.call_args_list[0].kwargs.get("timeout") == 600
+        assert mock_subrun.call_args_list[1].kwargs.get("timeout") == 3600
+
+
+def test_mkv_extraction_zero_timeout_means_unlimited(test_db):
+    """Ensure passing 0 for extract_timeout and probe_timeout sets timeout to None."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_result = MagicMock(
+            stdout=json.dumps({"streams": [{"index": 1, "tags": {"language": "eng"}}]}),
+            returncode=0,
+        )
+        extraction_result = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_result, extraction_result]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock(plaintext="Hello", start=0, end=1000)
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path", extract_timeout=0, probe_timeout=0)
+
+        assert mock_subrun.call_count == 2
+        assert mock_subrun.call_args_list[0].kwargs.get("timeout") is None
+        assert mock_subrun.call_args_list[1].kwargs.get("timeout") is None
+
+
+def test_mkv_extraction_config_timeout(test_db):
+    """Ensure extractTimeout and probeTimeout in config.json are respected."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+        patch("hagi.indexer._load_config", return_value={"extractTimeout": 2400, "probeTimeout": 450}),
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_result = MagicMock(
+            stdout=json.dumps({"streams": [{"index": 1, "tags": {"language": "eng"}}]}),
+            returncode=0,
+        )
+        extraction_result = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_result, extraction_result]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock(plaintext="Hello", start=0, end=1000)
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 2
+        assert mock_subrun.call_args_list[0].kwargs.get("timeout") == 450
+        assert mock_subrun.call_args_list[1].kwargs.get("timeout") == 2400
+
+
+def test_mkv_extraction_config_snake_case_and_zero_timeout(test_db):
+    """Ensure extract_timeout and probe_timeout snake_case keys and zero values are respected."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+        patch("hagi.indexer._load_config", return_value={"extract_timeout": "0", "probe_timeout": "invalid"}),
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_result = MagicMock(
+            stdout=json.dumps({"streams": [{"index": 1, "tags": {"language": "eng"}}]}),
+            returncode=0,
+        )
+        extraction_result = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_result, extraction_result]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock(plaintext="Hello", start=0, end=1000)
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 2
+        # "invalid" should fall back to default 300
+        assert mock_subrun.call_args_list[0].kwargs.get("timeout") == 300
+        # "0" should convert to None (unlimited)
+        assert mock_subrun.call_args_list[1].kwargs.get("timeout") is None
