@@ -1,6 +1,7 @@
 """Test module."""
 
 import json
+import platform
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -14,8 +15,10 @@ from hagi import indexer
 def test_db():
     # Use in-memory DB for tests
     """Test function."""
+    platform.processor()
     db.DB_PATH = ":memory:"
     conn = db.init_db()
+    indexer._plex_cache_built = True
     yield conn
     conn.close()
 
@@ -85,7 +88,12 @@ def test_mkv_embedded_extraction(test_db):
         mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
 
         # Mock the ffprobe output: two streams, Japanese and English
-        probe_output = {"streams": [{"tags": {"language": "jpn"}}, {"tags": {"language": "eng"}}]}
+        probe_output = {
+            "streams": [
+                {"index": 1, "tags": {"language": "jpn"}},
+                {"index": 2, "tags": {"language": "eng"}},
+            ]
+        }
         mock_res = MagicMock()
         mock_res.stdout = json.dumps(probe_output)
         mock_res.returncode = 0
@@ -102,9 +110,13 @@ def test_mkv_embedded_extraction(test_db):
 
         indexer.index_directory("/fake/path")
 
-        # Verify subprocess was called 3 times total:
-        # 1x for ffprobe, 2x for ffmpeg (extracting jpn and eng)
-        assert mock_subrun.call_count == 3
+        # Verify subprocess was called 2 times total:
+        # 1x for ffprobe, 1x for ffmpeg multi-output (extracting jpn and eng in one pass)
+        assert mock_subrun.call_count == 2
+        extract_call = mock_subrun.call_args_list[1][0][0]
+        assert "-map" in extract_call
+        assert "0:1" in extract_call
+        assert "0:2" in extract_call
 
         # Verify the sentences were added with the correct languages
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
@@ -136,11 +148,9 @@ def test_mkv_extraction_rolls_back_entire_mkv_on_track_timeout(test_db):
             ),
             returncode=0,
         )
-        extraction_result = MagicMock(returncode=0)
         mock_subrun.side_effect = [
             probe_result,
             subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
-            extraction_result,
         ]
 
         mock_subs = MagicMock()
@@ -150,8 +160,8 @@ def test_mkv_extraction_rolls_back_entire_mkv_on_track_timeout(test_db):
 
         indexer.index_directory("/fake/path")
 
-        assert mock_subrun.call_count == 3
-        mock_load.assert_called_once()
+        assert mock_subrun.call_count == 2
+        mock_load.assert_not_called()
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
         assert [(row["language"], row["text"]) for row in sentences] == []
 
@@ -243,9 +253,9 @@ def test_mkv_subtitle_filtering(test_db):
 
         indexer.index_directory("/fake/path")
 
-        # Verify subprocess was called 5 times total:
-        # 1x ffprobe, 4x ffmpeg (eng, spa, jpn, unknown)
-        assert mock_subrun.call_count == 5
+        # Verify subprocess was called 2 times total:
+        # 1x ffprobe, 1x ffmpeg multi-output (eng, spa, jpn, unknown)
+        assert mock_subrun.call_count == 2
 
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
         # English, Spanish (mistagged Japanese track and untagged track were deduplicated since they evaluate to English)
@@ -729,3 +739,180 @@ def test_load_config_behaviors():
     with patch("os.path.exists", return_value=True), patch("builtins.open", mock_open(read_data="[1, 2, 3]")):
         with pytest.raises(ValueError, match="must contain a JSON object"):
             indexer._load_config()
+
+
+def test_mkv_single_pass_multi_output_command(test_db):
+    """Ensure ffmpeg command uses -seekable 0 and extracts multiple streams in a single pass."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 1, "codec_name": "subrip", "tags": {"language": "jpn"}},
+                {"index": 2, "codec_name": "subrip", "tags": {"language": "eng"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        extract_res = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_res, extract_res]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock()
+        mock_line.plaintext = "Test subtitle line"
+        mock_line.start = 0
+        mock_line.end = 1000
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 2
+        extract_call_args = mock_subrun.call_args_list[1][0][0]
+
+        # Verify -seekable 0 appears before -i
+        assert "-seekable" in extract_call_args
+        seekable_idx = extract_call_args.index("-seekable")
+        assert extract_call_args[seekable_idx + 1] == "0"
+        i_idx = extract_call_args.index("-i")
+        assert seekable_idx < i_idx
+
+        # Verify both streams mapped in single command
+        assert "-map" in extract_call_args
+        assert "0:1" in extract_call_args
+        assert "0:2" in extract_call_args
+
+        # Verify batch timeout is scaled by number of streams (2 streams * 1800s default = 3600s)
+        assert mock_subrun.call_args_list[1].kwargs.get("timeout") == 3600
+
+
+def test_mkv_skips_bitmap_subtitle_codecs(test_db):
+    """Ensure bitmap subtitle codecs (PGS, VobSub, etc.) are skipped during stream selection."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 0, "codec_name": "hdmv_pgs_subtitle", "tags": {"language": "jpn"}},
+                {"index": 1, "codec_name": "dvd_subtitle", "tags": {"language": "eng"}},
+                {"index": 2, "codec_name": "dvb_subtitle", "tags": {"language": "spa"}},
+                {"index": 3, "codec_name": "subrip", "tags": {"language": "jpn"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        extract_res = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_res, extract_res]
+
+        mock_subs = MagicMock()
+        mock_line = MagicMock()
+        mock_line.plaintext = "Japanese text こんにちは"
+        mock_line.start = 0
+        mock_line.end = 1000
+        mock_subs.__iter__.return_value = [mock_line]
+        mock_load.return_value = mock_subs
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 2
+        extract_call_args = mock_subrun.call_args_list[1][0][0]
+
+        # Only stream 3 (subrip) should be mapped; streams 0, 1, and 2 skipped
+        assert "0:3" in extract_call_args
+        assert "0:0" not in extract_call_args
+        assert "0:1" not in extract_call_args
+        assert "0:2" not in extract_call_args
+
+
+def test_mkv_single_pass_fallback_on_failure(test_db):
+    """Ensure extraction falls back to per-track ffmpeg calls if multi-output fails."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 1, "codec_name": "subrip", "tags": {"language": "jpn"}},
+                {"index": 2, "codec_name": "subrip", "tags": {"language": "eng"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        multi_fail_res = MagicMock(returncode=1)
+        single_success_1 = MagicMock(returncode=0)
+        single_success_2 = MagicMock(returncode=0)
+        mock_subrun.side_effect = [
+            probe_res,
+            multi_fail_res,
+            single_success_1,
+            single_success_2,
+        ]
+
+        jpn_line = MagicMock()
+        jpn_line.plaintext = "こんにちは世界"
+        jpn_line.start = 0
+        jpn_line.end = 1000
+
+        eng_line = MagicMock()
+        eng_line.plaintext = "Hello world"
+        eng_line.start = 0
+        eng_line.end = 1000
+
+        # Note: selected_streams processes eng before jpn
+        mock_load.side_effect = [[eng_line], [jpn_line]]
+
+        indexer.index_directory("/fake/path")
+
+        # 1x probe + 1x multi-output (fails) + 2x per-track fallback = 4 calls
+        assert mock_subrun.call_count == 4
+        assert mock_load.call_count == 2
+
+        sentences = test_db.execute("SELECT language, text FROM sentences ORDER BY language DESC").fetchall()
+        assert len(sentences) == 2
+        assert sentences[0]["language"] == "jpn"
+        assert sentences[0]["text"] == "こんにちは世界"
+        assert sentences[1]["language"] == "eng"
+        assert sentences[1]["text"] == "Hello world"
+
+
+def test_mkv_single_pass_fallback_timeout(test_db):
+    """Ensure database is rolled back if a fallback per-track extraction times out."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 1, "codec_name": "subrip", "tags": {"language": "jpn"}},
+                {"index": 2, "codec_name": "subrip", "tags": {"language": "eng"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        multi_fail_res = MagicMock(returncode=1)
+        mock_subrun.side_effect = [
+            probe_res,
+            multi_fail_res,
+            subprocess.TimeoutExpired(cmd="ffmpeg", timeout=120),
+        ]
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 3
+        mock_load.assert_not_called()
+        sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
+        assert sentences == []
