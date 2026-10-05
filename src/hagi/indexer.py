@@ -616,6 +616,8 @@ def index_directory(
                                             )
                                             if s_res.returncode == 0:
                                                 extracted_subs.append((retry_sub_path, lang, i))
+                                            elif os.path.exists(temp_sub_path) and os.path.getsize(temp_sub_path) > 0:
+                                                extracted_subs.append((temp_sub_path, lang, i))
                                         except subprocess.TimeoutExpired:
                                             print(f"Timed out extracting track {i} from {file_path}")
                                             had_timeout = True
