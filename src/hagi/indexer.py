@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+import time
 from typing import Optional
 
 import pysubs2
@@ -112,8 +113,10 @@ _plex_cache_built = False
 def build_plex_cache():
     """Build the cache of Plex paths and metadata."""
     global _plex_cache_built
+    if _plex_cache_built:
+        return
     plex = _get_plex()
-    if not plex or _plex_cache_built:
+    if not plex:
         return
     print("Building Plex path mapping cache (this may take a moment)...")
     try:
@@ -482,7 +485,7 @@ def index_directory(
 
                     eng_streams, spa_streams, jpn_streams, unk_streams = [], [], [], []
                     for stream in streams:
-                        codec = stream.get("codec_name", "").lower()
+                        codec = (stream.get("codec_name") or "").lower()
                         if codec in BITMAP_SUBTITLE_CODECS:
                             continue
                         lang = stream.get("tags", {}).get("language", "unknown").lower()
@@ -559,6 +562,7 @@ def index_directory(
                                 if effective_extract_timeout is not None
                                 else None
                             )
+                            batch_started = time.monotonic()
                             try:
                                 ext_res = subprocess.run(
                                     ext_cmd,
@@ -572,6 +576,24 @@ def index_directory(
                                 else:
                                     # Fallback: if multi-output fails, attempt per-stream extraction
                                     for temp_sub_path, lang, i in stream_targets:
+                                        fallback_timeout = None
+                                        if effective_extract_timeout is not None:
+                                            remaining_batch_time = (
+                                                effective_extract_timeout * len(stream_targets)
+                                                - (time.monotonic() - batch_started)
+                                            )
+                                            if remaining_batch_time <= 0:
+                                                had_timeout = True
+                                                break
+                                            fallback_timeout = min(
+                                                effective_extract_timeout,
+                                                remaining_batch_time,
+                                            )
+
+                                        fd, retry_sub_path = tempfile.mkstemp(suffix=".srt")
+                                        os.close(fd)
+                                        temp_paths_to_clean.append(retry_sub_path)
+
                                         single_cmd = [
                                             "ffmpeg",
                                             "-y",
@@ -583,17 +605,17 @@ def index_directory(
                                             f"0:{i}",
                                             "-c:s",
                                             "srt",
-                                            temp_sub_path,
+                                            retry_sub_path,
                                         ]
                                         try:
                                             s_res = subprocess.run(
                                                 single_cmd,
                                                 stdout=subprocess.DEVNULL,
                                                 stderr=subprocess.DEVNULL,
-                                                timeout=effective_extract_timeout,
+                                                timeout=fallback_timeout,
                                             )
                                             if s_res.returncode == 0:
-                                                extracted_subs.append((temp_sub_path, lang, i))
+                                                extracted_subs.append((retry_sub_path, lang, i))
                                         except subprocess.TimeoutExpired:
                                             print(f"Timed out extracting track {i} from {file_path}")
                                             had_timeout = True
@@ -607,6 +629,8 @@ def index_directory(
                             for temp_sub_path, lang, i in extracted_subs:
                                 try:
                                     subs = load_and_sanitize_subs(temp_sub_path)
+                                    if not subs or not any(line.plaintext.strip() for line in subs):
+                                        continue
                                     final_lang = lang
 
                                     detected_lang = detect_language(subs)

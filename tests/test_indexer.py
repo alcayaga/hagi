@@ -1,7 +1,6 @@
 """Test module."""
 
 import json
-import platform
 import subprocess
 from unittest.mock import MagicMock, patch
 
@@ -12,13 +11,12 @@ from hagi import indexer
 
 
 @pytest.fixture
-def test_db():
+def test_db(monkeypatch):
     # Use in-memory DB for tests
     """Test function."""
-    platform.processor()
     db.DB_PATH = ":memory:"
     conn = db.init_db()
-    indexer._plex_cache_built = True
+    monkeypatch.setattr(indexer, "_plex_cache_built", True)
     yield conn
     conn.close()
 
@@ -916,3 +914,127 @@ def test_mkv_single_pass_fallback_timeout(test_db):
         mock_load.assert_not_called()
         sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
         assert sentences == []
+
+
+def test_mkv_handles_null_codec_name(test_db):
+    """Ensure null codec_name in stream does not raise AttributeError and indexes successfully."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 1, "codec_name": None, "tags": {"language": "eng"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        extract_res = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_res, extract_res]
+
+        mock_line = MagicMock(plaintext="Hello", start=0, end=1000)
+        mock_load.return_value = [mock_line]
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 2
+        sentences = test_db.execute("SELECT language, text FROM sentences").fetchall()
+        assert len(sentences) == 1
+        assert sentences[0]["text"] == "Hello"
+
+
+def test_mkv_fallback_remaining_budget_exhaustion(test_db):
+    """Ensure fallback aborts and rolls back when the aggregate batch budget has elapsed."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("time.monotonic") as mock_time,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 1, "codec_name": "subrip", "tags": {"language": "jpn"}},
+                {"index": 2, "codec_name": "subrip", "tags": {"language": "eng"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        multi_fail_res = MagicMock(returncode=1)
+        mock_subrun.side_effect = [probe_res, multi_fail_res]
+
+        # Batch starts at 0.0, fallback checks elapsed time after 4000s (> 2 * 1800s = 3600s budget)
+        mock_time.side_effect = [0.0, 4000.0]
+
+        indexer.index_directory("/fake/path")
+
+        # 1x probe + 1x multi-output (fails); fallback stops immediately due to budget exhaustion
+        assert mock_subrun.call_count == 2
+        sentences = test_db.execute("SELECT * FROM sentences").fetchall()
+        assert len(sentences) == 0
+
+
+def test_mkv_skips_empty_subtitles(test_db):
+    """Ensure empty or whitespace-only subtitle tracks are not indexed as mkv_embedded."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 1, "codec_name": "subrip", "tags": {"language": "eng"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        extract_res = MagicMock(returncode=0)
+        mock_subrun.side_effect = [probe_res, extract_res]
+
+        mock_line = MagicMock(plaintext="   \n  ", start=0, end=1000)
+        mock_load.return_value = [mock_line]
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 2
+        # No sentences indexed, media record added with mkv_embedded type
+        sentences = test_db.execute("SELECT * FROM sentences").fetchall()
+        assert len(sentences) == 0
+        media = test_db.execute("SELECT type FROM media").fetchall()
+        assert len(media) == 1
+        assert media[0]["type"] == "mkv_embedded"
+
+
+def test_mkv_both_batch_and_retry_fail(test_db):
+    """Ensure that when batch and per-track retry both fail, partial output is rejected."""
+    with (
+        patch("os.walk") as mock_walk,
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("subprocess.run") as mock_subrun,
+        patch("hagi.indexer.load_and_sanitize_subs") as mock_load,
+    ):
+        mock_walk.return_value = [("/fake/path", [], ["episode1.mkv"])]
+
+        probe_output = {
+            "streams": [
+                {"index": 1, "codec_name": "subrip", "tags": {"language": "eng"}},
+            ]
+        }
+        probe_res = MagicMock(returncode=0, stdout=json.dumps(probe_output))
+        batch_fail_res = MagicMock(returncode=1)
+        retry_fail_res = MagicMock(returncode=1)
+        mock_subrun.side_effect = [probe_res, batch_fail_res, retry_fail_res]
+
+        indexer.index_directory("/fake/path")
+
+        assert mock_subrun.call_count == 3
+        mock_load.assert_not_called()
+        sentences = test_db.execute("SELECT * FROM sentences").fetchall()
+        assert len(sentences) == 0
+
+
