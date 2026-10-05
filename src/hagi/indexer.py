@@ -5,6 +5,7 @@ import os
 import re
 import subprocess
 import tempfile
+from typing import Optional
 
 import pysubs2
 from dotenv import load_dotenv
@@ -14,6 +15,29 @@ from .db import add_media, add_sentences, get_db
 load_dotenv()
 
 REFRESH_THRESHOLD_SECONDS = 2.0
+DEFAULT_EXTRACT_TIMEOUT = 1800
+DEFAULT_PROBE_TIMEOUT = 300
+
+
+def _load_config() -> Optional[dict]:
+    """Load configuration from config.json if present.
+
+    Returns:
+        Optional[dict]: The parsed JSON configuration as a dictionary, or None
+        if config.json does not exist.
+
+    Raises:
+        ValueError: If config.json does not contain a JSON object.
+        OSError: If an error occurs while opening or reading config.json.
+        json.JSONDecodeError: If config.json contains invalid JSON syntax.
+    """
+    if not os.path.exists("config.json"):
+        return None
+    with open("config.json", "r") as f:
+        cfg = json.load(f)
+        if not isinstance(cfg, dict):
+            raise ValueError("config.json must contain a JSON object.")
+        return cfg
 
 
 def load_and_sanitize_subs(file_path, encoding="utf-8"):
@@ -84,14 +108,13 @@ def build_plex_cache():
         return
     print("Building Plex path mapping cache (this may take a moment)...")
     try:
-        allowed_libraries = None
-        if os.path.exists("config.json"):
-            with open("config.json", "r") as f:
-                try:
-                    config = json.load(f)
-                    allowed_libraries = config.get("plex_libraries")
-                except Exception as e:
-                    print(f"Error reading config.json for Plex libraries: {e}")
+        config = _load_config()
+    except Exception as e:
+        print(f"Error reading config.json for Plex libraries: {e}")
+        return
+
+    try:
+        allowed_libraries = config.get("plex_libraries") if config else None
 
         for section in plex.library.sections():
             if allowed_libraries is not None:
@@ -297,14 +320,55 @@ def prune_database():
         print("No missing media files found.")
 
 
-def index_directory(directory_path: str):
+def index_directory(
+    directory_path: str,
+    extract_timeout: Optional[int] = None,
+    probe_timeout: Optional[int] = None,
+):
     """Scan and index all subtitle and MKV files in a directory.
 
     Args:
         directory_path (str): Path to the directory to be indexed.
+        extract_timeout (Optional[int]): Subprocess timeout in seconds for extracting
+            subtitle tracks. If None, checks config.json ('extractTimeout' or 'extract_timeout')
+            or defaults to DEFAULT_EXTRACT_TIMEOUT (1800s). Set to 0 or negative for unlimited.
+        probe_timeout (Optional[int]): Subprocess timeout in seconds for ffprobe.
+            If None, checks config.json ('probeTimeout' or 'probe_timeout') or
+            defaults to DEFAULT_PROBE_TIMEOUT (300s). Set to 0 or negative for unlimited.
     """
     build_plex_cache()
     conn = get_db()
+    try:
+        config = _load_config() or {}
+    except Exception as e:
+        print(f"Error reading config.json: {e}")
+        config = {}
+
+    if extract_timeout is not None:
+        effective_extract_timeout = None if extract_timeout <= 0 else extract_timeout
+    else:
+        cfg_extract = config.get("extractTimeout", config.get("extract_timeout"))
+        if cfg_extract is not None:
+            try:
+                cfg_extract_val = int(cfg_extract)
+                effective_extract_timeout = None if cfg_extract_val <= 0 else cfg_extract_val
+            except (ValueError, TypeError, OverflowError):
+                effective_extract_timeout = DEFAULT_EXTRACT_TIMEOUT
+        else:
+            effective_extract_timeout = DEFAULT_EXTRACT_TIMEOUT
+
+    if probe_timeout is not None:
+        effective_probe_timeout = None if probe_timeout <= 0 else probe_timeout
+    else:
+        cfg_probe = config.get("probeTimeout", config.get("probe_timeout"))
+        if cfg_probe is not None:
+            try:
+                cfg_probe_val = int(cfg_probe)
+                effective_probe_timeout = None if cfg_probe_val <= 0 else cfg_probe_val
+            except (ValueError, TypeError, OverflowError):
+                effective_probe_timeout = DEFAULT_PROBE_TIMEOUT
+        else:
+            effective_probe_timeout = DEFAULT_PROBE_TIMEOUT
 
     # Clean up missing files that fall under the directory being indexed
     abs_dir = os.path.abspath(directory_path)
@@ -386,7 +450,7 @@ def index_directory(directory_path: str):
                         "json",
                         file_path,
                     ]
-                    result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
+                    result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=effective_probe_timeout)
                     if result.returncode != 0:
                         print(f"ffprobe failed for {file_path}: {result.stderr}")
                         continue
@@ -479,7 +543,7 @@ def index_directory(directory_path: str):
                                     ext_cmd,
                                     stdout=subprocess.DEVNULL,
                                     stderr=subprocess.DEVNULL,
-                                    timeout=600,
+                                    timeout=effective_extract_timeout,
                                 )
                             except subprocess.TimeoutExpired:
                                 if os.path.exists(temp_sub_path):

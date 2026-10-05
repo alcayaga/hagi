@@ -59,6 +59,21 @@ If you have deleted files from your disk and want to automatically clean them up
 ./hagi index --prune
 ```
 
+If your media files are on a network share (NAS) or slow storage under heavy load, you can configure the subtitle extraction timeout in seconds (default is 1800s / 30 minutes; pass `0` for unlimited):
+```bash
+./hagi index "/Volumes/NAS/Anime/Ranma ½ (2024)" --timeout 3600
+```
+Or set `"extractTimeout"` in `config.json`:
+```json
+{
+  "directories": [
+    "/Volumes/NAS/Anime/Show 1",
+    "/Volumes/NAS/Anime/Show 2"
+  ],
+  "extractTimeout": 1800
+}
+```
+
 **3. Launch the Web UI (Recommended)**
 Start the local FastAPI web server to search visually and extract media with the click of a button!
 ```bash
