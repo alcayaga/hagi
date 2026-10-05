@@ -19,21 +19,25 @@ DEFAULT_EXTRACT_TIMEOUT = 1800
 DEFAULT_PROBE_TIMEOUT = 300
 
 
-def _load_config() -> dict:
+def _load_config() -> Optional[dict]:
     """Load configuration from config.json if present.
 
     Returns:
-        dict: The parsed JSON configuration as a dictionary, or an empty dict.
+        Optional[dict]: The parsed JSON configuration as a dictionary, or None
+        if config.json does not exist.
+
+    Raises:
+        ValueError: If config.json does not contain a JSON object.
+        OSError: If an error occurs while opening or reading config.json.
+        json.JSONDecodeError: If config.json contains invalid JSON syntax.
     """
-    if os.path.exists("config.json"):
-        try:
-            with open("config.json", "r") as f:
-                cfg = json.load(f)
-                if isinstance(cfg, dict):
-                    return cfg
-        except Exception as e:
-            print(f"Error reading config.json: {e}")
-    return {}
+    if not os.path.exists("config.json"):
+        return None
+    with open("config.json", "r") as f:
+        cfg = json.load(f)
+        if not isinstance(cfg, dict):
+            raise ValueError("config.json must contain a JSON object.")
+        return cfg
 
 
 def load_and_sanitize_subs(file_path, encoding="utf-8"):
@@ -105,7 +109,12 @@ def build_plex_cache():
     print("Building Plex path mapping cache (this may take a moment)...")
     try:
         config = _load_config()
-        allowed_libraries = config.get("plex_libraries")
+    except Exception as e:
+        print(f"Error reading config.json for Plex libraries: {e}")
+        return
+
+    try:
+        allowed_libraries = config.get("plex_libraries") if config else None
 
         for section in plex.library.sections():
             if allowed_libraries is not None:
@@ -329,7 +338,11 @@ def index_directory(
     """
     build_plex_cache()
     conn = get_db()
-    config = _load_config()
+    try:
+        config = _load_config() or {}
+    except Exception as e:
+        print(f"Error reading config.json: {e}")
+        config = {}
 
     if extract_timeout is not None:
         effective_extract_timeout = None if extract_timeout <= 0 else extract_timeout
@@ -339,7 +352,7 @@ def index_directory(
             try:
                 cfg_extract_val = int(cfg_extract)
                 effective_extract_timeout = None if cfg_extract_val <= 0 else cfg_extract_val
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 effective_extract_timeout = DEFAULT_EXTRACT_TIMEOUT
         else:
             effective_extract_timeout = DEFAULT_EXTRACT_TIMEOUT
@@ -352,7 +365,7 @@ def index_directory(
             try:
                 cfg_probe_val = int(cfg_probe)
                 effective_probe_timeout = None if cfg_probe_val <= 0 else cfg_probe_val
-            except (ValueError, TypeError):
+            except (ValueError, TypeError, OverflowError):
                 effective_probe_timeout = DEFAULT_PROBE_TIMEOUT
         else:
             effective_probe_timeout = DEFAULT_PROBE_TIMEOUT
