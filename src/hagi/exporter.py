@@ -9,10 +9,130 @@ import urllib.error
 import json
 import logging
 import re
+import threading
 
 from . import db
 
 logger = logging.getLogger(__name__)
+
+_STREAM_INFO_CACHE: dict[tuple[str, float, int], tuple[int, bool, int | None]] = {}
+_STREAM_INFO_LOCK = threading.Lock()
+
+
+def clear_stream_info_cache() -> None:
+    """Clear the in-memory media stream info cache."""
+    with _STREAM_INFO_LOCK:
+        _STREAM_INFO_CACHE.clear()
+
+
+def get_media_stream_info(mkv_path: str) -> tuple[int, bool, int | None]:
+    """Retrieve optimal audio stream index, HDR color status, and x264 build version.
+
+    Uses a unified ffprobe call to examine both audio streams and the primary video stream,
+    detecting any x264 encoder build signature to enable decoder compatibility, and caching
+    results in memory to eliminate redundant probes on repeated extractions.
+
+    Args:
+        mkv_path: Path to the media file container.
+
+    Returns:
+        tuple[int, bool, int | None]: A tuple containing:
+            - int: The 0-based index of the chosen audio stream within audio tracks.
+            - bool: Whether the primary video stream uses HDR color transfer.
+            - int | None: The detected x264 core build version (e.g. 138), or None.
+    """
+    try:
+        st = os.stat(mkv_path)
+        cache_key = (mkv_path, st.st_mtime, st.st_size)
+    except OSError:
+        cache_key = (mkv_path, 0.0, 0)
+
+    with _STREAM_INFO_LOCK:
+        if cache_key in _STREAM_INFO_CACHE:
+            return _STREAM_INFO_CACHE[cache_key]
+
+    audio_stream_idx = 0
+    is_hdr = False
+    x264_build = None
+
+    probe_cmd = [
+        "ffprobe",
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_streams",
+        mkv_path,
+    ]
+    try:
+        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
+        if probe_res.returncode == 0:
+            streams = json.loads(probe_res.stdout).get("streams", [])
+            audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+            video_streams = [
+                s for s in streams
+                if s.get("codec_type") == "video"
+                and not s.get("disposition", {}).get("attached_pic")
+            ]
+
+            # Select audio stream index based on language preferences
+            jpn_idx = None
+            default_idx = None
+            und_idx = None
+
+            for i, stream in enumerate(audio_streams):
+                tags = stream.get("tags", {})
+                lang = tags.get("language", "").lower()
+                title = tags.get("title", "").lower()
+
+                if lang in ("jpn", "ja", "jp") or "japanese" in title:
+                    jpn_idx = i
+                    break
+
+                if stream.get("disposition", {}).get("default", 0) == 1 and default_idx is None:
+                    default_idx = i
+
+                if lang in ("und", "unknown", "") and und_idx is None:
+                    und_idx = i
+
+            if jpn_idx is not None:
+                audio_stream_idx = jpn_idx
+            elif default_idx is not None:
+                def_lang = audio_streams[default_idx].get("tags", {}).get("language", "").lower()
+                if def_lang in ("und", "unknown", ""):
+                    audio_stream_idx = default_idx
+                elif und_idx is not None:
+                    audio_stream_idx = und_idx
+            elif und_idx is not None:
+                audio_stream_idx = und_idx
+
+            # Detect HDR color transfer and x264 build in video stream
+            if video_streams:
+                primary_video = video_streams[0]
+                color_trc = primary_video.get("color_transfer", "").lower()
+                if color_trc in ("smpte2084", "arib-std-b67"):
+                    is_hdr = True
+
+                if primary_video.get("codec_name") == "h264":
+                    try:
+                        with open(mkv_path, "rb") as f:
+                            head = f.read(4 * 1024 * 1024)
+                            m = re.search(rb"x264 - core (\d+)", head)
+                            if m:
+                                x264_build = int(m.group(1))
+                    except Exception:
+                        pass
+
+            with _STREAM_INFO_LOCK:
+                _STREAM_INFO_CACHE[cache_key] = (audio_stream_idx, is_hdr, x264_build)
+        else:
+            logger.warning(
+                f"ffprobe returned non-zero exit code {probe_res.returncode} for {mkv_path}: {probe_res.stderr}"
+            )
+    except Exception as e:
+        logger.warning(f"Failed to probe media stream info for {mkv_path}: {e}")
+
+    return audio_stream_idx, is_hdr, x264_build
 
 def clean_text(text: str, lang: str) -> str:
     """Clean subtitle text by removing or replacing html linebreaks."""
@@ -205,53 +325,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             pass
 
     try:
-        # Probe for the Japanese audio track
-        probe_cmd = [
-            "ffprobe",
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_streams",
-            "-select_streams",
-            "a",
-            mkv_path,
-        ]
-        probe_res = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=60)
-
-        audio_stream_idx = 0
-        if probe_res.returncode == 0:
-            streams = json.loads(probe_res.stdout).get("streams", [])
-
-            jpn_idx = None
-            default_idx = None
-            und_idx = None
-
-            for i, stream in enumerate(streams):
-                tags = stream.get("tags", {})
-                lang = tags.get("language", "").lower()
-                title = tags.get("title", "").lower()
-
-                if lang in ("jpn", "ja", "jp") or "japanese" in title:
-                    jpn_idx = i
-                    break
-
-                if stream.get("disposition", {}).get("default", 0) == 1 and default_idx is None:
-                    default_idx = i
-
-                if lang in ("und", "unknown", "") and und_idx is None:
-                    und_idx = i
-
-            if jpn_idx is not None:
-                audio_stream_idx = jpn_idx
-            elif default_idx is not None:
-                def_lang = streams[default_idx].get("tags", {}).get("language", "").lower()
-                if def_lang in ("und", "unknown", ""):
-                    audio_stream_idx = default_idx
-                elif und_idx is not None:
-                    audio_stream_idx = und_idx
-            elif und_idx is not None:
-                audio_stream_idx = und_idx
+        audio_stream_idx, is_hdr, x264_build = get_media_stream_info(mkv_path)
 
         # Extract Audio using the detected stream index
         subprocess.run(
@@ -272,32 +346,9 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             ],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            check=True, timeout=120
+            check=True,
+            timeout=120,
         )
-
-        # Probe for video stream color info to detect HDR
-        probe_vid_cmd = [
-            "ffprobe",
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_streams",
-            "-select_streams",
-            "V:0",
-            mkv_path,
-        ]
-        vid_res = subprocess.run(probe_vid_cmd, capture_output=True, text=True, timeout=60)
-        is_hdr = False
-        if vid_res.returncode == 0:
-            try:
-                v_streams = json.loads(vid_res.stdout).get("streams", [])
-                if v_streams:
-                    color_trc = v_streams[0].get("color_transfer", "").lower()
-                    if color_trc in ("smpte2084", "arib-std-b67"):
-                        is_hdr = True
-            except Exception:
-                pass
 
         # Build Image extraction command
         img_cmd = [
@@ -305,6 +356,10 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             "-y",
             "-ss",
             str(midpoint),
+        ]
+        if x264_build is not None:
+            img_cmd.extend(["-x264_build", str(x264_build)])
+        img_cmd.extend([
             "-i",
             mkv_path,
             "-map",
@@ -313,12 +368,12 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             "1",
             "-q:v",
             "2",
-        ]
+        ])
 
         if is_hdr:
             img_cmd.extend([
                 "-vf",
-                "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+                "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
             ])
         else:
             img_cmd.extend(["-pix_fmt", "yuv420p"])
@@ -333,7 +388,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 capture_output=True,
                 text=True,
                 check=False,
-                timeout=120
+                timeout=120,
             )
 
             # Open-GOP / Hi10P videos (like some anime rips) can produce corrupt frames
@@ -354,48 +409,111 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
         if needs_fallback:
             logger.warning(
                 "Fast-seek image extraction produced corrupt frames. "
-                "Falling back to accurate seek (this may take a while)..."
+                "Falling back to accurate bounded seek..."
             )
-            # Build accurate seek command (-i BEFORE -ss)
+            if os.path.exists(image_tmp):
+                try:
+                    os.remove(image_tmp)
+                except OSError:
+                    pass
+            preroll_start = max(0.0, midpoint - 10.0)
+            relative_offset = max(0.0, midpoint - preroll_start)
             acc_cmd = [
                 "ffmpeg",
                 "-y",
+                "-ss",
+                str(preroll_start),
+            ]
+            if x264_build is not None:
+                acc_cmd.extend(["-x264_build", str(x264_build)])
+            acc_cmd.extend([
                 "-i",
                 mkv_path,
                 "-ss",
-                str(midpoint),
+                str(relative_offset),
                 "-map",
                 "0:V:0",
                 "-vframes",
                 "1",
                 "-q:v",
                 "2",
-            ]
+            ])
             if is_hdr:
                 acc_cmd.extend([
                     "-vf",
-                    "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p"
+                    "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
                 ])
             else:
                 acc_cmd.extend(["-pix_fmt", "yuv420p"])
 
             acc_cmd.append(image_tmp)
+            bounded_succeeded = False
             try:
                 acc_res = subprocess.run(
                     acc_cmd,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.PIPE,
                     text=True,
-                    check=True, timeout=300
+                    check=True,
+                    timeout=30,
                 )
+                # In Open-GOP streams, pre-roll decoding inherently emits concealment warnings
+                # for the skipped initial frames while cleanly decoding the target frame.
+                # A 0 exit code and non-empty image file confirm the target thumbnail succeeded.
+                if acc_res.returncode == 0 and os.path.exists(image_tmp) and os.path.getsize(image_tmp) > 0:
+                    bounded_succeeded = True
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                logger.warning(f"Accurate bounded seek failed: {e}. Falling back to full-file accurate seek...")
 
-                # CodeRabbit Finding: Even accurate seek can fail to decode without crashing
-                if any(term in acc_res.stderr.lower() for term in ["corrupt decoded frame", "error while decoding"]):
-                    raise subprocess.CalledProcessError(0, acc_cmd, output="", stderr=acc_res.stderr)
+            if not bounded_succeeded:
+                if os.path.exists(image_tmp):
+                    try:
+                        os.remove(image_tmp)
+                    except OSError:
+                        pass
+                # Fallback to full-file accurate seek (-i BEFORE -ss)
+                full_cmd = [
+                    "ffmpeg",
+                    "-y",
+                ]
+                if x264_build is not None:
+                    full_cmd.extend(["-x264_build", str(x264_build)])
+                full_cmd.extend([
+                    "-i",
+                    mkv_path,
+                    "-ss",
+                    str(midpoint),
+                    "-map",
+                    "0:V:0",
+                    "-vframes",
+                    "1",
+                    "-q:v",
+                    "2",
+                ])
+                if is_hdr:
+                    full_cmd.extend([
+                        "-vf",
+                        "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
+                    ])
+                else:
+                    full_cmd.extend(["-pix_fmt", "yuv420p"])
 
-            except subprocess.CalledProcessError as e:
-                logger.error(f"Accurate seek failed: {e.stderr}")
-                raise e
+                full_cmd.append(image_tmp)
+                try:
+                    full_res = subprocess.run(
+                        full_cmd,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                        check=True,
+                        timeout=300,
+                    )
+                    # Full-file accurate seek can encounter unrecoverable stream decoding errors without crashing
+                    if any(term in full_res.stderr.lower() for term in ["corrupt decoded frame", "error while decoding"]):
+                        raise subprocess.CalledProcessError(0, full_cmd, output="", stderr=full_res.stderr)
+                except subprocess.CalledProcessError as e:
+                    logger.error(f"Full-file accurate seek failed: {e.stderr}")
+                    raise e
 
         if not os.path.exists(image_tmp) or os.path.getsize(image_tmp) == 0:
             for tmp_path in (audio_tmp, image_tmp):
