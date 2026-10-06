@@ -106,6 +106,10 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
 
             with _STREAM_INFO_LOCK:
                 _STREAM_INFO_CACHE[mkv_path] = (audio_stream_idx, is_hdr)
+        else:
+            logger.warning(
+                f"ffprobe returned non-zero exit code {probe_res.returncode} for {mkv_path}: {probe_res.stderr}"
+            )
     except Exception as e:
         logger.warning(f"Failed to probe media stream info for {mkv_path}: {e}")
 
@@ -421,6 +425,9 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                     check=True,
                     timeout=30,
                 )
+                # In Open-GOP streams, pre-roll decoding inherently emits concealment warnings
+                # for the skipped initial frames while cleanly decoding the target frame.
+                # A 0 exit code and non-empty image file confirm the target thumbnail succeeded.
                 if acc_res.returncode == 0 and os.path.exists(image_tmp) and os.path.getsize(image_tmp) > 0:
                     bounded_succeeded = True
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
@@ -460,7 +467,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                         check=True,
                         timeout=300,
                     )
-                    # CodeRabbit Finding: Even accurate seek can fail to decode without crashing
+                    # Full-file accurate seek can encounter unrecoverable stream decoding errors without crashing
                     if any(term in full_res.stderr.lower() for term in ["corrupt decoded frame", "error while decoding"]):
                         raise subprocess.CalledProcessError(0, full_cmd, output="", stderr=full_res.stderr)
                 except subprocess.CalledProcessError as e:
