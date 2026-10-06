@@ -73,22 +73,43 @@ def test_extract_media(test_db):
     "probe_stdout, expected_map_idx",
     [
         # Case 1: Explicit Japanese tag
-        ('{"streams": [{"tags": {"language": "spa"}}, {"tags": {"language": "jpn"}}, {"tags": {"language": "eng"}}]}', "0:a:1"),
+        (
+            '{"streams": [{"codec_type": "audio", "tags": {"language": "spa"}}, '
+            '{"codec_type": "audio", "tags": {"language": "jpn"}}, '
+            '{"codec_type": "audio", "tags": {"language": "eng"}}]}',
+            "0:a:1",
+        ),
         # Case 2: No tag, but default is 1 (Shaman King Flowers edge-case)
         (
-            '{"streams": [{"tags": {"language": "spa"}}, '
-            '{"tags": {"language": "und"}, "disposition": {"default": 1}}, '
-            '{"tags": {"language": "por"}}]}',
+            '{"streams": [{"codec_type": "audio", "tags": {"language": "spa"}}, '
+            '{"codec_type": "audio", "tags": {"language": "und"}, "disposition": {"default": 1}}, '
+            '{"codec_type": "audio", "tags": {"language": "por"}}]}',
             "0:a:1",
         ),
         # Case 3: Default is English, so we don't pick it, but pick the undefined one
-        ('{"streams": [{"tags": {"language": "eng"}, "disposition": {"default": 1}}, {"tags": {"language": "und"}}]}', "0:a:1"),
+        (
+            '{"streams": [{"codec_type": "audio", "tags": {"language": "eng"}, "disposition": {"default": 1}}, '
+            '{"codec_type": "audio", "tags": {"language": "und"}}]}',
+            "0:a:1",
+        ),
         # Case 4: No tag, no default, pick undefined one
-        ('{"streams": [{"tags": {"language": "spa"}}, {"tags": {"language": "und"}}]}', "0:a:1"),
+        (
+            '{"streams": [{"codec_type": "audio", "tags": {"language": "spa"}}, '
+            '{"codec_type": "audio", "tags": {"language": "und"}}]}',
+            "0:a:1",
+        ),
         # Case 5: 'Japanese' in title
-        ('{"streams": [{"tags": {"language": "und"}}, {"tags": {"language": "und", "title": "Japanese audio"}}]}', "0:a:1"),
+        (
+            '{"streams": [{"codec_type": "audio", "tags": {"language": "und"}}, '
+            '{"codec_type": "audio", "tags": {"language": "und", "title": "Japanese audio"}}]}',
+            "0:a:1",
+        ),
         # Case 6: Fallback to 0 if all else fails
-        ('{"streams": [{"tags": {"language": "spa"}}, {"tags": {"language": "spa"}}]}', "0:a:0"),
+        (
+            '{"streams": [{"codec_type": "audio", "tags": {"language": "spa"}}, '
+            '{"codec_type": "audio", "tags": {"language": "spa"}}]}',
+            "0:a:0",
+        ),
     ],
 )
 def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_map_idx):
@@ -615,7 +636,7 @@ def test_cache_and_cleanup(test_db):
             # Make sure ffprobe succeeds
             mock_probe = MagicMock()
             mock_probe.returncode = 0
-            mock_probe.stdout = '{"streams": [{"tags": {"language": "jpn"}}]}'
+            mock_probe.stdout = '{"streams": [{"codec_type": "audio", "tags": {"language": "jpn"}}]}'
 
             def mock_side_effect(cmd, *args, **kwargs):
                 if "ffprobe" in cmd:
@@ -1050,6 +1071,66 @@ def test_get_media_stream_info_failure_not_cached():
         idx2, is_hdr2 = exporter.get_media_stream_info("/fake/test/video.mkv")
         assert idx2 == 0
         assert is_hdr2 is False
+        assert mock_subrun.call_count == 2
+
+
+def test_get_media_stream_info_ignores_attached_pic():
+    """Test that get_media_stream_info ignores attached pictures when determining primary video."""
+    import json
+    exporter.clear_stream_info_cache()
+    mock_probe_result = MagicMock()
+    mock_probe_result.returncode = 0
+    mock_probe_result.stdout = json.dumps({
+        "streams": [
+            {"codec_type": "audio", "tags": {"language": "jpn"}},
+            {
+                "codec_type": "video",
+                "disposition": {"attached_pic": 1},
+                "color_transfer": "smpte2084",
+            },
+            {
+                "codec_type": "video",
+                "disposition": {"attached_pic": 0},
+                "color_transfer": "bt709",
+            },
+        ]
+    })
+
+    with patch("subprocess.run", return_value=mock_probe_result):
+        idx, is_hdr = exporter.get_media_stream_info("/fake/test/cover_art.mkv")
+        assert idx == 0
+        assert is_hdr is False
+
+
+def test_get_media_stream_info_stat_cache_invalidation():
+    """Test that get_media_stream_info invalidates cache when file stat (mtime/size) changes."""
+    import json
+    exporter.clear_stream_info_cache()
+    mock_probe_result = MagicMock()
+    mock_probe_result.returncode = 0
+    mock_probe_result.stdout = json.dumps({
+        "streams": [
+            {"codec_type": "audio", "tags": {"language": "jpn"}},
+            {"codec_type": "video", "color_transfer": "bt709"},
+        ]
+    })
+
+    mock_stat_1 = MagicMock(st_mtime=100.0, st_size=1000)
+    mock_stat_2 = MagicMock(st_mtime=200.0, st_size=1000)
+
+    with (
+        patch("subprocess.run", return_value=mock_probe_result) as mock_subrun,
+        patch("os.stat", side_effect=[mock_stat_1, mock_stat_1, mock_stat_2]),
+    ):
+        exporter.get_media_stream_info("/fake/test/video.mkv")
+        assert mock_subrun.call_count == 1
+
+        # Second call with same mtime/size uses cache
+        exporter.get_media_stream_info("/fake/test/video.mkv")
+        assert mock_subrun.call_count == 1
+
+        # Third call with updated mtime invalidates cache and probes again
+        exporter.get_media_stream_info("/fake/test/video.mkv")
         assert mock_subrun.call_count == 2
 
 

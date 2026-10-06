@@ -15,7 +15,7 @@ from . import db
 
 logger = logging.getLogger(__name__)
 
-_STREAM_INFO_CACHE: dict[str, tuple[int, bool]] = {}
+_STREAM_INFO_CACHE: dict[tuple[str, float, int], tuple[int, bool]] = {}
 _STREAM_INFO_LOCK = threading.Lock()
 
 
@@ -39,9 +39,15 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
             - int: The 0-based index of the chosen audio stream within audio tracks.
             - bool: Whether the primary video stream uses HDR color transfer.
     """
+    try:
+        st = os.stat(mkv_path)
+        cache_key = (mkv_path, st.st_mtime, st.st_size)
+    except OSError:
+        cache_key = (mkv_path, 0.0, 0)
+
     with _STREAM_INFO_LOCK:
-        if mkv_path in _STREAM_INFO_CACHE:
-            return _STREAM_INFO_CACHE[mkv_path]
+        if cache_key in _STREAM_INFO_CACHE:
+            return _STREAM_INFO_CACHE[cache_key]
 
     audio_stream_idx = 0
     is_hdr = False
@@ -60,12 +66,11 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
         if probe_res.returncode == 0:
             streams = json.loads(probe_res.stdout).get("streams", [])
             audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
-            video_streams = [s for s in streams if s.get("codec_type") == "video"]
-
-            # If mock test data omitted codec_type, fall back to treating streams appropriately
-            if not audio_streams and not any(s.get("codec_type") for s in streams):
-                audio_streams = [s for s in streams if "color_transfer" not in s]
-                video_streams = [s for s in streams if "color_transfer" in s]
+            video_streams = [
+                s for s in streams
+                if s.get("codec_type") == "video"
+                and not s.get("disposition", {}).get("attached_pic")
+            ]
 
             # Select audio stream index based on language preferences
             jpn_idx = None
@@ -105,7 +110,7 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
                     is_hdr = True
 
             with _STREAM_INFO_LOCK:
-                _STREAM_INFO_CACHE[mkv_path] = (audio_stream_idx, is_hdr)
+                _STREAM_INFO_CACHE[cache_key] = (audio_stream_idx, is_hdr)
         else:
             logger.warning(
                 f"ffprobe returned non-zero exit code {probe_res.returncode} for {mkv_path}: {probe_res.stderr}"
