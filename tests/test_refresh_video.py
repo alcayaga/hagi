@@ -671,7 +671,68 @@ def test_extract_mkv_subtitles_allow_partial(tmp_path):
             str(dummy_mkv), allow_partial=False
         )
         assert subs == {}
-        assert probe_ok is True
+        assert probe_ok is False
+
+
+def test_parse_media_identifiers_excludes_release_year():
+    """Test that parse_media_identifiers excludes release years matched by the fallback regex."""
+    # Fallback regex matches 4-digit number that is a release year (1900..2099)
+    p = "/mnt/NAS/Anime/Detective Conan (1996)/Detective Conan 2024 episode [1080p].mkv"
+    ids = indexer.parse_media_identifiers(p)
+    assert ids["abs_episode"] is None
+
+    # Prefix match with hyphen is a legitimate absolute episode even if > 1000
+    p2 = "/mnt/NAS/Anime/Conan - 1207 [1080p].mkv"
+    ids2 = indexer.parse_media_identifiers(p2)
+    assert ids2["abs_episode"] == 1207
+
+
+def test_find_matching_media_rejects_conflicting_season_episode_in_abs(test_db):
+    """Test that find_matching_media rejects absolute episode candidates with conflicting season/episode."""
+    # Existing missing media is S01E05 with abs 100
+    p1 = "/nonexistent/Conan - S01E05 - 100.mkv"
+    mid1 = db.add_media(test_db, p1, "mkv_embedded", show_title="Conan", season=1, episode=5)
+
+    # New file is S02E05 with abs 100 (conflicting season)
+    p2 = "/nonexistent/Conan - S02E05 - 100.mkv"
+    matched = indexer.find_matching_media(test_db, p2, media_type="mkv_embedded")
+    assert matched is None
+
+    # New file with matching season/episode and same abs should match
+    p3 = "/nonexistent/Conan - S01E05 - 100 [Upgraded].mkv"
+    matched_ok = indexer.find_matching_media(test_db, p3, media_type="mkv_embedded")
+    assert matched_ok == mid1
+
+
+def test_prune_database_uses_resolved_timeouts(monkeypatch, test_db):
+    """Test that prune_database resolves timeouts via _resolve_timeouts and passes them to refresh_media."""
+    called_timeouts = {}
+
+    def mock_refresh_media(conn, mid, path, extract_timeout=None, probe_timeout=None):
+        """Mock refresh_media recording passed timeouts."""
+        called_timeouts["extract"] = extract_timeout
+        called_timeouts["probe"] = probe_timeout
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_media", mock_refresh_media)
+    monkeypatch.setattr(indexer, "get_db", lambda: test_db)
+    monkeypatch.setattr(indexer, "_resolve_timeouts", lambda: (777, 888))
+
+    # Add a missing media row that has an upgraded replacement
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        old_path = os.path.join(tmp_dir, "Show - S01E01 [Old].mkv")
+        new_path = os.path.join(tmp_dir, "Show - S01E01 [New].mkv")
+        with open(new_path, "w") as f:
+            f.write("content")
+
+        db.add_media(test_db, old_path, "mkv_embedded", show_title="Show", season=1, episode=1)
+        test_db.commit()
+
+        indexer.prune_database()
+        assert called_timeouts.get("extract") == 777
+        assert called_timeouts.get("probe") == 888
+
 
 
 

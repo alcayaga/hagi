@@ -421,6 +421,7 @@ def prune_database():
     import errno
 
     conn = get_db()
+    extract_timeout, probe_timeout = _resolve_timeouts()
     cursor = conn.execute("SELECT id, path, type, show_title, season, episode, episode_title FROM media")
     pruned_count = 0
     for row in cursor.fetchall():
@@ -447,8 +448,8 @@ def prune_database():
                                             conn,
                                             row["id"],
                                             cand_path,
-                                            extract_timeout=DEFAULT_EXTRACT_TIMEOUT,
-                                            probe_timeout=DEFAULT_PROBE_TIMEOUT,
+                                            extract_timeout=extract_timeout,
+                                            probe_timeout=probe_timeout,
                                         ):
                                             upgraded = True
                                             break
@@ -678,11 +679,19 @@ def parse_media_identifiers(file_path: str) -> dict:
 
     # Check absolute episode number (e.g. " - 1207 - " or " - 1207 [" or " 1207 ")
     m_abs = re.search(r"(?:-\s*)(\d{2,4})(?:\s*-|\s*\[|\s*\.|\b)", clean_base)
+    is_fallback = False
     if not m_abs:
         m_abs = re.search(r"\b(\d{3,4})\b", clean_base)
+        is_fallback = True
     if m_abs:
         cand = int(m_abs.group(1))
-        if cand not in (1080, 720, 480, 264, 265, 576, 2160) and cand != season and cand != episode:
+        is_year = is_fallback and (1900 <= cand <= 2099)
+        if (
+            cand not in (1080, 720, 480, 264, 265, 576, 2160)
+            and not is_year
+            and cand != season
+            and cand != episode
+        ):
             abs_episode = cand
 
     show_hint = None
@@ -898,18 +907,18 @@ def extract_mkv_subtitles(
                                 extracted_subs.append((temp_sub_path, lang, i))
                             elif not allow_partial:
                                 print(f"Extraction failed for track {i} from {file_path}")
-                                return {}, False, True
+                                return {}, False, False
                         except subprocess.TimeoutExpired:
                             print(f"Timed out extracting track {i} from {file_path}")
                             had_timeout = True
                             if not allow_partial:
-                                return {}, True, True
+                                return {}, True, False
                             break
             except subprocess.TimeoutExpired:
                 print(f"Timed out extracting subtitles from {file_path}")
                 had_timeout = True
                 if not allow_partial:
-                    return {}, True, True
+                    return {}, True, False
 
         subs_by_lang = {}
         if extracted_subs:
@@ -1371,6 +1380,12 @@ def find_matching_media(
         for c in dir_candidates:
             c_ids = parse_media_identifiers(c["path"])
             if c_ids.get("abs_episode") == abs_ep:
+                c_season = c.get("season") if c.get("season") is not None else c_ids.get("season")
+                c_episode = c.get("episode") if c.get("episode") is not None else c_ids.get("episode")
+                if season is not None and c_season is not None and season != c_season:
+                    continue
+                if episode is not None and c_episode is not None and episode != c_episode:
+                    continue
                 matched_abs.append(c)
         if len(matched_abs) == 1:
             return matched_abs[0]["id"]
