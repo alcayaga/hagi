@@ -309,6 +309,48 @@ def detect_language(subs_obj):
     return "eng"
 
 
+def _normalize_lang_code(code: Optional[str]) -> str:
+    """Normalize a 2-letter or 3-letter language code to standard 3-letter representation.
+
+    Args:
+        code (Optional[str]): Language code to normalize.
+
+    Returns:
+        str: Normalized 3-letter language code or lowercase code if unrecognized.
+    """
+    if not code:
+        return "unknown"
+    code = code.lower().strip()
+    mapping = {
+        "en": "eng",
+        "eng": "eng",
+        "ja": "jpn",
+        "jpn": "jpn",
+        "jp": "jpn",
+        "es": "spa",
+        "spa": "spa",
+        "sp": "spa",
+        "pt": "por",
+        "por": "por",
+    }
+    return mapping.get(code, code)
+
+
+def _extract_file_lang(path: str) -> Optional[str]:
+    """Extract and normalize a language tag from a subtitle filename (e.g. .ja.srt -> jpn).
+
+    Args:
+        path (str): File path to inspect.
+
+    Returns:
+        Optional[str]: Normalized 3-letter language code or None if no tag found.
+    """
+    m = re.search(r"\.([a-zA-Z]{2,3})\.(?:srt|ass|vtt)$", path)
+    if m:
+        return _normalize_lang_code(m.group(1))
+    return None
+
+
 def prune_database():
     """Verify all media in the database and remove missing files globally."""
     import errno
@@ -1213,6 +1255,12 @@ def find_matching_media(
         missing_media_rows = [dict(r) for r in rows if not os.path.exists(r["path"])]
 
     candidates = [c for c in missing_media_rows if c.get("type") == media_type]
+    new_lang_tag = _extract_file_lang(new_file_path)
+    if new_lang_tag:
+        candidates = [
+            c for c in candidates
+            if not _extract_file_lang(c["path"]) or _extract_file_lang(c["path"]) == new_lang_tag
+        ]
     if not candidates:
         return None
 
@@ -1294,16 +1342,21 @@ def find_matching_media(
             try:
                 subs_sample = load_and_sanitize_subs(new_file_path)
                 if subs_sample:
-                    sample_sentences = [
+                    eligible = [
                         line.plaintext.strip()
                         for line in subs_sample
                         if len(line.plaintext.strip()) >= 10
-                    ][:5]
+                    ]
+                    if len(eligible) <= 10:
+                        sample_sentences = eligible
+                    else:
+                        step = len(eligible) / 10.0
+                        sample_sentences = [eligible[int(k * step)] for k in range(10)]
             except Exception:
                 pass
 
     if sample_sentences and candidates:
-        clean_samples = [s.strip() for s in sample_sentences if len(s.strip()) >= 10][:5]
+        clean_samples = list({s.strip() for s in sample_sentences if len(s.strip()) >= 10})[:10]
         candidate_ids = [c["id"] for c in candidates]
         if clean_samples and candidate_ids:
             ph_ids = ",".join("?" for _ in candidate_ids)
@@ -1314,11 +1367,16 @@ def find_matching_media(
                 WHERE media_id IN ({ph_ids}) AND text IN ({ph_texts})
                 GROUP BY media_id
                 ORDER BY match_count DESC
-                LIMIT 1
+                LIMIT 2
             """
-            row = conn.execute(query, candidate_ids + clean_samples).fetchone()
-            if row and row["match_count"] >= 2:
-                return row["media_id"]
+            rows = conn.execute(query, candidate_ids + clean_samples).fetchall()
+            if rows:
+                best_match = rows[0]
+                if best_match["match_count"] >= 2:
+                    if len(rows) == 1:
+                        return best_match["media_id"]
+                    elif best_match["match_count"] > rows[1]["match_count"]:
+                        return best_match["media_id"]
 
     return None
 
@@ -1428,11 +1486,33 @@ def refresh_media(
             print("Aborting refresh: no valid sentences found in subtitle file.")
             return False
 
-        existing_lang_row = conn.execute(
-            "SELECT language FROM sentences WHERE media_id = ? LIMIT 1",
-            (media_id,),
-        ).fetchone()
-        lang = existing_lang_row["language"] if existing_lang_row else detect_language(subs)
+        detected_lang = detect_language(subs)
+        norm_detected = _normalize_lang_code(detected_lang)
+        stored_langs = [
+            r[0]
+            for r in conn.execute(
+                "SELECT DISTINCT language FROM sentences WHERE media_id = ?",
+                (media_id,),
+            ).fetchall()
+            if r[0]
+        ]
+        norm_stored_map = {_normalize_lang_code(code): code for code in stored_langs}
+
+        new_tag = _extract_file_lang(abs_path)
+        old_tag = _extract_file_lang(row["path"])
+        if new_tag and old_tag and new_tag != old_tag:
+            print(
+                f"Aborting refresh: subtitle language tag '{new_tag}' does not match "
+                f"existing media language tag '{old_tag}' for media {media_id}."
+            )
+            return False
+
+        if norm_detected in norm_stored_map:
+            lang = norm_stored_map[norm_detected]
+        elif stored_langs:
+            lang = stored_langs[0]
+        else:
+            lang = detected_lang
 
         existing = conn.execute(
             "SELECT start_time, text FROM sentences WHERE media_id = ? AND language = ? ORDER BY start_time",
@@ -1484,13 +1564,46 @@ def refresh_file(
 
     if os.path.isdir(abs_path):
         refreshed_any = False
+        all_missing = [
+            dict(r)
+            for r in conn.execute(
+                "SELECT id, path, type, show_title, season, episode, episode_title FROM media"
+            ).fetchall()
+            if not os.path.exists(r["path"])
+        ]
+        missing_by_type = {
+            "mkv_embedded": [m for m in all_missing if m.get("type") == "mkv_embedded"],
+            "subtitle": [m for m in all_missing if m.get("type") == "subtitle"],
+        }
         for root, _, files in os.walk(abs_path):
             for file in files:
                 if file.startswith("._") or not file.lower().endswith((".mkv", ".srt", ".ass")):
                     continue
                 sub_path = os.path.join(root, file)
-                if refresh_file(sub_path, extract_timeout=extract_timeout, probe_timeout=probe_timeout):
-                    refreshed_any = True
+                mtype = "mkv_embedded" if sub_path.lower().endswith(".mkv") else "subtitle"
+                cands = missing_by_type.get(mtype, [])
+                matched_id = find_matching_media(conn, sub_path, media_type=mtype, missing_media_rows=cands)
+                if matched_id is not None:
+                    try:
+                        if refresh_media(
+                            conn,
+                            matched_id,
+                            sub_path,
+                            extract_timeout=extract_timeout,
+                            probe_timeout=probe_timeout,
+                        ):
+                            refreshed_any = True
+                            missing_by_type[mtype] = [c for c in cands if c["id"] != matched_id]
+                    except Exception as ref_err:
+                        print(f"Error refreshing {sub_path} into media {matched_id}: {ref_err}")
+                        conn.rollback()
+                else:
+                    if refresh_file(
+                        sub_path,
+                        extract_timeout=extract_timeout,
+                        probe_timeout=probe_timeout,
+                    ):
+                        refreshed_any = True
         return refreshed_any
 
     target_id = media_id

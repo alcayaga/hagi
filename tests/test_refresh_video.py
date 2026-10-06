@@ -403,3 +403,48 @@ def test_find_matching_media_auto_samples_subtitles(test_db, tmp_path):
 
     matched_id = indexer.find_matching_media(test_db, str(new_sub), media_type="subtitle")
     assert matched_id == mid
+
+
+def test_refresh_media_rejects_language_mismatch(test_db, tmp_path):
+    """Test that refresh_media rejects a replacement subtitle whose language mismatches stored media."""
+    mid = db.add_media(test_db, "/old/subs.ja.srt", "subtitle")
+    db.add_sentences(test_db, mid, [("jpn", 1.0, 3.0, "これは日本語のテキストです。")])
+    test_db.commit()
+
+    en_sub = tmp_path / "subs.en.srt"
+    en_sub.write_text("1\n00:00:01,000 --> 00:00:03,000\nThis is purely English text.\n\n")
+
+    assert indexer.refresh_media(test_db, mid, str(en_sub)) is False
+
+
+def test_find_matching_media_rejects_tied_fingerprints(test_db, tmp_path):
+    """Test that candidate matching returns None when two candidates have equal top fingerprint matches."""
+    mid1 = db.add_media(test_db, "/nonexistent/cand1.srt", "subtitle")
+    mid2 = db.add_media(test_db, "/nonexistent/cand2.srt", "subtitle")
+
+    shared = [
+        ("eng", 1.0, 2.0, "Shared sentence one that is distinctive"),
+        ("eng", 3.0, 4.0, "Shared sentence two that is distinctive"),
+    ]
+    db.add_sentences(test_db, mid1, shared)
+    db.add_sentences(test_db, mid2, shared)
+    test_db.commit()
+
+    new_sub = tmp_path / "test_tied.srt"
+    new_sub.write_text(
+        "1\n00:00:01,000 --> 00:00:02,000\nShared sentence one that is distinctive\n\n"
+        "2\n00:00:03,000 --> 00:00:04,000\nShared sentence two that is distinctive\n\n"
+    )
+
+    matched = indexer.find_matching_media(test_db, str(new_sub), media_type="subtitle")
+    assert matched is None
+
+
+def test_find_matching_media_rejects_cross_language_subtitles(test_db):
+    """Test that candidate matching does not match a .en.srt file to a missing .ja.srt row."""
+    ja_path = "/nonexistent/Season 34/Conan - S34E21.ja.srt"
+    db.add_media(test_db, ja_path, "subtitle", show_title="Detective Conan", season=34, episode=21)
+
+    en_path = "/nonexistent/Season 34/Conan - S34E21.en.srt"
+    matched_id = indexer.find_matching_media(test_db, en_path, media_type="subtitle")
+    assert matched_id is None
