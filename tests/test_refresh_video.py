@@ -1029,6 +1029,80 @@ def test_refresh_media_reconciles_relabeled_tracks(test_db, tmp_path):
     assert round(eng_rows[0]["start_time"], 1) == 1.2
 
     # Unmapped spa sentences are retained
-    spa_rows = test_db.execute("SELECT id, text FROM sentences WHERE media_id = ? AND language = 'spa'", (mid,)).fetchall()
+    spa_rows = test_db.execute(
+        "SELECT id, text FROM sentences WHERE media_id = ? AND language = 'spa'",
+        (mid,),
+    ).fetchall()
     assert len(spa_rows) == 1
     assert spa_rows[0]["text"] == "Hola"
+
+
+def test_prune_database_continues_to_sibling_candidate_on_failure(test_db, tmp_path):
+    """Test that prune_database continues to check sibling candidates if an earlier candidate fails."""
+    old_path = str(tmp_path / "Show - S01E01 [Old].mkv")
+    bad_cand = str(tmp_path / "Show - S01E01 [Bad].mkv")
+    good_cand = str(tmp_path / "Show - S01E01 [Good].mkv")
+    with open(bad_cand, "w") as f:
+        f.write("bad")
+    with open(good_cand, "w") as f:
+        f.write("good")
+
+    mid = db.add_media(test_db, old_path, "mkv_embedded", show_title="Show", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Dialogue")])
+    test_db.commit()
+
+    def mock_refresh(conn, media_id, cand_path, **kwargs):
+        """Mock refresh_media: fail for bad candidate, succeed for good candidate."""
+        return cand_path == good_cand
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.find_matching_media", return_value=mid),
+        patch("hagi.indexer.refresh_media", side_effect=mock_refresh),
+    ):
+        indexer.prune_database()
+
+    # The missing media record should have been preserved
+    row = test_db.execute("SELECT id, path FROM media WHERE id = ?", (mid,)).fetchone()
+    assert row is not None
+
+
+def test_index_directory_continues_to_sibling_candidate_on_failure(test_db, tmp_path):
+    """Test that index_directory keeps missing media available for sibling candidates when an earlier candidate fails."""
+    season_dir = tmp_path / "Season 1"
+    season_dir.mkdir()
+
+    old_file_path = str(season_dir / "Conan - S01E01 [Old].mkv")
+    bad_file_path = str(season_dir / "Conan - S01E01 [1_Bad].mkv")
+    good_file_path = str(season_dir / "Conan - S01E01 [2_Good].mkv")
+
+    mid = db.add_media(test_db, old_file_path, "mkv_embedded", show_title="Conan", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Dialogue")])
+    test_db.commit()
+
+    with open(bad_file_path, "w") as f:
+        f.write("bad")
+    with open(good_file_path, "w") as f:
+        f.write("good")
+
+    def mock_refresh(conn, media_id, file_path, **kwargs):
+        """Mock refresh_media: fail on bad candidate, succeed on good candidate."""
+        if file_path == good_file_path:
+            db.update_media_path(conn, media_id, file_path)
+            conn.commit()
+            return True
+        return False
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("os.walk", return_value=[(str(season_dir), [], ["Conan - S01E01 [1_Bad].mkv", "Conan - S01E01 [2_Good].mkv"])]),
+        patch("hagi.indexer.refresh_media", side_effect=mock_refresh),
+        patch("hagi.indexer.extract_mkv_subtitles", return_value=({}, False, False)),
+    ):
+        indexer.index_directory(str(season_dir))
+
+    # Media should be upgraded to good_file_path and not duplicated or deleted
+    media_rows = test_db.execute("SELECT id, path FROM media").fetchall()
+    assert len(media_rows) == 1
+    assert media_rows[0]["id"] == mid
+    assert media_rows[0]["path"] == good_file_path

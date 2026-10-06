@@ -469,7 +469,7 @@ def prune_database():
                                                     "Please run 'hagi refresh' manually."
                                                 )
                                                 matched_failed = True
-                                                break
+                                                continue
                                         except Exception as ref_err:
                                             print(
                                                 f"Error refreshing {cand_path} during prune: {ref_err}; "
@@ -477,7 +477,7 @@ def prune_database():
                                             )
                                             conn.rollback()
                                             matched_failed = True
-                                            break
+                                            continue
                     except Exception as scan_err:
                         print(f"Error checking directory {parent_dir}: {scan_err}")
                         conn.rollback()
@@ -532,6 +532,7 @@ def index_directory(
     for row in cursor.fetchall():
         if not os.path.exists(row["path"]):
             missing_media[row["id"]] = dict(row)
+    failed_upgrades = set()
 
     directory_path = abs_dir
     for root, _, files in os.walk(directory_path):
@@ -598,18 +599,22 @@ def index_directory(
                         probe_timeout=effective_probe_timeout,
                     ):
                         del missing_media[matched_mid]
+                        failed_upgrades.discard(matched_mid)
                         continue
                     else:
                         print(
-                            f"Refresh failed for {file_path}; retaining existing media {matched_mid}. "
+                            f"Refresh failed for {file_path}; keeping media {matched_mid} available for other candidates. "
                             "Skipping re-indexing as new media to protect permalinks."
                         )
-                        del missing_media[matched_mid]
+                        failed_upgrades.add(matched_mid)
                         continue
                 except Exception as ref_err:
-                    print(f"Error upgrading {file_path} into media {matched_mid}: {ref_err}; retaining existing media.")
+                    print(
+                        f"Error upgrading {file_path} into media {matched_mid}: {ref_err}; "
+                        "keeping media available for other candidates."
+                    )
                     conn.rollback()
-                    del missing_media[matched_mid]
+                    failed_upgrades.add(matched_mid)
                     continue
 
             if file.endswith((".ass", ".srt")):
@@ -664,7 +669,10 @@ def index_directory(
                     print(f"Error extracting from {file_path}: {e}")
 
     # Remove remaining missing files that were not upgraded
-    for mid, m in missing_media.items():
+    for mid, m in list(missing_media.items()):
+        if mid in failed_upgrades:
+            print(f"Retaining missing file {m['path']} (media {mid}) due to failed upgrade attempt.")
+            continue
         print(f"Removing deleted file from database: {m['path']}")
         conn.execute("DELETE FROM sentences WHERE media_id = ?", (mid,))
         conn.execute("DELETE FROM media WHERE id = ?", (mid,))
