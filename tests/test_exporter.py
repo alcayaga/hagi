@@ -13,12 +13,14 @@ def test_db():
     """Test function."""
     db.DB_PATH = ":memory:"
     conn = db.init_db()
+    exporter.clear_stream_info_cache()
 
     # Add a mock sentence for testing
     media_id = db.add_media(conn, "/fake/path/episode1.mkv", "mkv_embedded")
     db.add_sentences(conn, media_id, [("jpn", 10.0, 15.0, "This is a test sentence.")])
 
     yield conn
+    exporter.clear_stream_info_cache()
     conn.close()
 
 
@@ -49,8 +51,8 @@ def test_extract_media(test_db):
 
         assert text == "This is a test sentence."
 
-        # Verify subprocess.run was called four times (ffprobe audio, ffmpeg audio, ffprobe video, ffmpeg video)
-        assert mock_subrun.call_count == 4
+        # Verify subprocess.run was called three times (unified ffprobe, ffmpeg audio, ffmpeg video)
+        assert mock_subrun.call_count == 3
 
         # Verify the ffprobe command
         ffprobe_call_args = mock_subrun.call_args_list[0][0][0]
@@ -91,6 +93,7 @@ def test_extract_media(test_db):
 )
 def test_extract_media_audio_stream_selection(test_db, probe_stdout, expected_map_idx):
     """Test that extract_media correctly selects the optimal audio track based on metadata."""
+    exporter.clear_stream_info_cache()
 
     def mock_run_side_effect(cmd, *args, **kwargs):
         mock_result = MagicMock()
@@ -634,7 +637,7 @@ def test_cache_and_cleanup(test_db):
             success, msg, a_out, i_out, text, is_cached = exporter.extract_media(sid, tmpdir)
             assert success is True
             assert is_cached is False
-            assert mock_run.call_count == 4
+            assert mock_run.call_count == 3
 
         # Change mtime of generated files back in time
         import time
@@ -833,8 +836,8 @@ def test_extract_media_fallback(test_db):
             """Mock subprocess.run to simulate a fast-seek failure."""
             from subprocess import CompletedProcess
             cmd = args[0]
-            # If it's the fast-seek ffmpeg command (has -ss BEFORE -i)
-            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and cmd.index("-ss") < cmd.index("-i"):
+            # If it's the fast-seek ffmpeg command (has -ss BEFORE -i without -copyts)
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and "-copyts" not in cmd and cmd.index("-ss") < cmd.index("-i"):
                 return CompletedProcess(cmd, 0, stdout="{}", stderr="output file is empty")
             return CompletedProcess(cmd, 0, stdout="{}", stderr="")
 
@@ -844,17 +847,16 @@ def test_extract_media_fallback(test_db):
 
         assert success is True
 
-        # Verify it ran 5 times (audio probe, audio, video probe, video fast-seek, video accurate-seek)
-        assert mock_subrun.call_count == 5
+        # Verify it ran 4 times (unified probe, audio, video fast-seek, video bounded seek)
+        assert mock_subrun.call_count == 4
 
-        # The 5th call should be the accurate seek fallback (-i BEFORE -ss)
-        fallback_call_args = mock_subrun.call_args_list[4][0][0]
+        # The 4th call should be the bounded accurate seek fallback
+        fallback_call_args = mock_subrun.call_args_list[3][0][0]
         assert "ffmpeg" in fallback_call_args
+        assert "-copyts" in fallback_call_args
+        assert "-ss" in fallback_call_args
+        assert "-i" in fallback_call_args
 
-        # In accurate seek, -i should appear before -ss
-        i_idx = fallback_call_args.index("-i")
-        ss_idx = fallback_call_args.index("-ss")
-        assert i_idx < ss_idx
 
 def test_extract_media_fallback_accurate_corruption(test_db):
     """Test that extract_media falls back and fails if accurate seek ALSO has a corrupted frame in stderr."""
@@ -870,13 +872,16 @@ def test_extract_media_fallback_accurate_corruption(test_db):
         sid = sentence["id"]
 
         def custom_subrun(*args, **kwargs):
-            """Mock subprocess.run to simulate both fast-seek and accurate-seek failures."""
+            """Mock subprocess.run to simulate fast-seek, bounded-seek, and full-seek failures."""
             from subprocess import CompletedProcess
             cmd = args[0]
             # Fast seek
-            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and cmd.index("-ss") < cmd.index("-i"):
+            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and "-copyts" not in cmd and cmd.index("-ss") < cmd.index("-i"):
                 return CompletedProcess(cmd, 0, stdout="{}", stderr="corrupt decoded frame")
-            # Accurate seek
+            # Bounded seek failure
+            if "ffmpeg" in cmd and "-copyts" in cmd:
+                return CompletedProcess(cmd, 1, stdout="{}", stderr="error while decoding")
+            # Full accurate seek failure
             if "ffmpeg" in cmd and "-i" in cmd and "-ss" in cmd and cmd.index("-i") < cmd.index("-ss"):
                 return CompletedProcess(cmd, 0, stdout="{}", stderr="error while decoding")
             return CompletedProcess(cmd, 0, stdout="{}", stderr="")
@@ -888,6 +893,7 @@ def test_extract_media_fallback_accurate_corruption(test_db):
         # It should fail completely because accurate seek also had corruption in stderr
         assert success is False
         assert mock_subrun.call_count == 5
+
 
 def test_extract_media_hdr_tonemapping(test_db):
     """Test that extract_media correctly applies zscale tonemapping for HDR video."""
@@ -904,11 +910,12 @@ def test_extract_media_hdr_tonemapping(test_db):
 
         def custom_subrun(*args, **kwargs):
             """Mock subprocess.run to return HDR metadata from ffprobe."""
+            import json
             from subprocess import CompletedProcess
             cmd = args[0]
-            if "ffprobe" in cmd and "V:0" in cmd:
-                # Return HDR metadata
-                return CompletedProcess(cmd, 0, stdout='{"streams": [{"color_transfer": "smpte2084"}]}', stderr="")
+            if "ffprobe" in cmd:
+                stdout_data = json.dumps({"streams": [{"codec_type": "video", "color_transfer": "smpte2084"}]})
+                return CompletedProcess(cmd, 0, stdout=stdout_data, stderr="")
             return CompletedProcess(cmd, 0, stdout="{}", stderr="")
 
         mock_subrun.side_effect = custom_subrun
@@ -917,15 +924,16 @@ def test_extract_media_hdr_tonemapping(test_db):
 
         assert success is True
 
-        # Verify the zscale filter was used in the fast-seek ffmpeg command
-        fast_seek_cmd = mock_subrun.call_args_list[3][0][0]
+        # Verify the zscale filter was used in the fast-seek ffmpeg command (call 2: unified probe=0, audio=1, fast-seek=2)
+        fast_seek_cmd = mock_subrun.call_args_list[2][0][0]
         assert (
             "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,"
             "zscale=t=bt709:m=bt709:r=tv,format=yuv420p" in fast_seek_cmd
         )
 
+
 def test_extract_media_cover_art(test_db):
-    """Test that extract_media excludes cover art by using V:0 instead of v:0."""
+    """Test that extract_media excludes cover art by using 0:V:0 instead of 0:v:0."""
     with (
         patch("hagi.exporter.db.get_db", return_value=test_db),
         patch("os.makedirs"),
@@ -947,10 +955,9 @@ def test_extract_media_cover_art(test_db):
         success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
         assert success is True
 
-        probe_cmd = mock_subrun.call_args_list[2][0][0]
-        assert "V:0" in probe_cmd
-        fast_seek_cmd = mock_subrun.call_args_list[3][0][0]
+        fast_seek_cmd = mock_subrun.call_args_list[2][0][0]
         assert "0:V:0" in fast_seek_cmd
+
 
 def test_extract_media_fallback_timeout(test_db):
     """Test that extract_media falls back to accurate seek if fast seek times out."""
@@ -969,7 +976,14 @@ def test_extract_media_fallback_timeout(test_db):
             """Mock subprocess.run to raise TimeoutExpired on fast-seek."""
             import subprocess
             cmd = args[0]
-            if "ffmpeg" in cmd and "-ss" in cmd and "-i" in cmd and "-vframes" in cmd and cmd.index("-ss") < cmd.index("-i"):
+            if (
+                "ffmpeg" in cmd
+                and "-ss" in cmd
+                and "-i" in cmd
+                and "-vframes" in cmd
+                and "-copyts" not in cmd
+                and cmd.index("-ss") < cmd.index("-i")
+            ):
                 raise subprocess.TimeoutExpired(cmd, 120)
             return subprocess.CompletedProcess(cmd, 0, stdout="{}", stderr="")
 
@@ -978,11 +992,45 @@ def test_extract_media_fallback_timeout(test_db):
         success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/fake/out")
         assert success is True
 
-        # Verify accurate seek was called
-        fallback_call_args = mock_subrun.call_args_list[4][0][0]
-        i_idx = fallback_call_args.index("-i")
-        ss_idx = fallback_call_args.index("-ss")
-        assert i_idx < ss_idx
+        # Verify accurate bounded seek was called (call 3)
+        fallback_call_args = mock_subrun.call_args_list[3][0][0]
+        assert "-copyts" in fallback_call_args
+        assert "-ss" in fallback_call_args
+        assert "-i" in fallback_call_args
+
+
+def test_get_media_stream_info_caching():
+    """Test that get_media_stream_info caches probe results in memory to prevent duplicate calls."""
+    import json
+    exporter.clear_stream_info_cache()
+    mock_probe_result = MagicMock()
+    mock_probe_result.returncode = 0
+    mock_probe_result.stdout = json.dumps({
+        "streams": [
+            {"codec_type": "audio", "tags": {"language": "jpn"}},
+            {"codec_type": "video", "color_transfer": "smpte2084"},
+        ]
+    })
+
+    with patch("subprocess.run", return_value=mock_probe_result) as mock_subrun:
+        # First call probes the file
+        idx1, is_hdr1 = exporter.get_media_stream_info("/fake/test/video.mkv")
+        assert idx1 == 0
+        assert is_hdr1 is True
+        assert mock_subrun.call_count == 1
+
+        # Second call with identical path returns cached data with 0 subprocess calls
+        idx2, is_hdr2 = exporter.get_media_stream_info("/fake/test/video.mkv")
+        assert idx2 == 0
+        assert is_hdr2 is True
+        assert mock_subrun.call_count == 1
+
+        # Clearing cache causes next call to re-probe
+        exporter.clear_stream_info_cache()
+        idx3, is_hdr3 = exporter.get_media_stream_info("/fake/test/video.mkv")
+        assert idx3 == 0
+        assert is_hdr3 is True
+        assert mock_subrun.call_count == 2
 
 
 @patch("urllib.request.urlopen")
