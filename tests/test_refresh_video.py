@@ -784,6 +784,11 @@ def test_titles_match():
     assert indexer.titles_match("Naruto Shippuden", "Naruto") is False
     assert indexer.titles_match("Bleach", "Bleach: Thousand-Year Blood War") is False
 
+    # Arbitrary single-word prefixes should NOT match
+    assert indexer.titles_match("Black Clover", "Clover") is False
+    assert indexer.titles_match("Shin Evangelion", "Evangelion") is False
+    assert indexer.titles_match("Re:Zero", "Zero") is False
+
     # Empty or None titles
     assert indexer.titles_match(None, "Naruto") is False
     assert indexer.titles_match("Naruto", "") is False
@@ -800,7 +805,55 @@ def test_find_matching_media_rejects_subseries_extension(test_db):
     assert matched_id is None
 
 
+def test_prune_database_retains_media_on_failed_refresh(test_db, tmp_path):
+    """Test that prune_database retains missing media if a matched upgrade refresh fails."""
+    old_path = str(tmp_path / "Show - S01E01 [Old].mkv")
+    new_path = str(tmp_path / "Show - S01E01 [New].mkv")
+    with open(new_path, "w") as f:
+        f.write("content")
 
+    mid = db.add_media(test_db, old_path, "mkv_embedded", show_title="Show", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Dialogue")])
+    test_db.commit()
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.refresh_media", return_value=False),
+    ):
+        indexer.prune_database()
+
+    # The missing media record should NOT have been pruned
+    row = test_db.execute("SELECT id, path FROM media WHERE id = ?", (mid,)).fetchone()
+    assert row is not None
+    assert row["path"] == old_path
+
+
+def test_index_directory_retains_media_and_skips_duplicate_on_failed_upgrade(test_db, tmp_path):
+    """Test that index_directory does not index a replacement as duplicate when upgrade refresh fails."""
+    season_dir = tmp_path / "Season 1"
+    season_dir.mkdir()
+
+    old_file_path = str(season_dir / "Conan - S01E01 [Old].mkv")
+    new_file_path = str(season_dir / "Conan - S01E01 [New].mkv")
+
+    mid = db.add_media(test_db, old_file_path, "mkv_embedded", show_title="Conan", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Dialogue")])
+    test_db.commit()
+
+    with open(new_file_path, "w") as f:
+        f.write("new content")
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.refresh_media", return_value=False),
+    ):
+        indexer.index_directory(str(season_dir))
+
+    # Should retain the original media and NOT create a new duplicate media record
+    media_rows = test_db.execute("SELECT id, path FROM media").fetchall()
+    assert len(media_rows) == 1
+    assert media_rows[0]["id"] == mid
+    assert media_rows[0]["path"] == old_file_path
 
 
 

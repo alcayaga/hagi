@@ -439,6 +439,7 @@ def prune_database():
             if e.errno in (errno.ENOENT, errno.ENOTDIR):
                 parent_dir = os.path.dirname(row["path"])
                 upgraded = False
+                matched_failed = False
                 if os.path.isdir(parent_dir):
                     media_type = row["type"] or ("mkv_embedded" if row["path"].endswith(".mkv") else "subtitle")
                     cand_exts = (".mkv",) if media_type == "mkv_embedded" else (".srt", ".ass")
@@ -452,19 +453,36 @@ def prune_database():
                                     )
                                     if matched_id == row["id"]:
                                         print(f"Upgrading missing media {row['path']} -> {cand_path} during prune...")
-                                        if refresh_media(
-                                            conn,
-                                            row["id"],
-                                            cand_path,
-                                            extract_timeout=extract_timeout,
-                                            probe_timeout=probe_timeout,
-                                        ):
-                                            upgraded = True
+                                        try:
+                                            if refresh_media(
+                                                conn,
+                                                row["id"],
+                                                cand_path,
+                                                extract_timeout=extract_timeout,
+                                                probe_timeout=probe_timeout,
+                                            ):
+                                                upgraded = True
+                                                break
+                                            else:
+                                                print(
+                                                    f"Refresh failed for {cand_path}; retaining existing media {row['id']}. "
+                                                    "Please run 'hagi refresh' manually."
+                                                )
+                                                matched_failed = True
+                                                break
+                                        except Exception as ref_err:
+                                            print(
+                                                f"Error refreshing {cand_path} during prune: {ref_err}; "
+                                                f"retaining existing media {row['id']}. Please run 'hagi refresh' manually."
+                                            )
+                                            conn.rollback()
+                                            matched_failed = True
                                             break
                     except Exception as scan_err:
                         print(f"Error checking directory {parent_dir}: {scan_err}")
+                        conn.rollback()
 
-                if not upgraded:
+                if not upgraded and not matched_failed:
                     print(f"Removing missing file from database: {row['path']}")
                     conn.execute("DELETE FROM sentences WHERE media_id = ?", (row["id"],))
                     conn.execute("DELETE FROM media WHERE id = ?", (row["id"],))
@@ -580,9 +598,18 @@ def index_directory(
                     ):
                         del missing_media[matched_mid]
                         continue
+                    else:
+                        print(
+                            f"Refresh failed for {file_path}; retaining existing media {matched_mid}. "
+                            "Skipping re-indexing as new media to protect permalinks."
+                        )
+                        del missing_media[matched_mid]
+                        continue
                 except Exception as ref_err:
-                    print(f"Error upgrading {file_path} into media {matched_mid}: {ref_err}")
+                    print(f"Error upgrading {file_path} into media {matched_mid}: {ref_err}; retaining existing media.")
                     conn.rollback()
+                    del missing_media[matched_mid]
+                    continue
 
             if file.endswith((".ass", ".srt")):
                 try:
@@ -762,8 +789,8 @@ def titles_match(title1: Optional[str], title2: Optional[str]) -> bool:
     # Shorter must match the tail of the longer title (allowing only leading prefixes like 'The', 'Detective')
     # and strictly disallow trailing tokens (e.g. 'Shippuden', 'Season 2')
     if longer[-len(shorter):] == shorter:
-        prefix = longer[:-len(shorter)]
-        if prefix in (["the"], ["detective"]) or len(prefix) == 1:
+        prefix = tuple(longer[:-len(shorter)])
+        if prefix in (("the",), ("detective",)):
             return True
 
     return False
@@ -1482,7 +1509,7 @@ def find_matching_media(
             ph_ids = ",".join("?" for _ in candidate_ids)
             ph_texts = ",".join("?" for _ in clean_samples)
             query = f"""
-                SELECT media_id, COUNT(*) as match_count
+                SELECT media_id, COUNT(DISTINCT text) as match_count
                 FROM sentences
                 WHERE media_id IN ({ph_ids}) AND text IN ({ph_texts})
                 GROUP BY media_id
