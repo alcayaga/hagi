@@ -856,6 +856,24 @@ def test_index_directory_retains_media_and_skips_duplicate_on_failed_upgrade(tes
     assert media_rows[0]["path"] == old_file_path
 
 
+def test_prune_database_retains_media_on_scan_exception(test_db, tmp_path):
+    """Test that prune_database retains missing media if directory scan raises an exception."""
+    parent_dir = tmp_path / "Season 1"
+    parent_dir.mkdir()
+    old_path = str(parent_dir / "Show - S01E01 [Old].mkv")
 
+    mid = db.add_media(test_db, old_path, "mkv_embedded", show_title="Show", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Dialogue")])
+    test_db.commit()
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("os.scandir", side_effect=OSError("Disk read error")),
+    ):
+        indexer.prune_database()
+
+    row = test_db.execute("SELECT id, path FROM media WHERE id = ?", (mid,)).fetchone()
+    assert row is not None
+    assert row["path"] == old_path
 
 

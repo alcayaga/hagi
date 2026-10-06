@@ -481,6 +481,7 @@ def prune_database():
                     except Exception as scan_err:
                         print(f"Error checking directory {parent_dir}: {scan_err}")
                         conn.rollback()
+                        matched_failed = True
 
                 if not upgraded and not matched_failed:
                     print(f"Removing missing file from database: {row['path']}")
