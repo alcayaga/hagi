@@ -15,7 +15,7 @@ from . import db
 
 logger = logging.getLogger(__name__)
 
-_STREAM_INFO_CACHE: dict[tuple[str, float, int], tuple[int, bool]] = {}
+_STREAM_INFO_CACHE: dict[tuple[str, float, int], tuple[int, bool, int | None]] = {}
 _STREAM_INFO_LOCK = threading.Lock()
 
 
@@ -25,19 +25,21 @@ def clear_stream_info_cache() -> None:
         _STREAM_INFO_CACHE.clear()
 
 
-def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
-    """Retrieve optimal audio stream index and HDR color status for a media container.
+def get_media_stream_info(mkv_path: str) -> tuple[int, bool, int | None]:
+    """Retrieve optimal audio stream index, HDR color status, and x264 build version.
 
     Uses a unified ffprobe call to examine both audio streams and the primary video stream,
-    caching results in memory to eliminate redundant network probes on repeated extractions.
+    detecting any x264 encoder build signature to enable decoder compatibility, and caching
+    results in memory to eliminate redundant probes on repeated extractions.
 
     Args:
         mkv_path: Path to the media file container.
 
     Returns:
-        tuple[int, bool]: A tuple containing:
+        tuple[int, bool, int | None]: A tuple containing:
             - int: The 0-based index of the chosen audio stream within audio tracks.
             - bool: Whether the primary video stream uses HDR color transfer.
+            - int | None: The detected x264 core build version (e.g. 138), or None.
     """
     try:
         st = os.stat(mkv_path)
@@ -51,6 +53,7 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
 
     audio_stream_idx = 0
     is_hdr = False
+    x264_build = None
 
     probe_cmd = [
         "ffprobe",
@@ -103,14 +106,25 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
             elif und_idx is not None:
                 audio_stream_idx = und_idx
 
-            # Detect HDR color transfer in video stream
+            # Detect HDR color transfer and x264 build in video stream
             if video_streams:
-                color_trc = video_streams[0].get("color_transfer", "").lower()
+                primary_video = video_streams[0]
+                color_trc = primary_video.get("color_transfer", "").lower()
                 if color_trc in ("smpte2084", "arib-std-b67"):
                     is_hdr = True
 
+                if primary_video.get("codec_name") == "h264":
+                    try:
+                        with open(mkv_path, "rb") as f:
+                            head = f.read(4 * 1024 * 1024)
+                            m = re.search(rb"x264 - core (\d+)", head)
+                            if m:
+                                x264_build = int(m.group(1))
+                    except Exception:
+                        pass
+
             with _STREAM_INFO_LOCK:
-                _STREAM_INFO_CACHE[cache_key] = (audio_stream_idx, is_hdr)
+                _STREAM_INFO_CACHE[cache_key] = (audio_stream_idx, is_hdr, x264_build)
         else:
             logger.warning(
                 f"ffprobe returned non-zero exit code {probe_res.returncode} for {mkv_path}: {probe_res.stderr}"
@@ -118,7 +132,7 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
     except Exception as e:
         logger.warning(f"Failed to probe media stream info for {mkv_path}: {e}")
 
-    return audio_stream_idx, is_hdr
+    return audio_stream_idx, is_hdr, x264_build
 
 def clean_text(text: str, lang: str) -> str:
     """Clean subtitle text by removing or replacing html linebreaks."""
@@ -311,7 +325,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             pass
 
     try:
-        audio_stream_idx, is_hdr = get_media_stream_info(mkv_path)
+        audio_stream_idx, is_hdr, x264_build = get_media_stream_info(mkv_path)
 
         # Extract Audio using the detected stream index
         subprocess.run(
@@ -342,6 +356,10 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             "-y",
             "-ss",
             str(midpoint),
+        ]
+        if x264_build is not None:
+            img_cmd.extend(["-x264_build", str(x264_build)])
+        img_cmd.extend([
             "-i",
             mkv_path,
             "-map",
@@ -350,7 +368,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             "1",
             "-q:v",
             "2",
-        ]
+        ])
 
         if is_hdr:
             img_cmd.extend([
@@ -393,24 +411,33 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 "Fast-seek image extraction produced corrupt frames. "
                 "Falling back to accurate bounded seek..."
             )
+            if os.path.exists(image_tmp):
+                try:
+                    os.remove(image_tmp)
+                except OSError:
+                    pass
             preroll_start = max(0.0, midpoint - 10.0)
+            relative_offset = max(0.0, midpoint - preroll_start)
             acc_cmd = [
                 "ffmpeg",
                 "-y",
                 "-ss",
                 str(preroll_start),
-                "-copyts",
+            ]
+            if x264_build is not None:
+                acc_cmd.extend(["-x264_build", str(x264_build)])
+            acc_cmd.extend([
                 "-i",
                 mkv_path,
                 "-ss",
-                str(midpoint),
+                str(relative_offset),
                 "-map",
                 "0:V:0",
                 "-vframes",
                 "1",
                 "-q:v",
                 "2",
-            ]
+            ])
             if is_hdr:
                 acc_cmd.extend([
                     "-vf",
@@ -439,10 +466,19 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                 logger.warning(f"Accurate bounded seek failed: {e}. Falling back to full-file accurate seek...")
 
             if not bounded_succeeded:
+                if os.path.exists(image_tmp):
+                    try:
+                        os.remove(image_tmp)
+                    except OSError:
+                        pass
                 # Fallback to full-file accurate seek (-i BEFORE -ss)
                 full_cmd = [
                     "ffmpeg",
                     "-y",
+                ]
+                if x264_build is not None:
+                    full_cmd.extend(["-x264_build", str(x264_build)])
+                full_cmd.extend([
                     "-i",
                     mkv_path,
                     "-ss",
@@ -453,7 +489,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                     "1",
                     "-q:v",
                     "2",
-                ]
+                ])
                 if is_hdr:
                     full_cmd.extend([
                         "-vf",
