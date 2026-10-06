@@ -16,7 +16,7 @@ from hagi.cli import app
 @pytest.fixture
 def test_db(monkeypatch):
     """Create an in-memory database fixture for tests."""
-    db.DB_PATH = ":memory:"
+    monkeypatch.setattr(db, "DB_PATH", ":memory:")
     conn = db.init_db()
     monkeypatch.setattr(indexer, "_plex_cache_built", True)
     yield conn
@@ -155,10 +155,12 @@ def test_find_matching_media_by_content_fingerprint(test_db):
     assert matched_id == mid
 
 
-def test_refresh_media_mkv_multi_language(test_db):
+def test_refresh_media_mkv_multi_language(test_db, tmp_path):
     """Test refreshing an MKV file preserves sentence IDs across multiple language tracks."""
     old_path = "/fake/conan_old.mkv"
-    new_path = "/fake/conan_new.mkv"
+    new_file = tmp_path / "conan_new.mkv"
+    new_file.write_text("dummy")
+    new_path = str(new_file)
 
     mid = db.add_media(test_db, old_path, "mkv_embedded", show_title="Detective Conan", season=34, episode=21)
     db.add_sentences(
@@ -185,7 +187,7 @@ def test_refresh_media_mkv_multi_language(test_db):
         ],
     }
 
-    with patch("hagi.indexer.extract_mkv_subtitles", return_value=(mock_subs, False)):
+    with patch("hagi.indexer.extract_mkv_subtitles", return_value=(mock_subs, False, True)):
         success = indexer.refresh_media(test_db, mid, new_path)
         assert success is True
 
@@ -226,7 +228,7 @@ def test_index_directory_auto_upgrades_media(test_db, tmp_path):
 
     with (
         patch("hagi.indexer.get_db", return_value=test_db),
-        patch("hagi.indexer.extract_mkv_subtitles", return_value=(mock_subs, False)),
+        patch("hagi.indexer.extract_mkv_subtitles", return_value=(mock_subs, False, True)),
     ):
         indexer.index_directory(str(season_dir))
 
@@ -301,10 +303,11 @@ def test_exporter_video_fallback_by_episode(test_db, tmp_path):
 
     def mock_exists(p: str) -> bool:
         """Mock file existence so temporary media targets succeed while caches miss."""
-        if ("hagi_audio" in p or "hagi_img" in p) and "tmp" not in p:
-            return False
-        if "tmp" in p:
+        base = os.path.basename(p)
+        if "_tmp_" in base or ".tmp." in base:
             return True
+        if base.startswith(("hagi_", ".hagi_")):
+            return False
         return real_exists(p)
 
     with (
@@ -327,3 +330,42 @@ def test_exporter_video_fallback_by_episode(test_db, tmp_path):
         # Verify ffprobe was called with the discovered video path
         ffprobe_args = mock_subrun.call_args_list[0][0][0]
         assert str(video_file) in ffprobe_args
+
+
+def test_find_matching_media_rejects_mismatched_show(test_db):
+    """Test that candidate matching does not match across different shows with identical season/episode."""
+    naruto_path = "/nonexistent/Naruto/Season 1/Naruto - S01E01.mkv"
+    db.add_media(test_db, naruto_path, "mkv_embedded", show_title="Naruto", season=1, episode=1)
+
+    one_piece_path = "/nonexistent/One Piece/Season 1/One Piece - S01E01.mkv"
+    matched_id = indexer.find_matching_media(test_db, one_piece_path, media_type="mkv_embedded")
+    assert matched_id is None
+
+
+def test_refresh_media_validates_file_and_probe_failure(test_db, tmp_path):
+    """Test that refresh_media rejects non-files and aborts when ffprobe fails."""
+    mid = db.add_media(test_db, "/old/video.mkv", "mkv_embedded", season=1, episode=1)
+
+    # 1. Non-existent file
+    assert indexer.refresh_media(test_db, mid, "/nonexistent/video.mkv") is False
+
+    # 2. Existing file but ffprobe fails
+    real_file = tmp_path / "corrupt.mkv"
+    real_file.write_text("corrupt content")
+
+    with patch("hagi.indexer.extract_mkv_subtitles", return_value=({}, False, False)):
+        assert indexer.refresh_media(test_db, mid, str(real_file)) is False
+
+
+def test_extract_mkv_subtitles_handles_probe_timeout(tmp_path):
+    """Test that extract_mkv_subtitles gracefully handles probe subprocess timeout."""
+    import subprocess
+
+    dummy_mkv = tmp_path / "test.mkv"
+    dummy_mkv.write_text("dummy")
+
+    with patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="ffprobe", timeout=5)):
+        subs, had_timeout, probe_ok = indexer.extract_mkv_subtitles(str(dummy_mkv), probe_timeout=5)
+        assert subs == {}
+        assert had_timeout is True
+        assert probe_ok is False

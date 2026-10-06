@@ -336,7 +336,13 @@ def prune_database():
                                     )
                                     if matched_id == row["id"]:
                                         print(f"Upgrading missing media {row['path']} -> {cand_path} during prune...")
-                                        if refresh_media(conn, row["id"], cand_path):
+                                        if refresh_media(
+                                            conn,
+                                            row["id"],
+                                            cand_path,
+                                            extract_timeout=DEFAULT_EXTRACT_TIMEOUT,
+                                            probe_timeout=DEFAULT_PROBE_TIMEOUT,
+                                        ):
                                             upgraded = True
                                             break
                     except Exception as scan_err:
@@ -476,15 +482,19 @@ def index_directory(
             if matched_mid is not None:
                 old_info = missing_media[matched_mid]
                 print(f"Upgrading media {old_info['path']} -> {file_path} (preserving sentence IDs)...")
-                if refresh_media(
-                    conn,
-                    matched_mid,
-                    file_path,
-                    extract_timeout=effective_extract_timeout,
-                    probe_timeout=effective_probe_timeout,
-                ):
-                    del missing_media[matched_mid]
-                    continue
+                try:
+                    if refresh_media(
+                        conn,
+                        matched_mid,
+                        file_path,
+                        extract_timeout=effective_extract_timeout,
+                        probe_timeout=effective_probe_timeout,
+                    ):
+                        del missing_media[matched_mid]
+                        continue
+                except Exception as ref_err:
+                    print(f"Error upgrading {file_path} into media {matched_mid}: {ref_err}")
+                    conn.rollback()
 
             if file.endswith((".ass", ".srt")):
                 try:
@@ -507,12 +517,12 @@ def index_directory(
 
             elif file.endswith(".mkv"):
                 try:
-                    subs_by_lang, had_timeout = extract_mkv_subtitles(
+                    subs_by_lang, had_timeout, probe_success = extract_mkv_subtitles(
                         file_path,
                         extract_timeout=effective_extract_timeout,
                         probe_timeout=effective_probe_timeout,
                     )
-                    if had_timeout:
+                    if had_timeout or not probe_success:
                         conn.rollback()
                     else:
                         show_title, season, episode, episode_title = get_plex_metadata(file_path)
@@ -626,7 +636,7 @@ def extract_mkv_subtitles(
     file_path: str,
     extract_timeout: Optional[int] = None,
     probe_timeout: Optional[int] = None,
-) -> tuple[dict[str, list[dict]], bool]:
+) -> tuple[dict[str, list[dict]], bool, bool]:
     """Extract supported subtitle tracks (jpn, eng, spa) from an MKV file.
 
     Probes embedded subtitle streams and extracts them using ffmpeg into temporary files,
@@ -638,10 +648,11 @@ def extract_mkv_subtitles(
         probe_timeout (Optional[int]): Subprocess timeout in seconds for ffprobe.
 
     Returns:
-        tuple[dict[str, list[dict]], bool]: A tuple containing:
+        tuple[dict[str, list[dict]], bool, bool]: A tuple containing:
             - dict[str, list[dict]]: Dictionary mapping language code to sentence dicts with
               'start_time', 'end_time', and 'text'.
             - bool: True if an extraction subprocess timed out, False otherwise.
+            - bool: True if probe succeeded, False if ffprobe failed or timed out.
     """
     probe_cmd = [
         "ffprobe",
@@ -655,14 +666,19 @@ def extract_mkv_subtitles(
         "json",
         file_path,
     ]
-    result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=probe_timeout)
+    try:
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=probe_timeout)
+    except subprocess.TimeoutExpired:
+        print(f"Timed out probing {file_path}")
+        return {}, True, False
+
     if result.returncode != 0:
         print(f"ffprobe failed for {file_path}: {result.stderr}")
-        return {}, False
+        return {}, False, False
 
     streams = json.loads(result.stdout).get("streams", [])
     if not streams:
-        return {}, False
+        return {}, False, True
 
     eng_streams, spa_streams, jpn_streams, unk_streams = [], [], [], []
     for stream in streams:
@@ -845,7 +861,7 @@ def extract_mkv_subtitles(
                 except Exception as parse_e:
                     print(f"Error parsing track {i} in {file_path}: {parse_e}")
 
-        return subs_by_lang, had_timeout
+        return subs_by_lang, had_timeout, True
     finally:
         for temp_sub_path in temp_paths_to_clean:
             if os.path.exists(temp_sub_path):
@@ -1210,19 +1226,24 @@ def find_matching_media(
     abs_ep = file_ids["abs_episode"]
     show_hint = show_title or file_ids["show_hint"]
 
-    # Priority 1: Match on season and episode
+    # Priority 1: Match on season and episode (requiring show title confirmation if available)
     if season is not None and episode is not None:
         matched_se = [c for c in candidates if c.get("season") == season and c.get("episode") == episode]
-        if len(matched_se) == 1:
-            return matched_se[0]["id"]
-        elif len(matched_se) > 1 and show_hint:
+        if show_hint:
             norm_hint = re.sub(r"[^\w]", "", show_hint.lower())
             matched_show = [
                 c for c in matched_se
-                if c.get("show_title") and norm_hint in re.sub(r"[^\w]", "", c["show_title"].lower())
+                if c.get("show_title") and (
+                    norm_hint in re.sub(r"[^\w]", "", c["show_title"].lower())
+                    or re.sub(r"[^\w]", "", c["show_title"].lower()) in norm_hint
+                )
             ]
             if len(matched_show) == 1:
                 return matched_show[0]["id"]
+        else:
+            matched_no_conflict = [c for c in matched_se if not c.get("show_title")]
+            if len(matched_no_conflict) == 1:
+                return matched_no_conflict[0]["id"]
 
     # Priority 2: Check matching folder/parent folder for same episode or absolute episode
     new_abs = os.path.abspath(new_file_path)
@@ -1296,6 +1317,10 @@ def refresh_media(
         bool: True if refresh succeeded, False otherwise.
     """
     abs_path = os.path.abspath(new_file_path)
+    if not os.path.isfile(abs_path):
+        print(f"Target path is not a file: {abs_path}")
+        return False
+
     row = conn.execute(
         "SELECT id, path, type, show_title, season, episode, episode_title FROM media WHERE id = ?",
         (media_id,),
@@ -1305,13 +1330,16 @@ def refresh_media(
         return False
 
     if abs_path.lower().endswith(".mkv"):
-        subs_by_lang, had_timeout = extract_mkv_subtitles(
+        subs_by_lang, had_timeout, probe_success = extract_mkv_subtitles(
             abs_path,
             extract_timeout=extract_timeout,
             probe_timeout=probe_timeout,
         )
         if had_timeout:
             print(f"Timed out extracting subtitles from {abs_path}")
+            return False
+        if not probe_success:
+            print(f"ffprobe failed for {abs_path}; aborting refresh to prevent data loss.")
             return False
 
         total_updates = total_inserts = total_deletes = 0
