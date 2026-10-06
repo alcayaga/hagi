@@ -351,20 +351,18 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     audio_tmp = os.path.join(out_dir, f".hagi_audio_tmp_{_tmp_id}.mp3")
     image_tmp = os.path.join(out_dir, f".hagi_img_tmp_{_tmp_id}.jpg")
 
+    expected_tag = f"{os.path.abspath(mkv_path)}|{start:.3f}|{end:.3f}"
     is_cached = False
     if os.path.exists(audio_out) and os.path.exists(image_out):
-        is_valid = True
+        is_valid = False
         if os.path.exists(src_tag_file):
             try:
                 with open(src_tag_file, "r", encoding="utf-8") as f:
-                    cached_src = f.read().strip()
-                if cached_src != os.path.abspath(mkv_path):
-                    is_valid = False
+                    cached_tag = f.read().strip()
+                if cached_tag == expected_tag:
+                    is_valid = True
             except Exception:
-                pass
-        elif found_video:
-            # Fallback/replacement video was detected, existing cache without tag is from old video
-            is_valid = False
+                is_valid = False
 
         if is_valid:
             try:
@@ -581,7 +579,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
         os.replace(image_tmp, image_out)
         try:
             with open(src_tag_file, "w", encoding="utf-8") as f:
-                f.write(os.path.abspath(mkv_path))
+                f.write(expected_tag)
         except Exception:
             pass
 

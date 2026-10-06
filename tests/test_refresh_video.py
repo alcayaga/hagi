@@ -975,7 +975,7 @@ def test_extract_media_invalidates_cache_on_source_change(test_db, tmp_path):
         # Because src_tag contained old_file and new_file was selected as fallback, cache is invalidated
         assert cached is False
         with open(src_tag, "r") as f:
-            assert f.read().strip() == new_file
+            assert f.read().strip() == f"{new_file}|1.000|2.000"
 
 
 def test_refresh_media_reconciles_relabeled_tracks(test_db, tmp_path):
@@ -985,19 +985,23 @@ def test_refresh_media_reconciles_relabeled_tracks(test_db, tmp_path):
         f.write("video content")
 
     mid = db.add_media(test_db, file_path, "mkv_embedded", show_title="Show", season=1, episode=1)
-    # Stored initially under jpn
+    # Stored initially under jpn and an unmapped spa track
     stored_subs = [
         ("jpn", 1.0, 2.0, "Konnichiwa"),
         ("jpn", 3.0, 4.0, "Arigatou"),
         ("jpn", 5.0, 6.0, "Sayounara"),
         ("jpn", 7.0, 8.0, "Hai"),
         ("jpn", 9.0, 10.0, "Iie"),
+        ("spa", 1.0, 2.0, "Hola"),
     ]
     db.add_sentences(test_db, mid, stored_subs)
     test_db.commit()
 
-    initial_sids = [
-        r["id"] for r in test_db.execute("SELECT id FROM sentences WHERE media_id = ? ORDER BY id", (mid,)).fetchall()
+    jpn_sids = [
+        r["id"]
+        for r in test_db.execute(
+            "SELECT id FROM sentences WHERE media_id = ? AND language = 'jpn' ORDER BY id", (mid,)
+        ).fetchall()
     ]
 
     # Replacement MKV mislabeled the track as eng
@@ -1016,8 +1020,15 @@ def test_refresh_media_reconciles_relabeled_tracks(test_db, tmp_path):
         assert success is True
 
     # Language in DB was reconciled to eng and existing sentence IDs were preserved
-    rows = test_db.execute("SELECT id, language, start_time FROM sentences WHERE media_id = ? ORDER BY id", (mid,)).fetchall()
-    assert len(rows) == 5
-    assert [r["id"] for r in rows] == initial_sids
-    assert all(r["language"] == "eng" for r in rows)
-    assert round(rows[0]["start_time"], 1) == 1.2
+    eng_rows = test_db.execute(
+        "SELECT id, language, start_time FROM sentences WHERE media_id = ? AND language = 'eng' ORDER BY id",
+        (mid,),
+    ).fetchall()
+    assert len(eng_rows) == 5
+    assert [r["id"] for r in eng_rows] == jpn_sids
+    assert round(eng_rows[0]["start_time"], 1) == 1.2
+
+    # Unmapped spa sentences are retained
+    spa_rows = test_db.execute("SELECT id, text FROM sentences WHERE media_id = ? AND language = 'spa'", (mid,)).fetchall()
+    assert len(spa_rows) == 1
+    assert spa_rows[0]["text"] == "Hola"

@@ -1639,11 +1639,11 @@ def refresh_media(
                         unmatched_new.remove(new_l)
                         break
 
-            # Remove stored languages that no longer exist in the replacement file
-            for orphan_l in unmatched_stored:
-                conn.execute(
-                    "DELETE FROM sentences WHERE media_id = ? AND language = ?",
-                    (media_id, orphan_l),
+            # Preserve existing sentences for unmapped languages absent from subs_by_lang
+            if unmatched_stored:
+                print(
+                    f"Retaining existing sentences for unmapped languages: {', '.join(sorted(unmatched_stored))} "
+                    f"in media {media_id}."
                 )
 
             for lang, new_sentences in subs_by_lang.items():
