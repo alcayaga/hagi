@@ -752,6 +752,23 @@ def test_refresh_file_directory_rejects_options(test_db, tmp_path):
         assert indexer.refresh_file(str(dummy_dir), media_id=42) is False
 
 
+def test_refresh_file_single_handles_exception_and_rolls_back(test_db, tmp_path):
+    """Test that refresh_file catches exceptions in refresh_media, rolls back, and returns False."""
+    sub_file = tmp_path / "ep1.srt"
+    sub_file.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+
+    mid = db.add_media(test_db, str(sub_file), "subtitle", show_title="Show", season=1, episode=1)
+    test_db.commit()
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.refresh_media", side_effect=RuntimeError("disk read error")),
+    ):
+        res = indexer.refresh_file(str(sub_file), media_id=mid)
+        assert res is False
+
+
+
 
 
 

@@ -1788,10 +1788,15 @@ def refresh_file(
         print(f"File '{abs_path}' not found in database and no matching media could be identified.")
         return False
 
-    return refresh_media(
-        conn,
-        target_id,
-        abs_path,
-        extract_timeout=extract_timeout,
-        probe_timeout=probe_timeout,
-    )
+    try:
+        return refresh_media(
+            conn,
+            target_id,
+            abs_path,
+            extract_timeout=extract_timeout,
+            probe_timeout=probe_timeout,
+        )
+    except Exception as ref_err:
+        print(f"Error refreshing {abs_path} into media {target_id}: {ref_err}")
+        conn.rollback()
+        return False
