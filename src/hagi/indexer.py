@@ -731,13 +731,22 @@ def parse_media_identifiers(file_path: str) -> dict:
             abs_episode = cand
 
     show_hint = None
-    file_title_match = re.match(r"^([^\-]+?)\s*-\s*", clean_base.strip())
-    if file_title_match:
-        cand_show = file_title_match.group(1).strip()
-        if cand_show and not re.match(r"^(?:season|s\d|ep?\d)", cand_show, re.IGNORECASE):
-            show_hint = cand_show
+    file_title = None
+    m_pre_se = re.search(r"^(.+?)(?:\s*-\s*|\s+)(?:[sS]\d{1,3}[eE]\d{1,4}|\b\d{1,2}x\d{1,4}\b)", clean_base.strip())
+    if m_pre_se:
+        cand_t = m_pre_se.group(1).strip()
+        if cand_t and not re.match(r"^(?:season|s\d|ep?\d)", cand_t, re.IGNORECASE):
+            file_title = cand_t
+    if not file_title:
+        file_title_match = re.match(r"^([^\-]+?)\s*-\s*", clean_base.strip())
+        if file_title_match:
+            cand_show = file_title_match.group(1).strip()
+            if cand_show and not re.match(r"^(?:season|s\d|ep?\d)", cand_show, re.IGNORECASE):
+                file_title = cand_show
 
-    if not show_hint:
+    if file_title:
+        show_hint = file_title
+    else:
         dir_part = parent_dir
         if re.search(r"Season\s*\d+", dir_part, re.IGNORECASE):
             dir_part = os.path.basename(os.path.dirname(os.path.dirname(os.path.abspath(file_path))))
@@ -753,6 +762,7 @@ def parse_media_identifiers(file_path: str) -> dict:
         "episode": episode,
         "abs_episode": abs_episode,
         "show_hint": show_hint,
+        "file_title": file_title,
     }
 
 
@@ -1597,6 +1607,43 @@ def refresh_media(
 
         total_updates = total_inserts = total_deletes = 0
         if subs_by_lang:
+            # Reconcile relabeled tracks or clean up obsolete languages from database
+            stored_lang_rows = conn.execute(
+                "SELECT DISTINCT language FROM sentences WHERE media_id = ?",
+                (media_id,),
+            ).fetchall()
+            stored_langs = {r[0] for r in stored_lang_rows if r[0]}
+
+            matched_new_langs = set(subs_by_lang.keys()) & stored_langs
+            unmatched_stored = stored_langs - matched_new_langs
+            unmatched_new = set(subs_by_lang.keys()) - matched_new_langs
+
+            # Check if an unmatched stored track was relabeled to an unmatched new track
+            for old_l in list(unmatched_stored):
+                old_rows = conn.execute(
+                    "SELECT text FROM sentences WHERE media_id = ? AND language = ? LIMIT 50",
+                    (media_id, old_l),
+                ).fetchall()
+                old_texts = {r["text"].strip().lower() for r in old_rows if r["text"]}
+                for new_l in list(unmatched_new):
+                    new_texts = {s["text"].strip().lower() for s in subs_by_lang[new_l] if s.get("text")}
+                    overlap = len(old_texts & new_texts)
+                    if overlap >= 5 or (old_texts and overlap / len(old_texts) >= 0.2):
+                        conn.execute(
+                            "UPDATE sentences SET language = ? WHERE media_id = ? AND language = ?",
+                            (new_l, media_id, old_l),
+                        )
+                        unmatched_stored.remove(old_l)
+                        unmatched_new.remove(new_l)
+                        break
+
+            # Remove stored languages that no longer exist in the replacement file
+            for orphan_l in unmatched_stored:
+                conn.execute(
+                    "DELETE FROM sentences WHERE media_id = ? AND language = ?",
+                    (media_id, orphan_l),
+                )
+
             for lang, new_sentences in subs_by_lang.items():
                 existing = conn.execute(
                     "SELECT start_time, text FROM sentences WHERE media_id = ? AND language = ? ORDER BY start_time",

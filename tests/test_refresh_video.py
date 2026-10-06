@@ -9,6 +9,7 @@ import pytest
 from typer.testing import CliRunner
 
 from hagi import db
+from hagi import exporter
 from hagi import indexer
 from hagi.cli import app
 
@@ -877,3 +878,141 @@ def test_prune_database_retains_media_on_scan_exception(test_db, tmp_path):
     assert row["path"] == old_path
 
 
+def test_parse_media_identifiers_extracts_file_title():
+    """Test that parse_media_identifiers extracts file_title before season/episode numbers."""
+    ids = indexer.parse_media_identifiers("Detective Conan S34E21.mkv")
+    assert ids["file_title"] == "Detective Conan"
+    assert ids["show_hint"] == "Detective Conan"
+    assert ids["season"] == 34
+    assert ids["episode"] == 21
+
+    ids2 = indexer.parse_media_identifiers("[Erai-raws] Detective Conan - 1207 [1080p].mkv")
+    assert ids2["file_title"] == "Detective Conan"
+    assert ids2["abs_episode"] == 1207
+
+
+def test_extract_media_sole_candidate_with_generic_dir(test_db, tmp_path):
+    """Test that extract_media accepts sole episode candidate when directory is generic."""
+    generic_dir = tmp_path / "Downloads"
+    generic_dir.mkdir()
+    old_file = str(generic_dir / "Conan - S01E01 [Old].mkv")
+    new_file = str(generic_dir / "S01E01.mkv")
+    with open(new_file, "w") as f:
+        f.write("content")
+
+    mid = db.add_media(test_db, old_file, "mkv_embedded", show_title="Detective Conan", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Hello world")])
+    test_db.commit()
+
+    with (
+        patch("hagi.db.get_db", return_value=test_db),
+        patch("hagi.exporter.get_media_stream_info", return_value=(1, False, None)),
+        patch("subprocess.run") as mock_sub,
+    ):
+        mock_sub.return_value.returncode = 0
+        with (
+            patch("os.path.exists", side_effect=lambda p: p == new_file or "tmp" in p),
+            patch("os.path.getsize", return_value=100),
+            patch("os.replace"),
+        ):
+            success, msg, audio_out, img_out, text, cached = exporter.extract_media(
+                1, str(tmp_path / "out"), pad_start=0.0, pad_end=0.0
+            )
+            assert success is True
+            assert cached is False
+
+
+def test_extract_media_invalidates_cache_on_source_change(test_db, tmp_path):
+    """Test that extract_media does not reuse cache if source video changed."""
+    media_dir = tmp_path / "Season 1"
+    media_dir.mkdir()
+    old_file = str(media_dir / "Show - S01E01 [Old].mkv")
+    new_file = str(media_dir / "Show - S01E01 [New].mkv")
+    with open(new_file, "w") as f:
+        f.write("video content")
+
+    mid = db.add_media(test_db, old_file, "mkv_embedded", show_title="Show", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Hello")])
+    test_db.commit()
+
+    out_dir = str(tmp_path / "out")
+    os.makedirs(out_dir, exist_ok=True)
+    audio_file = os.path.join(out_dir, "hagi_audio_1_0.000_0.000.mp3")
+    img_file = os.path.join(out_dir, "hagi_img_1_0.000_0.000.jpg")
+    src_tag = os.path.join(out_dir, ".hagi_cache_1_0.000_0.000.src")
+
+    with open(audio_file, "w") as f:
+        f.write("old audio")
+    with open(img_file, "w") as f:
+        f.write("old image")
+    with open(src_tag, "w") as f:
+        f.write(old_file)
+
+    def mock_run(cmd, *args, **kwargs):
+        """Mock subprocess.run by creating the expected output file."""
+        out_path = cmd[-1]
+        with open(out_path, "wb") as f:
+            f.write(b"dummy data")
+        res = MagicMock()
+        res.returncode = 0
+        res.stderr = ""
+        return res
+
+    with (
+        patch("hagi.db.get_db", return_value=test_db),
+        patch("hagi.exporter.get_media_stream_info", return_value=(1, False, None)),
+        patch("subprocess.run", side_effect=mock_run),
+    ):
+        success, msg, a_out, i_out, text, cached = exporter.extract_media(
+            1, out_dir, pad_start=0.0, pad_end=0.0
+        )
+        assert success is True
+        # Because src_tag contained old_file and new_file was selected as fallback, cache is invalidated
+        assert cached is False
+        with open(src_tag, "r") as f:
+            assert f.read().strip() == new_file
+
+
+def test_refresh_media_reconciles_relabeled_tracks(test_db, tmp_path):
+    """Test that refresh_media reconciles subtitle tracks relabeled to another language code."""
+    file_path = str(tmp_path / "Show - S01E01.mkv")
+    with open(file_path, "w") as f:
+        f.write("video content")
+
+    mid = db.add_media(test_db, file_path, "mkv_embedded", show_title="Show", season=1, episode=1)
+    # Stored initially under jpn
+    stored_subs = [
+        ("jpn", 1.0, 2.0, "Konnichiwa"),
+        ("jpn", 3.0, 4.0, "Arigatou"),
+        ("jpn", 5.0, 6.0, "Sayounara"),
+        ("jpn", 7.0, 8.0, "Hai"),
+        ("jpn", 9.0, 10.0, "Iie"),
+    ]
+    db.add_sentences(test_db, mid, stored_subs)
+    test_db.commit()
+
+    initial_sids = [
+        r["id"] for r in test_db.execute("SELECT id FROM sentences WHERE media_id = ? ORDER BY id", (mid,)).fetchall()
+    ]
+
+    # Replacement MKV mislabeled the track as eng
+    new_subs = {
+        "eng": [
+            {"start_time": 1.2, "end_time": 2.2, "text": "Konnichiwa"},
+            {"start_time": 3.2, "end_time": 4.2, "text": "Arigatou"},
+            {"start_time": 5.2, "end_time": 6.2, "text": "Sayounara"},
+            {"start_time": 7.2, "end_time": 8.2, "text": "Hai"},
+            {"start_time": 9.2, "end_time": 10.2, "text": "Iie"},
+        ]
+    }
+
+    with patch("hagi.indexer.extract_mkv_subtitles", return_value=(new_subs, False, True)):
+        success = indexer.refresh_media(test_db, mid, file_path)
+        assert success is True
+
+    # Language in DB was reconciled to eng and existing sentence IDs were preserved
+    rows = test_db.execute("SELECT id, language, start_time FROM sentences WHERE media_id = ? ORDER BY id", (mid,)).fetchall()
+    assert len(rows) == 5
+    assert [r["id"] for r in rows] == initial_sids
+    assert all(r["language"] == "eng" for r in rows)
+    assert round(rows[0]["start_time"], 1) == 1.2

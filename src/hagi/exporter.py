@@ -224,10 +224,10 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     os.makedirs(out_dir, exist_ok=True)
 
     media_path = target["path"]
-    if media_path.endswith(".mkv") or media_path.endswith(".mp4"):
+    found_video = None
+    if (media_path.endswith(".mkv") or media_path.endswith(".mp4")) and os.path.exists(media_path):
         mkv_path = media_path
     else:
-        # We assume the media path is an external subtitle file
         dir_name = os.path.dirname(media_path)
         base_name = os.path.splitext(os.path.basename(media_path))[0]
 
@@ -237,7 +237,6 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             possible_video_names.append(base_name.rsplit(".", 1)[0])
         possible_video_names.append(base_name)
 
-        found_video = None
         for v_name in possible_video_names:
             for ext in video_exts:
                 test_path = os.path.join(dir_name, v_name + ext)
@@ -265,8 +264,9 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
 
                         if len(cand_videos) == 1:
                             cand_path, cand_ids = cand_videos[0]
-                            if meta["show_title"] and cand_ids.get("show_hint"):
-                                if titles_match(meta["show_title"], cand_ids["show_hint"]):
+                            cand_file_title = cand_ids.get("file_title")
+                            if meta["show_title"] and cand_file_title:
+                                if titles_match(meta["show_title"], cand_file_title):
                                     found_video = cand_path
                             else:
                                 found_video = cand_path
@@ -283,6 +283,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
 
         if found_video:
             mkv_path = found_video
+        elif media_path.endswith((".mkv", ".mp4")):
+            mkv_path = media_path
         else:
             # Fallback
             mkv_path = os.path.join(dir_name, base_name + ".mkv")
@@ -343,6 +345,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
+    src_tag_file = os.path.join(out_dir, f".hagi_cache_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
 
     _tmp_id = uuid.uuid4().hex
     audio_tmp = os.path.join(out_dir, f".hagi_audio_tmp_{_tmp_id}.mp3")
@@ -350,13 +353,27 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
 
     is_cached = False
     if os.path.exists(audio_out) and os.path.exists(image_out):
-        try:
-            os.utime(audio_out, None)
-            os.utime(image_out, None)
-            is_cached = True
-            return True, "Media returned from cache", audio_out, image_out, combined_text, is_cached
-        except Exception:
-            pass
+        is_valid = True
+        if os.path.exists(src_tag_file):
+            try:
+                with open(src_tag_file, "r", encoding="utf-8") as f:
+                    cached_src = f.read().strip()
+                if cached_src != os.path.abspath(mkv_path):
+                    is_valid = False
+            except Exception:
+                pass
+        elif found_video:
+            # Fallback/replacement video was detected, existing cache without tag is from old video
+            is_valid = False
+
+        if is_valid:
+            try:
+                os.utime(audio_out, None)
+                os.utime(image_out, None)
+                is_cached = True
+                return True, "Media returned from cache", audio_out, image_out, combined_text, is_cached
+            except Exception:
+                pass
 
     try:
         audio_stream_idx, is_hdr, x264_build = get_media_stream_info(mkv_path)
@@ -560,6 +577,11 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
 
         os.replace(audio_tmp, audio_out)
         os.replace(image_tmp, image_out)
+        try:
+            with open(src_tag_file, "w", encoding="utf-8") as f:
+                f.write(os.path.abspath(mkv_path))
+        except Exception:
+            pass
 
         return (
             True,
@@ -858,7 +880,11 @@ def cleanup_media_cache(out_dir: str, max_mb: int = 500):
 
     try:
         for entry in os.scandir(out_dir):
-            if entry.is_file() and (entry.name.startswith("hagi_audio_") or entry.name.startswith("hagi_img_")):
+            if entry.is_file() and (
+                entry.name.startswith("hagi_audio_")
+                or entry.name.startswith("hagi_img_")
+                or entry.name.startswith(".hagi_cache_")
+            ):
                 stat = entry.stat()
                 files.append((entry.path, stat.st_mtime, stat.st_size))
                 total_size += stat.st_size
