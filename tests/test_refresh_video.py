@@ -369,3 +369,37 @@ def test_extract_mkv_subtitles_handles_probe_timeout(tmp_path):
         assert subs == {}
         assert had_timeout is True
         assert probe_ok is False
+
+
+def test_find_matching_media_rejects_flat_folder_cross_shows(test_db):
+    """Test that candidate matching in flat non-season folders does not match across different shows."""
+    naruto_path = "/nonexistent/Anime/Naruto - 01.mkv"
+    db.add_media(test_db, naruto_path, "mkv_embedded", show_title="Naruto", episode=1)
+
+    one_piece_path = "/nonexistent/Anime/One Piece - 01.mkv"
+    matched_id = indexer.find_matching_media(test_db, one_piece_path, media_type="mkv_embedded")
+    assert matched_id is None
+
+
+def test_find_matching_media_auto_samples_subtitles(test_db, tmp_path):
+    """Test that find_matching_media automatically extracts sample sentences from subtitle files."""
+    old_path = "/nonexistent/old_subs.srt"
+    mid = db.add_media(test_db, old_path, "subtitle")
+    db.add_sentences(
+        test_db,
+        mid,
+        [
+            ("jpn", 1.0, 2.0, "This is a distinctive sentence alpha"),
+            ("jpn", 3.0, 4.0, "This is a distinctive sentence beta"),
+        ],
+    )
+    test_db.commit()
+
+    new_sub = tmp_path / "completely_different_name.srt"
+    new_sub.write_text(
+        "1\n00:00:01,000 --> 00:00:02,000\nThis is a distinctive sentence alpha\n\n"
+        "2\n00:00:03,000 --> 00:00:04,000\nThis is a distinctive sentence beta\n\n"
+    )
+
+    matched_id = indexer.find_matching_media(test_db, str(new_sub), media_type="subtitle")
+    assert matched_id == mid

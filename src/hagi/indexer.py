@@ -1248,11 +1248,27 @@ def find_matching_media(
     # Priority 2: Check matching folder/parent folder for same episode or absolute episode
     new_abs = os.path.abspath(new_file_path)
     new_dir = os.path.dirname(new_abs)
-    dir_candidates = [
-        c for c in candidates
-        if os.path.dirname(os.path.abspath(c["path"])) == new_dir
-        or os.path.dirname(os.path.dirname(os.path.abspath(c["path"]))) == os.path.dirname(new_dir)
-    ]
+    is_season_dir = bool(re.search(r"Season\s*\d+", os.path.basename(new_dir), re.IGNORECASE))
+
+    dir_candidates = []
+    for c in candidates:
+        c_path = os.path.abspath(c["path"])
+        c_dir = os.path.dirname(c_path)
+        same_dir = (c_dir == new_dir)
+        same_season_parent = (
+            is_season_dir
+            and bool(re.search(r"Season\s*\d+", os.path.basename(c_dir), re.IGNORECASE))
+            and os.path.dirname(c_dir) == os.path.dirname(new_dir)
+        )
+        if same_dir or same_season_parent:
+            if show_hint:
+                norm_hint = re.sub(r"[^\w]", "", show_hint.lower())
+                c_show = c.get("show_title") or parse_media_identifiers(c_path).get("show_hint")
+                if c_show:
+                    norm_c = re.sub(r"[^\w]", "", c_show.lower())
+                    if norm_hint not in norm_c and norm_c not in norm_hint:
+                        continue
+            dir_candidates.append(c)
 
     if abs_ep is not None:
         matched_abs = []
@@ -1273,6 +1289,19 @@ def find_matching_media(
             return matched_ep[0]["id"]
 
     # Priority 3: Subtitle content fingerprinting
+    if sample_sentences is None and os.path.isfile(new_file_path):
+        if new_file_path.lower().endswith((".srt", ".ass")):
+            try:
+                subs_sample = load_and_sanitize_subs(new_file_path)
+                if subs_sample:
+                    sample_sentences = [
+                        line.plaintext.strip()
+                        for line in subs_sample
+                        if len(line.plaintext.strip()) >= 10
+                    ][:5]
+            except Exception:
+                pass
+
     if sample_sentences and candidates:
         clean_samples = [s.strip() for s in sample_sentences if len(s.strip()) >= 10][:5]
         candidate_ids = [c["id"] for c in candidates]
