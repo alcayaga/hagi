@@ -326,7 +326,9 @@ def test_exporter_video_fallback_by_episode(test_db, tmp_path):
         )
         mock_subrun.return_value = mock_res
 
-        success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(sid, "/tmp/media")
+        success, msg, audio_out, image_out, text, is_cached = exporter.extract_media(
+            sid, str(tmp_path / "media")
+        )
         assert success is True
         # Verify ffprobe was called with the discovered video path
         ffprobe_args = mock_subrun.call_args_list[0][0][0]
@@ -567,7 +569,7 @@ def test_exporter_video_fallback_single_candidate_show_mismatch(test_db, tmp_pat
 
     with patch("hagi.exporter.db.get_db", return_value=test_db):
         # Should reject Naruto and fall back to non-existent Detective Conan .mkv path
-        success, msg, _, _, _, _ = exporter.extract_media(sid, "/tmp/media")
+        success, msg, _, _, _, _ = exporter.extract_media(sid, str(tmp_path / "media"))
         assert success is False
         assert "Video file not found" in msg
         assert "Detective Conan - S34E21.mkv" in msg
@@ -604,7 +606,7 @@ def test_exporter_video_fallback_single_candidate_show_mismatch(test_db, tmp_pat
         )
         mock_subrun.return_value = mock_res
 
-        success, msg, _, _, _, _ = exporter.extract_media(sid, "/tmp/media")
+        success, msg, _, _, _, _ = exporter.extract_media(sid, str(tmp_path / "media"))
         assert success is True
         ffprobe_args = mock_subrun.call_args_list[0][0][0]
         assert str(conan_file) in ffprobe_args
@@ -890,6 +892,19 @@ def test_parse_media_identifiers_extracts_file_title():
     assert ids2["file_title"] == "Detective Conan"
     assert ids2["abs_episode"] == 1207
 
+    # Scene release with dot and underscore separators
+    ids_dot = indexer.parse_media_identifiers("Show.Name.S01E01.720p.HDTV.x264.mkv")
+    assert ids_dot["file_title"] == "Show Name"
+    assert ids_dot["show_hint"] == "Show Name"
+
+    ids_under = indexer.parse_media_identifiers("Show_Name_S01E01.mkv")
+    assert ids_under["file_title"] == "Show Name"
+    assert ids_under["show_hint"] == "Show Name"
+
+    # Dash fallback rejects season/episode markers as show titles
+    ids_marker = indexer.parse_media_identifiers("S01E01 - Episode Title.mkv")
+    assert ids_marker["file_title"] is None
+
 
 def test_extract_media_sole_candidate_with_generic_dir(test_db, tmp_path):
     """Test that extract_media accepts sole episode candidate when directory is generic."""
@@ -1111,3 +1126,259 @@ def test_index_directory_continues_to_sibling_candidate_on_failure(test_db, tmp_
     assert len(media_rows) == 1
     assert media_rows[0]["id"] == mid
     assert media_rows[0]["path"] == good_file_path
+
+
+def test_language_code_map_unified():
+    """Test that _normalize_lang_code and _extract_file_lang use unified LANGUAGE_CODE_MAP."""
+    from hagi.indexer import LANGUAGE_CODE_MAP, _extract_file_lang, _normalize_lang_code
+
+    # Check key mappings present in map
+    assert LANGUAGE_CODE_MAP["ja"] == "jpn"
+    assert LANGUAGE_CODE_MAP["en"] == "eng"
+    assert LANGUAGE_CODE_MAP["es"] == "spa"
+    assert LANGUAGE_CODE_MAP["fr"] == "fra"
+    assert LANGUAGE_CODE_MAP["ru"] == "rus"
+
+    # _normalize_lang_code behavior
+    assert _normalize_lang_code("JA") == "jpn"
+    assert _normalize_lang_code(" spa ") == "spa"
+    assert _normalize_lang_code("unknown_xyz") == "unknown_xyz"
+    assert _normalize_lang_code(None) == "unknown"
+
+    # _extract_file_lang behavior
+    assert _extract_file_lang("episode.ja.srt") == "jpn"
+    assert _extract_file_lang("episode.SPA.ass") == "spa"
+    assert _extract_file_lang("episode.fra.vtt") == "fra"
+    assert _extract_file_lang("episode.unknown_xyz.srt") is None
+    assert _extract_file_lang("episode.mkv") is None
+
+
+def test_prune_database_passes_all_missing_media_of_type(test_db, tmp_path):
+    """Test that prune_database passes all missing rows of matching media_type to find_matching_media."""
+    old1 = str(tmp_path / "Series - S01E01 [Old].mkv")
+    old2 = str(tmp_path / "Series - S01E02 [Old].mkv")
+    cand1 = str(tmp_path / "Series - S01E01 [New].mkv")
+
+    with open(cand1, "w") as f:
+        f.write("cand1")
+
+    mid1 = db.add_media(test_db, old1, "mkv_embedded", show_title="Series", season=1, episode=1)
+    mid2 = db.add_media(test_db, old2, "mkv_embedded", show_title="Series", season=1, episode=2)
+    db.add_sentences(test_db, mid1, [("eng", 1.0, 2.0, "Ep 1 line")])
+    db.add_sentences(test_db, mid2, [("eng", 1.0, 2.0, "Ep 2 line")])
+    test_db.commit()
+
+    captured_cand_missing = []
+    real_find = indexer.find_matching_media
+
+    def spy_find(conn, new_path, media_type=None, missing_media_rows=None, **kwargs):
+        """Spy on find_matching_media to record candidate rows passed."""
+        if missing_media_rows is not None:
+            captured_cand_missing.append(list(missing_media_rows))
+        return real_find(conn, new_path, media_type=media_type, missing_media_rows=missing_media_rows, **kwargs)
+
+    def mock_refresh(conn, media_id, file_path, **kwargs):
+        """Mock refresh_media to update path in db."""
+        db.update_media_path(conn, media_id, file_path)
+        conn.commit()
+        return True
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.find_matching_media", side_effect=spy_find),
+        patch("hagi.indexer.refresh_media", side_effect=mock_refresh),
+    ):
+        indexer.prune_database()
+
+    # When cand1 was evaluated, missing_media_rows should have contained both missing rows
+    assert len(captured_cand_missing) >= 1
+    first_call_ids = {r["id"] for r in captured_cand_missing[0]}
+    assert mid1 in first_call_ids
+    assert mid2 in first_call_ids
+
+    # mid1 was upgraded, mid2 had no replacement so it was pruned
+    row1 = test_db.execute("SELECT id, path FROM media WHERE id = ?", (mid1,)).fetchone()
+    assert row1 is not None
+    assert row1["path"] == cand1
+    row2 = test_db.execute("SELECT id, path FROM media WHERE id = ?", (mid2,)).fetchone()
+    assert row2 is None
+
+
+def test_find_matching_media_samples_non_utf8_subtitles(test_db, tmp_path):
+    """Test that find_matching_media falls back to non-UTF-8 encodings when reading subtitle samples."""
+    sub_path = str(tmp_path / "episode_cp932.ja.srt")
+    srt_content = (
+        "1\n"
+        "00:00:01,000 --> 00:00:04,000\n"
+        "これはテスト用の字幕テキストです十文字以上１\n\n"
+        "2\n"
+        "00:00:05,000 --> 00:00:08,000\n"
+        "これはテスト用の字幕テキストです十文字以上２\n"
+    )
+    with open(sub_path, "wb") as f:
+        f.write(srt_content.encode("shift_jis"))
+
+    mid = db.add_media(test_db, str(tmp_path / "old_episode.ja.srt"), "subtitle", show_title="Show")
+    db.add_sentences(
+        test_db,
+        mid,
+        [
+            ("jpn", 1.0, 4.0, "これはテスト用の字幕テキストです十文字以上１"),
+            ("jpn", 5.0, 8.0, "これはテスト用の字幕テキストです十文字以上２"),
+        ],
+    )
+    test_db.commit()
+
+    matched_id = indexer.find_matching_media(test_db, sub_path, media_type="subtitle")
+    assert matched_id == mid
+
+
+def test_index_directory_upgrades_legacy_null_media_type(test_db, tmp_path):
+    """Test that index_directory normalizes legacy rows with NULL type and upgrades them."""
+    season_dir = tmp_path / "Season 1"
+    season_dir.mkdir()
+
+    old_file = str(season_dir / "Conan - S01E01 [Old].mkv")
+    new_file = str(season_dir / "Conan - S01E01 [New].mkv")
+    with open(new_file, "w") as f:
+        f.write("new content")
+
+    # Insert row with NULL type directly
+    cursor = test_db.execute(
+        "INSERT INTO media (path, type, show_title, season, episode) VALUES (?, NULL, 'Conan', 1, 1)",
+        (old_file,),
+    )
+    mid = cursor.lastrowid
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Subtitle")])
+    test_db.commit()
+
+    def mock_refresh(conn, media_id, file_path, **kwargs):
+        """Mock refresh_media to update path."""
+        db.update_media_path(conn, media_id, file_path)
+        conn.commit()
+        return True
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("os.walk", return_value=[(str(season_dir), [], ["Conan - S01E01 [New].mkv"])]),
+        patch("hagi.indexer.refresh_media", side_effect=mock_refresh),
+        patch("hagi.indexer.extract_mkv_subtitles", return_value=({}, False, False)),
+    ):
+        indexer.index_directory(str(season_dir))
+
+    rows = test_db.execute("SELECT id, path FROM media").fetchall()
+    assert len(rows) == 1
+    assert rows[0]["id"] == mid
+    assert rows[0]["path"] == new_file
+
+
+def test_find_matching_media_continues_on_corrupt_encoding(test_db, tmp_path):
+    """Test that find_matching_media continues to next encoding if an earlier encoding raises a non-decode error."""
+    sub_path = str(tmp_path / "episode_fallback.ja.srt")
+    with open(sub_path, "w", encoding="utf-8") as f:
+        f.write(
+            "1\n00:00:01,000 --> 00:00:04,000\nテスト字幕テキスト１２３４５６７８９０\n\n"
+            "2\n00:00:05,000 --> 00:00:08,000\nテスト字幕テキスト第二ライン十文字以上\n"
+        )
+
+    mid = db.add_media(test_db, str(tmp_path / "old.ja.srt"), "subtitle", show_title="Show")
+    db.add_sentences(
+        test_db,
+        mid,
+        [
+            ("jpn", 1.0, 4.0, "テスト字幕テキスト１２３４５６７８９０"),
+            ("jpn", 5.0, 8.0, "テスト字幕テキスト第二ライン十文字以上"),
+        ],
+    )
+    test_db.commit()
+
+    real_load = indexer.load_and_sanitize_subs
+    attempts = []
+
+    def mock_load(path, encoding="utf-8"):
+        """Fail on first attempt with ValueError, succeed on second attempt."""
+        attempts.append(encoding)
+        if len(attempts) == 1:
+            raise ValueError("Corrupt subtitle header syntax")
+        return real_load(path, encoding=encoding)
+
+    with patch("hagi.indexer.load_and_sanitize_subs", side_effect=mock_load):
+        matched_id = indexer.find_matching_media(test_db, sub_path, media_type="subtitle")
+
+    assert matched_id == mid
+    assert len(attempts) >= 2
+
+
+def test_find_matching_media_matches_legacy_null_media_type(test_db, tmp_path):
+    """Test that find_matching_media includes and infers legacy rows with NULL media_type."""
+    old_file = str(tmp_path / "Series - S01E05 [Old].mkv")
+    new_file = str(tmp_path / "Series - S01E05 [New].mkv")
+    with open(new_file, "w") as f:
+        f.write("content")
+
+    cursor = test_db.execute(
+        "INSERT INTO media (path, type, show_title, season, episode) VALUES (?, NULL, 'Series', 1, 5)",
+        (old_file,),
+    )
+    mid = cursor.lastrowid
+    test_db.commit()
+
+    matched = indexer.find_matching_media(test_db, new_file, media_type="mkv_embedded")
+    assert matched == mid
+
+
+def test_index_directory_continues_subtitle_encoding_on_parse_error(test_db, tmp_path):
+    """Test that index_directory continues to subsequent encodings when load_and_sanitize_subs raises parse error."""
+    season_dir = tmp_path / "Season 1"
+    season_dir.mkdir()
+    sub_file = str(season_dir / "Episode 01.ja.srt")
+    with open(sub_file, "w", encoding="utf-8") as f:
+        f.write("1\n00:00:01,000 --> 00:00:04,000\nテスト字幕\n")
+
+    real_load = indexer.load_and_sanitize_subs
+    attempts = []
+
+    def mock_load(path, encoding="utf-8"):
+        """Fail on first attempt with parse error, succeed on second attempt."""
+        attempts.append(encoding)
+        if len(attempts) == 1:
+            raise RuntimeError("Parser failure on first encoding attempt")
+        return real_load(path, encoding=encoding)
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.load_and_sanitize_subs", side_effect=mock_load),
+    ):
+        indexer.index_directory(str(season_dir))
+
+    assert len(attempts) >= 2
+    row = test_db.execute("SELECT id, path FROM media WHERE path = ?", (sub_file,)).fetchone()
+    assert row is not None
+
+
+def test_find_matching_media_excludes_incompatible_stored_subtitle_language(test_db, tmp_path):
+    """Test that find_matching_media excludes candidates whose stored sentence languages mismatch new file language."""
+    old_sub = str(tmp_path / "Series - S01E01.srt")
+    new_sub = str(tmp_path / "Series - S01E01.en.srt")
+    with open(new_sub, "w", encoding="utf-8") as f:
+        f.write("1\n00:00:01,000 --> 00:00:04,000\nHello English subtitle\n")
+
+    # Add missing media with Japanese sentences
+    mid_jpn = db.add_media(test_db, old_sub, "subtitle", show_title="Series", season=1, episode=1)
+    db.add_sentences(test_db, mid_jpn, [("jpn", 1.0, 4.0, "こんにちは日本語字幕")])
+    test_db.commit()
+
+    # English new file should reject Japanese candidate
+    matched = indexer.find_matching_media(test_db, new_sub, media_type="subtitle")
+    assert matched is None
+
+    # But an English candidate should match
+    old_en_sub = str(tmp_path / "Series - S01E01 [OldEn].srt")
+    mid_en = db.add_media(test_db, old_en_sub, "subtitle", show_title="Series", season=1, episode=1)
+    db.add_sentences(test_db, mid_en, [("eng", 1.0, 4.0, "Old English subtitle")])
+    test_db.commit()
+
+    matched_en = indexer.find_matching_media(test_db, new_sub, media_type="subtitle")
+    assert matched_en == mid_en
+
+

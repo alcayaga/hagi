@@ -29,6 +29,41 @@ BITMAP_SUBTITLE_CODECS = {
     "pgssub",
     "xsub",
 }
+LANGUAGE_CODE_MAP: dict[str, str] = {
+    "en": "eng",
+    "eng": "eng",
+    "ja": "jpn",
+    "jpn": "jpn",
+    "jp": "jpn",
+    "es": "spa",
+    "spa": "spa",
+    "sp": "spa",
+    "pt": "por",
+    "por": "por",
+    "fr": "fra",
+    "fra": "fra",
+    "fre": "fra",
+    "de": "deu",
+    "deu": "deu",
+    "ger": "deu",
+    "it": "ita",
+    "ita": "ita",
+    "zh": "zho",
+    "zho": "zho",
+    "chi": "zho",
+    "ko": "kor",
+    "kor": "kor",
+    "ru": "rus",
+    "rus": "rus",
+}
+SUBTITLE_ENCODINGS: tuple[str, ...] = (
+    "utf-8-sig",
+    "utf-8",
+    "utf-16",
+    "cp932",
+    "shift_jis",
+    "latin-1",
+)
 
 
 def _load_config() -> Optional[dict]:
@@ -329,19 +364,7 @@ def _normalize_lang_code(code: Optional[str]) -> str:
     if not code:
         return "unknown"
     code = code.lower().strip()
-    mapping = {
-        "en": "eng",
-        "eng": "eng",
-        "ja": "jpn",
-        "jpn": "jpn",
-        "jp": "jpn",
-        "es": "spa",
-        "spa": "spa",
-        "sp": "spa",
-        "pt": "por",
-        "por": "por",
-    }
-    return mapping.get(code, code)
+    return LANGUAGE_CODE_MAP.get(code, code)
 
 
 def _extract_file_lang(path: str) -> Optional[str]:
@@ -356,19 +379,7 @@ def _extract_file_lang(path: str) -> Optional[str]:
     m = re.search(r"\.([a-zA-Z]{2,3})\.(?:srt|ass|vtt)$", path, re.IGNORECASE)
     if m:
         token = m.group(1).lower()
-        known = {
-            "en": "eng", "eng": "eng",
-            "ja": "jpn", "jpn": "jpn", "jp": "jpn",
-            "es": "spa", "spa": "spa", "sp": "spa",
-            "pt": "por", "por": "por",
-            "fr": "fra", "fra": "fra", "fre": "fra",
-            "de": "deu", "deu": "deu", "ger": "deu",
-            "it": "ita", "ita": "ita",
-            "zh": "zho", "zho": "zho", "chi": "zho",
-            "ko": "kor", "kor": "kor",
-            "ru": "rus", "rus": "rus",
-        }
-        return known.get(token)
+        return LANGUAGE_CODE_MAP.get(token)
     return None
 
 
@@ -432,65 +443,81 @@ def prune_database():
     extract_timeout, probe_timeout = _resolve_timeouts()
     cursor = conn.execute("SELECT id, path, type, show_title, season, episode, episode_title FROM media")
     pruned_count = 0
+    missing_media: dict[int, dict] = {}
     for row in cursor.fetchall():
         try:
             os.stat(row["path"])
         except OSError as e:
             if e.errno in (errno.ENOENT, errno.ENOTDIR):
-                parent_dir = os.path.dirname(row["path"])
-                upgraded = False
-                matched_failed = False
-                if os.path.isdir(parent_dir):
-                    media_type = row["type"] or ("mkv_embedded" if row["path"].endswith(".mkv") else "subtitle")
-                    cand_exts = (".mkv",) if media_type == "mkv_embedded" else (".srt", ".ass")
-                    try:
-                        for entry in os.scandir(parent_dir):
-                            if entry.is_file() and entry.name.lower().endswith(cand_exts):
-                                cand_path = entry.path
-                                if not conn.execute("SELECT 1 FROM media WHERE path = ?", (cand_path,)).fetchone():
-                                    matched_id = find_matching_media(
-                                        conn, cand_path, media_type=media_type, missing_media_rows=[dict(row)]
-                                    )
-                                    if matched_id == row["id"]:
-                                        print(f"Upgrading missing media {row['path']} -> {cand_path} during prune...")
-                                        try:
-                                            if refresh_media(
-                                                conn,
-                                                row["id"],
-                                                cand_path,
-                                                extract_timeout=extract_timeout,
-                                                probe_timeout=probe_timeout,
-                                            ):
-                                                upgraded = True
-                                                break
-                                            else:
-                                                print(
-                                                    f"Refresh failed for {cand_path}; retaining existing media {row['id']}. "
-                                                    "Please run 'hagi refresh' manually."
-                                                )
-                                                matched_failed = True
-                                                continue
-                                        except Exception as ref_err:
-                                            print(
-                                                f"Error refreshing {cand_path} during prune: {ref_err}; "
-                                                f"retaining existing media {row['id']}. Please run 'hagi refresh' manually."
-                                            )
-                                            conn.rollback()
-                                            matched_failed = True
-                                            continue
-                    except Exception as scan_err:
-                        print(f"Error checking directory {parent_dir}: {scan_err}")
-                        conn.rollback()
-                        matched_failed = True
-
-                if not upgraded and not matched_failed:
-                    print(f"Removing missing file from database: {row['path']}")
-                    conn.execute("DELETE FROM sentences WHERE media_id = ?", (row["id"],))
-                    conn.execute("DELETE FROM media WHERE id = ?", (row["id"],))
-                    conn.commit()
-                    pruned_count += 1
+                row_dict = dict(row)
+                row_dict["type"] = row["type"] or (
+                    "mkv_embedded" if row["path"].endswith(".mkv") else "subtitle"
+                )
+                missing_media[row["id"]] = row_dict
             else:
                 print(f"Error accessing file {row['path']}: {e}")
+
+    matched_cands: dict[str, Optional[int]] = {}
+    for row_id, row in list(missing_media.items()):
+        if row_id not in missing_media:
+            continue
+        parent_dir = os.path.dirname(row["path"])
+        upgraded = False
+        matched_failed = False
+        if os.path.isdir(parent_dir):
+            media_type = row["type"]
+            cand_exts = (".mkv",) if media_type == "mkv_embedded" else (".srt", ".ass")
+            try:
+                for entry in os.scandir(parent_dir):
+                    if entry.is_file() and entry.name.lower().endswith(cand_exts):
+                        cand_path = entry.path
+                        if not conn.execute("SELECT 1 FROM media WHERE path = ?", (cand_path,)).fetchone():
+                            if cand_path not in matched_cands:
+                                cand_missing = [m for m in missing_media.values() if m["type"] == media_type]
+                                matched_cands[cand_path] = find_matching_media(
+                                    conn, cand_path, media_type=media_type, missing_media_rows=cand_missing
+                                )
+                            matched_id = matched_cands[cand_path]
+                            if matched_id == row_id:
+                                print(f"Upgrading missing media {row['path']} -> {cand_path} during prune...")
+                                try:
+                                    if refresh_media(
+                                        conn,
+                                        row_id,
+                                        cand_path,
+                                        extract_timeout=extract_timeout,
+                                        probe_timeout=probe_timeout,
+                                    ):
+                                        upgraded = True
+                                        missing_media.pop(row_id, None)
+                                        break
+                                    else:
+                                        print(
+                                            f"Refresh failed for {cand_path}; retaining existing media {row_id}. "
+                                            "Please run 'hagi refresh' manually."
+                                        )
+                                        matched_failed = True
+                                        continue
+                                except Exception as ref_err:
+                                    print(
+                                        f"Error refreshing {cand_path} during prune: {ref_err}; "
+                                        f"retaining existing media {row_id}. Please run 'hagi refresh' manually."
+                                    )
+                                    conn.rollback()
+                                    matched_failed = True
+                                    continue
+            except Exception as scan_err:
+                print(f"Error checking directory {parent_dir}: {scan_err}")
+                conn.rollback()
+                matched_failed = True
+
+        if not upgraded and not matched_failed:
+            print(f"Removing missing file from database: {row['path']}")
+            conn.execute("DELETE FROM sentences WHERE media_id = ?", (row_id,))
+            conn.execute("DELETE FROM media WHERE id = ?", (row_id,))
+            conn.commit()
+            missing_media.pop(row_id, None)
+            pruned_count += 1
     if pruned_count > 0:
         print(f"Pruned {pruned_count} missing media files.")
     else:
@@ -531,7 +558,11 @@ def index_directory(
     missing_media = {}
     for row in cursor.fetchall():
         if not os.path.exists(row["path"]):
-            missing_media[row["id"]] = dict(row)
+            row_dict = dict(row)
+            row_dict["type"] = row["type"] or (
+                "mkv_embedded" if row["path"].endswith(".mkv") else "subtitle"
+            )
+            missing_media[row["id"]] = row_dict
     failed_upgrades = set()
 
     directory_path = abs_dir
@@ -620,11 +651,13 @@ def index_directory(
             if file.endswith((".ass", ".srt")):
                 try:
                     subs = None
-                    for enc in ["utf-8-sig", "utf-8", "utf-16", "cp932", "shift_jis", "latin-1"]:
+                    for enc in SUBTITLE_ENCODINGS:
                         try:
                             subs = load_and_sanitize_subs(file_path, encoding=enc)
                             break
                         except UnicodeDecodeError:
+                            continue
+                        except Exception:
                             continue
 
                     if subs:
@@ -740,16 +773,24 @@ def parse_media_identifiers(file_path: str) -> dict:
 
     show_hint = None
     file_title = None
-    m_pre_se = re.search(r"^(.+?)(?:\s*-\s*|\s+)(?:[sS]\d{1,3}[eE]\d{1,4}|\b\d{1,2}x\d{1,4}\b)", clean_base.strip())
+    stem = os.path.splitext(clean_base)[0].strip()
+    stem_norm = re.sub(r"[._]+", " ", stem).strip()
+
+    marker_pattern = re.compile(
+        r"\b(?:season\s*\d+|s\d{1,3}e\d{1,4}|\d{1,2}x\d{1,4}|ep?\d+)\b",
+        re.IGNORECASE,
+    )
+
+    m_pre_se = re.search(r"^(.+?)(?:\s*-\s*|\s+)(?:[sS]\d{1,3}[eE]\d{1,4}|\b\d{1,2}x\d{1,4}\b)", stem_norm)
     if m_pre_se:
         cand_t = m_pre_se.group(1).strip()
-        if cand_t and not re.match(r"^(?:season|s\d|ep?\d)", cand_t, re.IGNORECASE):
+        if cand_t and not marker_pattern.search(cand_t):
             file_title = cand_t
     if not file_title:
-        file_title_match = re.match(r"^([^\-]+?)\s*-\s*", clean_base.strip())
+        file_title_match = re.match(r"^([^\-]+?)\s*-\s*", stem_norm)
         if file_title_match:
             cand_show = file_title_match.group(1).strip()
-            if cand_show and not re.match(r"^(?:season|s\d|ep?\d)", cand_show, re.IGNORECASE):
+            if cand_show and not marker_pattern.search(cand_show):
                 file_title = cand_show
 
     if file_title:
@@ -1403,18 +1444,50 @@ def find_matching_media(
     """
     if missing_media_rows is None:
         rows = conn.execute(
-            "SELECT id, path, type, show_title, season, episode, episode_title FROM media WHERE type = ?",
+            "SELECT id, path, type, show_title, season, episode, episode_title FROM media WHERE type = ? OR type IS NULL",
             (media_type,),
         ).fetchall()
-        missing_media_rows = [dict(r) for r in rows if not os.path.exists(r["path"])]
+        missing_media_rows = []
+        for r in rows:
+            if not os.path.exists(r["path"]):
+                r_dict = dict(r)
+                r_dict["type"] = r["type"] or (
+                    "mkv_embedded" if r["path"].endswith(".mkv") else "subtitle"
+                )
+                missing_media_rows.append(r_dict)
 
-    candidates = [c for c in missing_media_rows if c.get("type") == media_type]
+    candidates = [
+        c
+        for c in missing_media_rows
+        if (c.get("type") or ("mkv_embedded" if c.get("path", "").endswith(".mkv") else "subtitle")) == media_type
+    ]
     new_lang_tag = _extract_file_lang(new_file_path)
     if new_lang_tag:
-        candidates = [
-            c for c in candidates
-            if not _extract_file_lang(c["path"]) or _extract_file_lang(c["path"]) == new_lang_tag
-        ]
+        if media_type == "subtitle":
+            candidates = [
+                c for c in candidates
+                if not _extract_file_lang(c["path"]) or _extract_file_lang(c["path"]) == new_lang_tag
+            ]
+            if candidates:
+                cand_ids = [c["id"] for c in candidates]
+                ph = ",".join("?" for _ in cand_ids)
+                lang_rows = conn.execute(
+                    f"SELECT media_id, language FROM sentences WHERE media_id IN ({ph})",
+                    cand_ids,
+                ).fetchall()
+                stored_by_mid: dict[int, set[str]] = {}
+                for r in lang_rows:
+                    if r["language"]:
+                        stored_by_mid.setdefault(r["media_id"], set()).add(_normalize_lang_code(r["language"]))
+                candidates = [
+                    c for c in candidates
+                    if not stored_by_mid.get(c["id"]) or new_lang_tag in stored_by_mid[c["id"]]
+                ]
+        else:
+            candidates = [
+                c for c in candidates
+                if not _extract_file_lang(c["path"]) or _extract_file_lang(c["path"]) == new_lang_tag
+            ]
     if not candidates:
         return None
 
@@ -1492,21 +1565,26 @@ def find_matching_media(
     # Priority 3: Subtitle content fingerprinting
     if sample_sentences is None and os.path.isfile(new_file_path):
         if new_file_path.lower().endswith((".srt", ".ass")):
-            try:
-                subs_sample = load_and_sanitize_subs(new_file_path)
-                if subs_sample:
-                    eligible = [
-                        line.plaintext.strip()
-                        for line in subs_sample
-                        if len(line.plaintext.strip()) >= 10
-                    ]
-                    if len(eligible) <= 10:
-                        sample_sentences = eligible
-                    else:
-                        step = len(eligible) / 10.0
-                        sample_sentences = [eligible[int(k * step)] for k in range(10)]
-            except Exception:
-                pass
+            subs_sample = None
+            for enc in SUBTITLE_ENCODINGS:
+                try:
+                    subs_sample = load_and_sanitize_subs(new_file_path, encoding=enc)
+                    break
+                except UnicodeDecodeError:
+                    continue
+                except Exception:
+                    continue
+            if subs_sample:
+                eligible = [
+                    line.plaintext.strip()
+                    for line in subs_sample
+                    if len(line.plaintext.strip()) >= 10
+                ]
+                if len(eligible) <= 10:
+                    sample_sentences = eligible
+                else:
+                    step = len(eligible) / 10.0
+                    sample_sentences = [eligible[int(k * step)] for k in range(10)]
 
     if sample_sentences and candidates:
         fp_candidates = []
@@ -1684,7 +1762,7 @@ def refresh_media(
 
     elif abs_path.lower().endswith((".ass", ".srt")):
         subs = None
-        for enc in ["utf-8-sig", "utf-8", "utf-16", "cp932", "shift_jis", "latin-1"]:
+        for enc in SUBTITLE_ENCODINGS:
             try:
                 subs = load_and_sanitize_subs(abs_path, encoding=enc)
                 break
@@ -1833,13 +1911,16 @@ def refresh_file(
             print("Cannot specify --old or --media-id when refreshing a directory.")
             return False
         refreshed_any = False
-        all_missing = [
-            dict(r)
-            for r in conn.execute(
-                "SELECT id, path, type, show_title, season, episode, episode_title FROM media"
-            ).fetchall()
-            if not os.path.exists(r["path"])
-        ]
+        all_missing = []
+        for r in conn.execute(
+            "SELECT id, path, type, show_title, season, episode, episode_title FROM media"
+        ).fetchall():
+            if not os.path.exists(r["path"]):
+                r_dict = dict(r)
+                r_dict["type"] = r["type"] or (
+                    "mkv_embedded" if r["path"].endswith(".mkv") else "subtitle"
+                )
+                all_missing.append(r_dict)
         missing_by_type = {
             "mkv_embedded": [m for m in all_missing if m.get("type") == "mkv_embedded"],
             "subtitle": [m for m in all_missing if m.get("type") == "subtitle"],
