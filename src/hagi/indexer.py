@@ -394,11 +394,11 @@ def prune_database():
                     print(f"Removing missing file from database: {row['path']}")
                     conn.execute("DELETE FROM sentences WHERE media_id = ?", (row["id"],))
                     conn.execute("DELETE FROM media WHERE id = ?", (row["id"],))
+                    conn.commit()
                     pruned_count += 1
             else:
                 print(f"Error accessing file {row['path']}: {e}")
     if pruned_count > 0:
-        conn.commit()
         print(f"Pruned {pruned_count} missing media files.")
     else:
         print("No missing media files found.")
