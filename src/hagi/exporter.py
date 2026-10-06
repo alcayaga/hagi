@@ -253,7 +253,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             ).fetchone()
             if meta and meta["season"] is not None and meta["episode"] is not None:
                 try:
-                    from .indexer import parse_media_identifiers
+                    from .indexer import parse_media_identifiers, titles_match
 
                     if os.path.isdir(dir_name):
                         cand_videos = []
@@ -266,22 +266,15 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                         if len(cand_videos) == 1:
                             cand_path, cand_ids = cand_videos[0]
                             if meta["show_title"] and cand_ids.get("show_hint"):
-                                norm_show = re.sub(r"[^\w]", "", meta["show_title"].lower())
-                                norm_hint = re.sub(r"[^\w]", "", cand_ids["show_hint"].lower())
-                                if norm_show in norm_hint or norm_hint in norm_show:
+                                if titles_match(meta["show_title"], cand_ids["show_hint"]):
                                     found_video = cand_path
                             else:
                                 found_video = cand_path
                         elif len(cand_videos) > 1 and meta["show_title"]:
-                            norm_show = re.sub(r"[^\w]", "", meta["show_title"].lower())
                             matched = [
                                 v[0]
                                 for v in cand_videos
-                                if v[1].get("show_hint")
-                                and (
-                                    norm_show in re.sub(r"[^\w]", "", v[1]["show_hint"].lower())
-                                    or re.sub(r"[^\w]", "", v[1]["show_hint"].lower()) in norm_show
-                                )
+                                if v[1].get("show_hint") and titles_match(meta["show_title"], v[1]["show_hint"])
                             ]
                             if len(matched) == 1:
                                 found_video = matched[0]

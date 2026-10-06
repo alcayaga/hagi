@@ -768,6 +768,39 @@ def test_refresh_file_single_handles_exception_and_rolls_back(test_db, tmp_path)
         assert res is False
 
 
+def test_titles_match():
+    """Test show title matching with prefix preservation and trailing token rejection."""
+    # Exact match
+    assert indexer.titles_match("Naruto", "Naruto") is True
+    assert indexer.titles_match("Detective Conan (1996)", "Detective Conan") is True
+
+    # Leading prefix match (Conan vs Detective Conan)
+    assert indexer.titles_match("Detective Conan", "Conan") is True
+    assert indexer.titles_match("Conan", "Detective Conan") is True
+    assert indexer.titles_match("The Melancholy of Haruhi", "Melancholy of Haruhi") is True
+
+    # Trailing addition should NOT match (Naruto vs Naruto Shippuden)
+    assert indexer.titles_match("Naruto", "Naruto Shippuden") is False
+    assert indexer.titles_match("Naruto Shippuden", "Naruto") is False
+    assert indexer.titles_match("Bleach", "Bleach: Thousand-Year Blood War") is False
+
+    # Empty or None titles
+    assert indexer.titles_match(None, "Naruto") is False
+    assert indexer.titles_match("Naruto", "") is False
+
+
+def test_find_matching_media_rejects_subseries_extension(test_db):
+    """Test that Naruto does not match Naruto Shippuden when finding matching media."""
+    naruto_path = "/nonexistent/Naruto/Season 1/Naruto - S01E01.mkv"
+    db.add_media(test_db, naruto_path, "mkv_embedded", show_title="Naruto", season=1, episode=1)
+
+    # Replacement candidate has same season/episode but is "Naruto Shippuden"
+    shippuden_path = "/nonexistent/Naruto Shippuden/Season 1/Naruto Shippuden - S01E01.mkv"
+    matched_id = indexer.find_matching_media(test_db, shippuden_path, media_type="mkv_embedded")
+    assert matched_id is None
+
+
+
 
 
 

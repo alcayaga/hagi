@@ -728,6 +728,47 @@ def parse_media_identifiers(file_path: str) -> dict:
     }
 
 
+def titles_match(title1: Optional[str], title2: Optional[str]) -> bool:
+    """Check if two show titles match, handling common prefixes while rejecting trailing additions.
+
+    Normalizes titles into words, requires exact equality or allows leading prefix variations
+    (e.g., 'Detective Conan' and 'Conan'), while strictly rejecting titles where the longer title
+    adds trailing tokens (e.g., 'Naruto' and 'Naruto Shippuden').
+
+    Args:
+        title1 (Optional[str]): First title.
+        title2 (Optional[str]): Second title.
+
+    Returns:
+        bool: True if titles match, False otherwise.
+    """
+    if not title1 or not title2:
+        return False
+
+    t1_clean = re.sub(r"\{[^\}]*\}|\([0-9]{4}\)|\[[^\]]*\]", "", title1).strip().lower()
+    t2_clean = re.sub(r"\{[^\}]*\}|\([0-9]{4}\)|\[[^\]]*\]", "", title2).strip().lower()
+
+    tokens1 = re.findall(r"\w+", t1_clean)
+    tokens2 = re.findall(r"\w+", t2_clean)
+
+    if not tokens1 or not tokens2:
+        return False
+
+    if tokens1 == tokens2:
+        return True
+
+    shorter, longer = (tokens1, tokens2) if len(tokens1) < len(tokens2) else (tokens2, tokens1)
+
+    # Shorter must match the tail of the longer title (allowing only leading prefixes like 'The', 'Detective')
+    # and strictly disallow trailing tokens (e.g. 'Shippuden', 'Season 2')
+    if longer[-len(shorter):] == shorter:
+        prefix = longer[:-len(shorter)]
+        if prefix in (["the"], ["detective"]) or len(prefix) == 1:
+            return True
+
+    return False
+
+
 def extract_mkv_subtitles(
     file_path: str,
     extract_timeout: Optional[int] = None,
@@ -1343,13 +1384,9 @@ def find_matching_media(
     if season is not None and episode is not None:
         matched_se = [c for c in candidates if c.get("season") == season and c.get("episode") == episode]
         if show_hint:
-            norm_hint = re.sub(r"[^\w]", "", show_hint.lower())
             matched_show = [
                 c for c in matched_se
-                if c.get("show_title") and (
-                    norm_hint in re.sub(r"[^\w]", "", c["show_title"].lower())
-                    or re.sub(r"[^\w]", "", c["show_title"].lower()) in norm_hint
-                )
+                if c.get("show_title") and titles_match(show_hint, c["show_title"])
             ]
             if len(matched_show) == 1:
                 return matched_show[0]["id"]
@@ -1375,12 +1412,9 @@ def find_matching_media(
         )
         if same_dir or same_season_parent:
             if show_hint:
-                norm_hint = re.sub(r"[^\w]", "", show_hint.lower())
                 c_show = c.get("show_title") or parse_media_identifiers(c_path).get("show_hint")
-                if c_show:
-                    norm_c = re.sub(r"[^\w]", "", c_show.lower())
-                    if norm_hint not in norm_c and norm_c not in norm_hint:
-                        continue
+                if c_show and not titles_match(show_hint, c_show):
+                    continue
             dir_candidates.append(c)
 
     if abs_ep is not None:
