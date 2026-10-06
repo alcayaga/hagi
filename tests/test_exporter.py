@@ -1033,6 +1033,26 @@ def test_get_media_stream_info_caching():
         assert mock_subrun.call_count == 2
 
 
+def test_get_media_stream_info_failure_not_cached():
+    """Test that get_media_stream_info does not cache probe results on probe failure."""
+    exporter.clear_stream_info_cache()
+    mock_fail_result = MagicMock()
+    mock_fail_result.returncode = 1
+    mock_fail_result.stdout = ""
+
+    with patch("subprocess.run", return_value=mock_fail_result) as mock_subrun:
+        idx1, is_hdr1 = exporter.get_media_stream_info("/fake/test/video.mkv")
+        assert idx1 == 0
+        assert is_hdr1 is False
+        assert mock_subrun.call_count == 1
+
+        # Second call re-probes because failure was not cached
+        idx2, is_hdr2 = exporter.get_media_stream_info("/fake/test/video.mkv")
+        assert idx2 == 0
+        assert is_hdr2 is False
+        assert mock_subrun.call_count == 2
+
+
 @patch("urllib.request.urlopen")
 @patch("subprocess.run")
 def test_anki_request_curl_fallback(mock_subrun, mock_urlopen):

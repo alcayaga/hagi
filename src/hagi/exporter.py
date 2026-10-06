@@ -103,11 +103,11 @@ def get_media_stream_info(mkv_path: str) -> tuple[int, bool]:
                 color_trc = video_streams[0].get("color_transfer", "").lower()
                 if color_trc in ("smpte2084", "arib-std-b67"):
                     is_hdr = True
+
+            with _STREAM_INFO_LOCK:
+                _STREAM_INFO_CACHE[mkv_path] = (audio_stream_idx, is_hdr)
     except Exception as e:
         logger.warning(f"Failed to probe media stream info for {mkv_path}: {e}")
-
-    with _STREAM_INFO_LOCK:
-        _STREAM_INFO_CACHE[mkv_path] = (audio_stream_idx, is_hdr)
 
     return audio_stream_idx, is_hdr
 
