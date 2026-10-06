@@ -1356,8 +1356,23 @@ def find_matching_media(
                 pass
 
     if sample_sentences and candidates:
+        fp_candidates = []
+        for c in candidates:
+            c_ids = parse_media_identifiers(c["path"])
+            c_s = c.get("season") if c.get("season") is not None else c_ids.get("season")
+            c_e = c.get("episode") if c.get("episode") is not None else c_ids.get("episode")
+            c_abs = c_ids.get("abs_episode")
+
+            if season is not None and c_s is not None and season != c_s:
+                continue
+            if episode is not None and c_e is not None and episode != c_e:
+                continue
+            if abs_ep is not None and c_abs is not None and abs_ep != c_abs:
+                continue
+            fp_candidates.append(c)
+
         clean_samples = list({s.strip() for s in sample_sentences if len(s.strip()) >= 10})[:10]
-        candidate_ids = [c["id"] for c in candidates]
+        candidate_ids = [c["id"] for c in fp_candidates]
         if clean_samples and candidate_ids:
             ph_ids = ",".join("?" for _ in candidate_ids)
             ph_texts = ",".join("?" for _ in clean_samples)
@@ -1372,7 +1387,8 @@ def find_matching_media(
             rows = conn.execute(query, candidate_ids + clean_samples).fetchall()
             if rows:
                 best_match = rows[0]
-                if best_match["match_count"] >= 2:
+                min_matches = max(2, len(clean_samples) // 2)
+                if best_match["match_count"] >= min_matches:
                     if len(rows) == 1:
                         return best_match["media_id"]
                     elif best_match["match_count"] > rows[1]["match_count"]:
@@ -1414,6 +1430,11 @@ def refresh_media(
     ).fetchone()
     if not row:
         print(f"Media ID {media_id} not found in database.")
+        return False
+
+    existing_owner = conn.execute("SELECT id FROM media WHERE path = ?", (abs_path,)).fetchone()
+    if existing_owner and existing_owner["id"] != media_id:
+        print(f"Target path {abs_path} is already associated with media ID {existing_owner['id']}.")
         return False
 
     media_type = row["type"]
@@ -1610,30 +1631,40 @@ def refresh_file(
                 if file.startswith("._") or not file.lower().endswith((".mkv", ".srt", ".ass")):
                     continue
                 sub_path = os.path.join(root, file)
+                abs_sub = os.path.abspath(sub_path)
+                existing_row = conn.execute("SELECT id FROM media WHERE path = ?", (abs_sub,)).fetchone()
+                if existing_row:
+                    try:
+                        if refresh_media(
+                            conn,
+                            existing_row["id"],
+                            abs_sub,
+                            extract_timeout=extract_timeout,
+                            probe_timeout=probe_timeout,
+                        ):
+                            refreshed_any = True
+                    except Exception as ref_err:
+                        print(f"Error refreshing existing media {abs_sub}: {ref_err}")
+                        conn.rollback()
+                    continue
+
                 mtype = "mkv_embedded" if sub_path.lower().endswith(".mkv") else "subtitle"
                 cands = missing_by_type.get(mtype, [])
-                matched_id = find_matching_media(conn, sub_path, media_type=mtype, missing_media_rows=cands)
+                matched_id = find_matching_media(conn, abs_sub, media_type=mtype, missing_media_rows=cands)
                 if matched_id is not None:
                     try:
                         if refresh_media(
                             conn,
                             matched_id,
-                            sub_path,
+                            abs_sub,
                             extract_timeout=extract_timeout,
                             probe_timeout=probe_timeout,
                         ):
                             refreshed_any = True
                             missing_by_type[mtype] = [c for c in cands if c["id"] != matched_id]
                     except Exception as ref_err:
-                        print(f"Error refreshing {sub_path} into media {matched_id}: {ref_err}")
+                        print(f"Error refreshing {abs_sub} into media {matched_id}: {ref_err}")
                         conn.rollback()
-                else:
-                    if refresh_file(
-                        sub_path,
-                        extract_timeout=extract_timeout,
-                        probe_timeout=probe_timeout,
-                    ):
-                        refreshed_any = True
         return refreshed_any
 
     target_id = media_id

@@ -466,3 +466,36 @@ def test_refresh_media_rejects_type_mismatch(test_db, tmp_path):
 
     # Trying to refresh an MKV row with a subtitle file should fail
     assert indexer.refresh_media(test_db, mid_mkv, str(dummy_srt)) is False
+
+
+def test_refresh_media_rejects_already_owned_path(test_db, tmp_path):
+    """Test that refresh_media refuses to retarget to a path already owned by a different media record."""
+    owned_file = tmp_path / "ep1.srt"
+    owned_file.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+
+    db.add_media(test_db, str(owned_file), "subtitle")
+    mid2 = db.add_media(test_db, "/old/ep2.srt", "subtitle")
+
+    # Attempting to refresh mid2 to owned_file should fail because mid1 already owns it
+    assert indexer.refresh_media(test_db, mid2, str(owned_file)) is False
+
+
+def test_find_matching_media_fingerprint_rejects_conflicting_episode(test_db, tmp_path):
+    """Test that subtitle fingerprinting does not match candidates with conflicting episode numbers."""
+    mid_ep1 = db.add_media(test_db, "/nonexistent/Conan - S01E01.srt", "subtitle", season=1, episode=1)
+    shared = [
+        ("eng", 1.0, 2.0, "Universal anime disclaimer sentence"),
+        ("eng", 3.0, 4.0, "Another generic sentence in disclaimer"),
+    ]
+    db.add_sentences(test_db, mid_ep1, shared)
+    test_db.commit()
+
+    # Episode 2 with the same recap lines should NOT match Episode 1 candidate
+    new_sub = tmp_path / "Conan - S01E02.srt"
+    new_sub.write_text(
+        "1\n00:00:01,000 --> 00:00:02,000\nUniversal anime disclaimer sentence\n\n"
+        "2\n00:00:03,000 --> 00:00:04,000\nAnother generic sentence in disclaimer\n\n"
+    )
+
+    matched = indexer.find_matching_media(test_db, str(new_sub), media_type="subtitle")
+    assert matched is None
