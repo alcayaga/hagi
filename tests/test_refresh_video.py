@@ -448,3 +448,21 @@ def test_find_matching_media_rejects_cross_language_subtitles(test_db):
     en_path = "/nonexistent/Season 34/Conan - S34E21.en.srt"
     matched_id = indexer.find_matching_media(test_db, en_path, media_type="subtitle")
     assert matched_id is None
+
+
+def test_refresh_media_rejects_type_mismatch(test_db, tmp_path):
+    """Test that refresh_media rejects files whose extension conflicts with media.type."""
+    mid_sub = db.add_media(test_db, "/old/sub.srt", "subtitle")
+    mid_mkv = db.add_media(test_db, "/old/video.mkv", "mkv_embedded")
+
+    dummy_mkv = tmp_path / "new_video.mkv"
+    dummy_mkv.write_text("dummy mkv")
+
+    dummy_srt = tmp_path / "new_sub.srt"
+    dummy_srt.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+
+    # Trying to refresh a subtitle row with an MKV file should fail
+    assert indexer.refresh_media(test_db, mid_sub, str(dummy_mkv)) is False
+
+    # Trying to refresh an MKV row with a subtitle file should fail
+    assert indexer.refresh_media(test_db, mid_mkv, str(dummy_srt)) is False

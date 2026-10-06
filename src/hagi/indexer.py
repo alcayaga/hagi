@@ -1416,6 +1416,14 @@ def refresh_media(
         print(f"Media ID {media_id} not found in database.")
         return False
 
+    media_type = row["type"]
+    if abs_path.lower().endswith(".mkv") and media_type == "subtitle":
+        print(f"File type mismatch: {abs_path} is an MKV but media {media_id} is '{media_type}'.")
+        return False
+    if abs_path.lower().endswith((".ass", ".srt")) and media_type == "mkv_embedded":
+        print(f"File type mismatch: {abs_path} is a subtitle but media {media_id} is '{media_type}'.")
+        return False
+
     if abs_path.lower().endswith(".mkv"):
         subs_by_lang, had_timeout, probe_success = extract_mkv_subtitles(
             abs_path,
@@ -1510,6 +1518,28 @@ def refresh_media(
         if norm_detected in norm_stored_map:
             lang = norm_stored_map[norm_detected]
         elif stored_langs:
+            stored_sample_rows = conn.execute(
+                "SELECT text FROM sentences WHERE media_id = ? LIMIT 20",
+                (media_id,),
+            ).fetchall()
+            stored_sample_text = "".join(r["text"] for r in stored_sample_rows if r["text"])
+            new_sample_text = "".join(s["text"] for s in new_sentences[:20])
+
+            has_stored_jp = any(
+                0x3040 <= ord(c) <= 0x30FF or 0x4E00 <= ord(c) <= 0x9FAF
+                for c in stored_sample_text
+            )
+            has_new_jp = any(
+                0x3040 <= ord(c) <= 0x30FF or 0x4E00 <= ord(c) <= 0x9FAF
+                for c in new_sample_text
+            )
+
+            if (new_tag and new_tag not in norm_stored_map) or (has_stored_jp != has_new_jp and stored_sample_text):
+                print(
+                    f"Aborting refresh: detected language '{detected_lang}' does not match "
+                    f"stored languages {stored_langs} for media {media_id}."
+                )
+                return False
             lang = stored_langs[0]
         else:
             lang = detected_lang
