@@ -975,7 +975,8 @@ def test_extract_media_invalidates_cache_on_source_change(test_db, tmp_path):
         # Because src_tag contained old_file and new_file was selected as fallback, cache is invalidated
         assert cached is False
         with open(src_tag, "r") as f:
-            assert f.read().strip() == f"{new_file}|1.000|2.000"
+            stat = os.stat(new_file)
+            assert f.read().strip() == f"{new_file}|{stat.st_size}|{stat.st_mtime:.3f}|1.000|2.000"
 
 
 def test_refresh_media_reconciles_relabeled_tracks(test_db, tmp_path):
@@ -1051,8 +1052,11 @@ def test_prune_database_continues_to_sibling_candidate_on_failure(test_db, tmp_p
     db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Dialogue")])
     test_db.commit()
 
+    attempted_cands = []
+
     def mock_refresh(conn, media_id, cand_path, **kwargs):
         """Mock refresh_media: fail for bad candidate, succeed for good candidate."""
+        attempted_cands.append(cand_path)
         return cand_path == good_cand
 
     with (
@@ -1062,7 +1066,8 @@ def test_prune_database_continues_to_sibling_candidate_on_failure(test_db, tmp_p
     ):
         indexer.prune_database()
 
-    # The missing media record should have been preserved
+    # The missing media record should have been preserved and good_cand attempted
+    assert good_cand in attempted_cands
     row = test_db.execute("SELECT id, path FROM media WHERE id = ?", (mid,)).fetchone()
     assert row is not None
 

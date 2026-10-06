@@ -351,7 +351,12 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     audio_tmp = os.path.join(out_dir, f".hagi_audio_tmp_{_tmp_id}.mp3")
     image_tmp = os.path.join(out_dir, f".hagi_img_tmp_{_tmp_id}.jpg")
 
-    expected_tag = f"{os.path.abspath(mkv_path)}|{start:.3f}|{end:.3f}"
+    try:
+        mkv_stat = os.stat(mkv_path)
+        mkv_id = f"{mkv_stat.st_size}|{mkv_stat.st_mtime:.3f}"
+    except OSError:
+        mkv_id = "unknown"
+    expected_tag = f"{os.path.abspath(mkv_path)}|{mkv_id}|{start:.3f}|{end:.3f}"
     is_cached = False
     if os.path.exists(audio_out) and os.path.exists(image_out):
         is_valid = False

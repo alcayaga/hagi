@@ -1638,7 +1638,7 @@ def refresh_media(
                 for new_l in list(unmatched_new):
                     new_texts = {s["text"].strip().lower() for s in subs_by_lang[new_l] if s.get("text")}
                     overlap = len(old_texts & new_texts)
-                    if overlap >= 5 or (old_texts and overlap / len(old_texts) >= 0.2):
+                    if overlap >= 5 or (overlap >= 3 and old_texts and overlap / len(old_texts) >= 0.2):
                         conn.execute(
                             "UPDATE sentences SET language = ? WHERE media_id = ? AND language = ?",
                             (new_l, media_id, old_l),
