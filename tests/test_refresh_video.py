@@ -604,4 +604,75 @@ def test_exporter_video_fallback_single_candidate_show_mismatch(test_db, tmp_pat
         assert str(conan_file) in ffprobe_args
 
 
+def test_extract_file_lang_locale_validation():
+    """Test that _extract_file_lang validates known locales and ignores non-locale tokens."""
+    # Valid locales (case-insensitive and aliases)
+    assert indexer._extract_file_lang("/path/show.ja.srt") == "jpn"
+    assert indexer._extract_file_lang("/path/show.JA.srt") == "jpn"
+    assert indexer._extract_file_lang("/path/show.jpn.ass") == "jpn"
+    assert indexer._extract_file_lang("/path/show.en.srt") == "eng"
+    assert indexer._extract_file_lang("/path/show.sp.srt") == "spa"
+    assert indexer._extract_file_lang("/path/show.spa.vtt") == "spa"
+
+    # Non-locale tokens should return None
+    assert indexer._extract_file_lang("/path/show.v2.srt") is None
+    assert indexer._extract_file_lang("/path/show.web.srt") is None
+    assert indexer._extract_file_lang("/path/show.crc.srt") is None
+    assert indexer._extract_file_lang("/path/show.srt") is None
+
+
+def test_resolve_timeouts(monkeypatch):
+    """Test that _resolve_timeouts resolves explicit, config, and default timeouts."""
+    # Explicit positive values
+    assert indexer._resolve_timeouts(100, 50) == (100, 50)
+    # Explicit non-positive (unlimited)
+    assert indexer._resolve_timeouts(0, -1) == (None, None)
+
+    # Defaults when config is empty
+    monkeypatch.setattr(indexer, "_load_config", lambda: {})
+    assert indexer._resolve_timeouts(None, None) == (
+        indexer.DEFAULT_EXTRACT_TIMEOUT,
+        indexer.DEFAULT_PROBE_TIMEOUT,
+    )
+
+    # Custom values from config
+    monkeypatch.setattr(
+        indexer,
+        "_load_config",
+        lambda: {"extractTimeout": 600, "probeTimeout": 120},
+    )
+    assert indexer._resolve_timeouts(None, None) == (600, 120)
+
+
+def test_extract_mkv_subtitles_allow_partial(tmp_path):
+    """Test that extract_mkv_subtitles rejects partial output when allow_partial=False."""
+    dummy_mkv = tmp_path / "test.mkv"
+    dummy_mkv.write_text("fake mkv")
+
+    probe_json = json.dumps({
+        "streams": [
+            {"index": 0, "codec_name": "subrip", "tags": {"language": "eng"}},
+        ]
+    })
+
+    def mock_subrun(*args, **kwargs):
+        """Mock subprocess.run to simulate probe success but extraction failure."""
+        from subprocess import CompletedProcess
+
+        cmd = args[0]
+        if "ffprobe" in cmd:
+            return CompletedProcess(cmd, 0, stdout=probe_json, stderr="")
+        # First batch ffmpeg fails, retry also fails
+        return CompletedProcess(cmd, 1, stdout="", stderr="ffmpeg error")
+
+    with patch("subprocess.run", side_effect=mock_subrun):
+        # With allow_partial=False (as in refresh), failure reports empty dict and failure status
+        subs, had_timeout, probe_ok = indexer.extract_mkv_subtitles(
+            str(dummy_mkv), allow_partial=False
+        )
+        assert subs == {}
+        assert probe_ok is True
+
+
+
 

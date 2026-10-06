@@ -343,12 +343,77 @@ def _extract_file_lang(path: str) -> Optional[str]:
         path (str): File path to inspect.
 
     Returns:
-        Optional[str]: Normalized 3-letter language code or None if no tag found.
+        Optional[str]: Normalized 3-letter language code or None if no valid tag found.
     """
-    m = re.search(r"\.([a-zA-Z]{2,3})\.(?:srt|ass|vtt)$", path)
+    m = re.search(r"\.([a-zA-Z]{2,3})\.(?:srt|ass|vtt)$", path, re.IGNORECASE)
     if m:
-        return _normalize_lang_code(m.group(1))
+        token = m.group(1).lower()
+        known = {
+            "en": "eng", "eng": "eng",
+            "ja": "jpn", "jpn": "jpn", "jp": "jpn",
+            "es": "spa", "spa": "spa", "sp": "spa",
+            "pt": "por", "por": "por",
+            "fr": "fra", "fra": "fra", "fre": "fra",
+            "de": "deu", "deu": "deu", "ger": "deu",
+            "it": "ita", "ita": "ita",
+            "zh": "zho", "zho": "zho", "chi": "zho",
+            "ko": "kor", "kor": "kor",
+            "ru": "rus", "rus": "rus",
+        }
+        return known.get(token)
     return None
+
+
+def _resolve_timeouts(
+    extract_timeout: Optional[int] = None,
+    probe_timeout: Optional[int] = None,
+) -> tuple[Optional[int], Optional[int]]:
+    """Resolve subprocess timeouts from explicit values, config.json, or defaults.
+
+    Args:
+        extract_timeout (Optional[int]): Subprocess timeout in seconds for extracting
+            subtitle tracks. If None, checks config.json ('extractTimeout' or 'extract_timeout')
+            or defaults to DEFAULT_EXTRACT_TIMEOUT (1800s). Set to 0 or negative for unlimited.
+        probe_timeout (Optional[int]): Subprocess timeout in seconds for ffprobe.
+            If None, checks config.json ('probeTimeout' or 'probe_timeout') or
+            defaults to DEFAULT_PROBE_TIMEOUT (300s). Set to 0 or negative for unlimited.
+
+    Returns:
+        tuple[Optional[int], Optional[int]]: Tuple of (effective_extract_timeout, effective_probe_timeout).
+    """
+    try:
+        config = _load_config() or {}
+    except Exception as e:
+        print(f"Error reading config.json: {e}")
+        config = {}
+
+    if extract_timeout is not None:
+        effective_extract = None if extract_timeout <= 0 else extract_timeout
+    else:
+        cfg_extract = config.get("extractTimeout", config.get("extract_timeout"))
+        if cfg_extract is not None:
+            try:
+                cfg_extract_val = int(cfg_extract)
+                effective_extract = None if cfg_extract_val <= 0 else cfg_extract_val
+            except (ValueError, TypeError, OverflowError):
+                effective_extract = DEFAULT_EXTRACT_TIMEOUT
+        else:
+            effective_extract = DEFAULT_EXTRACT_TIMEOUT
+
+    if probe_timeout is not None:
+        effective_probe = None if probe_timeout <= 0 else probe_timeout
+    else:
+        cfg_probe = config.get("probeTimeout", config.get("probe_timeout"))
+        if cfg_probe is not None:
+            try:
+                cfg_probe_val = int(cfg_probe)
+                effective_probe = None if cfg_probe_val <= 0 else cfg_probe_val
+            except (ValueError, TypeError, OverflowError):
+                effective_probe = DEFAULT_PROBE_TIMEOUT
+        else:
+            effective_probe = DEFAULT_PROBE_TIMEOUT
+
+    return effective_extract, effective_probe
 
 
 def prune_database():
@@ -422,37 +487,9 @@ def index_directory(
     """
     build_plex_cache()
     conn = get_db()
-    try:
-        config = _load_config() or {}
-    except Exception as e:
-        print(f"Error reading config.json: {e}")
-        config = {}
-
-    if extract_timeout is not None:
-        effective_extract_timeout = None if extract_timeout <= 0 else extract_timeout
-    else:
-        cfg_extract = config.get("extractTimeout", config.get("extract_timeout"))
-        if cfg_extract is not None:
-            try:
-                cfg_extract_val = int(cfg_extract)
-                effective_extract_timeout = None if cfg_extract_val <= 0 else cfg_extract_val
-            except (ValueError, TypeError, OverflowError):
-                effective_extract_timeout = DEFAULT_EXTRACT_TIMEOUT
-        else:
-            effective_extract_timeout = DEFAULT_EXTRACT_TIMEOUT
-
-    if probe_timeout is not None:
-        effective_probe_timeout = None if probe_timeout <= 0 else probe_timeout
-    else:
-        cfg_probe = config.get("probeTimeout", config.get("probe_timeout"))
-        if cfg_probe is not None:
-            try:
-                cfg_probe_val = int(cfg_probe)
-                effective_probe_timeout = None if cfg_probe_val <= 0 else cfg_probe_val
-            except (ValueError, TypeError, OverflowError):
-                effective_probe_timeout = DEFAULT_PROBE_TIMEOUT
-        else:
-            effective_probe_timeout = DEFAULT_PROBE_TIMEOUT
+    effective_extract_timeout, effective_probe_timeout = _resolve_timeouts(
+        extract_timeout, probe_timeout
+    )
 
     # Collect missing files that fall under the directory being indexed
     abs_dir = os.path.abspath(directory_path)
@@ -678,6 +715,7 @@ def extract_mkv_subtitles(
     file_path: str,
     extract_timeout: Optional[int] = None,
     probe_timeout: Optional[int] = None,
+    allow_partial: bool = True,
 ) -> tuple[dict[str, list[dict]], bool, bool]:
     """Extract supported subtitle tracks (jpn, eng, spa) from an MKV file.
 
@@ -688,6 +726,9 @@ def extract_mkv_subtitles(
         file_path (str): Path to the MKV file.
         extract_timeout (Optional[int]): Subprocess timeout in seconds for subtitle extraction.
         probe_timeout (Optional[int]): Subprocess timeout in seconds for ffprobe.
+        allow_partial (bool): Whether to preserve partially extracted output if fallback
+            extraction fails. Defaults to True for initial indexing; False should be used
+            for refreshes to prevent truncated tracks from causing sentence deletions.
 
     Returns:
         tuple[dict[str, list[dict]], bool, bool]: A tuple containing:
@@ -853,15 +894,22 @@ def extract_mkv_subtitles(
                             )
                             if s_res.returncode == 0:
                                 extracted_subs.append((retry_sub_path, lang, i))
-                            elif os.path.exists(temp_sub_path) and os.path.getsize(temp_sub_path) > 0:
+                            elif allow_partial and os.path.exists(temp_sub_path) and os.path.getsize(temp_sub_path) > 0:
                                 extracted_subs.append((temp_sub_path, lang, i))
+                            elif not allow_partial:
+                                print(f"Extraction failed for track {i} from {file_path}")
+                                return {}, False, True
                         except subprocess.TimeoutExpired:
                             print(f"Timed out extracting track {i} from {file_path}")
                             had_timeout = True
+                            if not allow_partial:
+                                return {}, True, True
                             break
             except subprocess.TimeoutExpired:
                 print(f"Timed out extracting subtitles from {file_path}")
                 had_timeout = True
+                if not allow_partial:
+                    return {}, True, True
 
         subs_by_lang = {}
         if extracted_subs:
@@ -1450,6 +1498,7 @@ def refresh_media(
             abs_path,
             extract_timeout=extract_timeout,
             probe_timeout=probe_timeout,
+            allow_partial=False,
         )
         if had_timeout:
             print(f"Timed out extracting subtitles from {abs_path}")
@@ -1620,6 +1669,9 @@ def refresh_file(
     """
     conn = get_db()
     abs_path = os.path.abspath(file_path)
+    extract_timeout, probe_timeout = _resolve_timeouts(
+        extract_timeout, probe_timeout
+    )
 
     if os.path.isdir(abs_path):
         refreshed_any = False
