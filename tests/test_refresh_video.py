@@ -521,7 +521,12 @@ def test_refresh_media_alignment_failure_rolls_back(test_db, tmp_path):
     new_sub = tmp_path / "sub.srt"
     new_sub.write_text("1\n00:00:01,000 --> 00:00:02,000\nOriginal sentence\n\n")
 
-    with patch("hagi.indexer.align_and_update_sentences", return_value=(-1, -1, -1)):
+    def mock_align(conn, media_id, lang, new_sentences, global_offset=0.0):
+        """Mutate a sentence in DB before failing to verify rollback undoes changes."""
+        conn.execute("UPDATE sentences SET text = 'Mutated before failure' WHERE media_id = ?", (media_id,))
+        return (-1, -1, -1)
+
+    with patch("hagi.indexer.align_and_update_sentences", side_effect=mock_align):
         res = indexer.refresh_media(test_db, mid, str(new_sub))
         assert res is False
 
@@ -670,8 +675,8 @@ def test_extract_mkv_subtitles_allow_partial(tmp_path):
         subs, had_timeout, probe_ok = indexer.extract_mkv_subtitles(
             str(dummy_mkv), allow_partial=False
         )
-        assert subs == {}
-        assert probe_ok is False
+        assert subs is None
+        assert probe_ok is True
 
 
 def test_parse_media_identifiers_excludes_release_year():
@@ -732,6 +737,19 @@ def test_prune_database_uses_resolved_timeouts(monkeypatch, test_db):
         indexer.prune_database()
         assert called_timeouts.get("extract") == 777
         assert called_timeouts.get("probe") == 888
+
+
+def test_refresh_file_directory_rejects_options(tmp_path):
+    """Test that refresh_file rejects calls on a directory when old_path or media_id is passed."""
+    dummy_dir = tmp_path / "Season 1"
+    dummy_dir.mkdir()
+
+    # Reject when old_path is provided
+    assert indexer.refresh_file(str(dummy_dir), old_path="/some/old/path") is False
+
+    # Reject when media_id is provided
+    assert indexer.refresh_file(str(dummy_dir), media_id=42) is False
+
 
 
 

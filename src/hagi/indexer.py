@@ -268,38 +268,28 @@ def process_subs(conn, file_path, subs, media_type="subtitle", language="unknown
         print(f"Indexed: {file_path} [{language}] ({len(sentences)} lines)")
 
 
-def detect_language(subs_obj):
-    """Heuristically detect the language of a subtitle object."""
+def detect_text_language(text: str) -> str:
+    """Heuristically detect the language of a raw text string."""
+    if not text:
+        return "unknown"
+
     jp_chars = 0
     sp_chars = 0
     por_chars = 0
-    total_chars = 0
+    total_chars = len(text)
 
-    lines_checked = 0
-    for line in subs_obj:
-        text = line.plaintext.strip()
-        if not text:
-            continue
+    for char in text:
+        code = ord(char)
+        # Hiragana, Katakana, CJK Ideographs
+        if 0x3040 <= code <= 0x309F or 0x30A0 <= code <= 0x30FF or 0x4E00 <= code <= 0x9FAF:
+            jp_chars += 1
+        elif char in "ñÑ¿¡":
+            sp_chars += 2
+        elif char in "áéíóúÁÉÍÓÚ":
+            sp_chars += 1
+        elif char in "ãõçêâôÃÕÇÊÂÔàèìòùÀÈÌÒÙ":
+            por_chars += 2
 
-        for char in text:
-            code = ord(char)
-            # Hiragana, Katakana, CJK Ideographs
-            if 0x3040 <= code <= 0x309F or 0x30A0 <= code <= 0x30FF or 0x4E00 <= code <= 0x9FAF:
-                jp_chars += 1
-            elif char in "ñÑ¿¡":
-                sp_chars += 2
-            elif char in "áéíóúÁÉÍÓÚ":
-                sp_chars += 1
-            elif char in "ãõçêâôÃÕÇÊÂÔàèìòùÀÈÌÒÙ":
-                por_chars += 2
-
-        total_chars += len(text)
-        lines_checked += 1
-        if lines_checked >= 50:
-            break
-
-    if total_chars == 0:
-        return "unknown"
     if jp_chars / total_chars > 0.05:
         return "jpn"
     if por_chars > sp_chars:
@@ -307,6 +297,24 @@ def detect_language(subs_obj):
     if sp_chars > 0:
         return "spa"
     return "eng"
+
+
+def detect_language(subs_obj):
+    """Heuristically detect the language of a subtitle object."""
+    texts = []
+    lines_checked = 0
+    for line in subs_obj:
+        text = line.plaintext.strip()
+        if not text:
+            continue
+        texts.append(text)
+        lines_checked += 1
+        if lines_checked >= 50:
+            break
+
+    if not texts:
+        return "unknown"
+    return detect_text_language(" ".join(texts))
 
 
 def _normalize_lang_code(code: Optional[str]) -> str:
@@ -602,7 +610,7 @@ def index_directory(
                         extract_timeout=effective_extract_timeout,
                         probe_timeout=effective_probe_timeout,
                     )
-                    if had_timeout or not probe_success:
+                    if had_timeout or not probe_success or subs_by_lang is None:
                         conn.rollback()
                     else:
                         show_title, season, episode, episode_title = get_plex_metadata(file_path)
@@ -725,7 +733,7 @@ def extract_mkv_subtitles(
     extract_timeout: Optional[int] = None,
     probe_timeout: Optional[int] = None,
     allow_partial: bool = True,
-) -> tuple[dict[str, list[dict]], bool, bool]:
+) -> tuple[Optional[dict[str, list[dict]]], bool, bool]:
     """Extract supported subtitle tracks (jpn, eng, spa) from an MKV file.
 
     Probes embedded subtitle streams and extracts them using ffmpeg into temporary files,
@@ -740,11 +748,11 @@ def extract_mkv_subtitles(
             for refreshes to prevent truncated tracks from causing sentence deletions.
 
     Returns:
-        tuple[dict[str, list[dict]], bool, bool]: A tuple containing:
-            - dict[str, list[dict]]: Dictionary mapping language code to sentence dicts with
-              'start_time', 'end_time', and 'text'.
+        tuple[Optional[dict[str, list[dict]]], bool, bool]: A tuple containing:
+            - Optional[dict[str, list[dict]]]: Dictionary mapping language code to sentence dicts with
+              'start_time', 'end_time', and 'text', or None if extraction failed.
             - bool: True if an extraction subprocess timed out, False otherwise.
-            - bool: True if probe succeeded, False if ffprobe failed or timed out.
+            - bool: True if ffprobe succeeded, False if ffprobe failed or timed out.
     """
     probe_cmd = [
         "ffprobe",
@@ -907,18 +915,18 @@ def extract_mkv_subtitles(
                                 extracted_subs.append((temp_sub_path, lang, i))
                             elif not allow_partial:
                                 print(f"Extraction failed for track {i} from {file_path}")
-                                return {}, False, False
+                                return None, False, True
                         except subprocess.TimeoutExpired:
                             print(f"Timed out extracting track {i} from {file_path}")
                             had_timeout = True
                             if not allow_partial:
-                                return {}, True, False
+                                return None, True, True
                             break
             except subprocess.TimeoutExpired:
                 print(f"Timed out extracting subtitles from {file_path}")
                 had_timeout = True
                 if not allow_partial:
-                    return {}, True, False
+                    return None, True, True
 
         subs_by_lang = {}
         if extracted_subs:
@@ -1521,6 +1529,9 @@ def refresh_media(
         if not probe_success:
             print(f"ffprobe failed for {abs_path}; aborting refresh to prevent data loss.")
             return False
+        if subs_by_lang is None:
+            print(f"Subtitle extraction failed for {abs_path}; aborting refresh to prevent data loss.")
+            return False
 
         total_updates = total_inserts = total_deletes = 0
         if subs_by_lang:
@@ -1612,7 +1623,9 @@ def refresh_media(
                 (media_id,),
             ).fetchall()
             stored_sample_text = "".join(r["text"] for r in stored_sample_rows if r["text"])
+            stored_detected = detect_text_language(stored_sample_text)
             new_sample_text = "".join(s["text"] for s in new_sentences[:20])
+            new_detected = detect_text_language(new_sample_text)
 
             has_stored_jp = any(
                 0x3040 <= ord(c) <= 0x30FF or 0x4E00 <= ord(c) <= 0x9FAF
@@ -1623,7 +1636,15 @@ def refresh_media(
                 for c in new_sample_text
             )
 
-            if (new_tag and new_tag not in norm_stored_map) or (has_stored_jp != has_new_jp and stored_sample_text):
+            diff_jp = has_stored_jp != has_new_jp and stored_sample_text
+            diff_detected = (
+                stored_detected != "unknown"
+                and new_detected != "unknown"
+                and stored_detected != new_detected
+                and bool(stored_sample_text)
+            )
+
+            if (new_tag and new_tag not in norm_stored_map) or diff_jp or diff_detected:
                 print(
                     f"Aborting refresh: detected language '{detected_lang}' does not match "
                     f"stored languages {stored_langs} for media {media_id}."
@@ -1689,6 +1710,9 @@ def refresh_file(
     )
 
     if os.path.isdir(abs_path):
+        if old_path or media_id is not None:
+            print("Cannot specify --old or --media-id when refreshing a directory.")
+            return False
         refreshed_any = False
         all_missing = [
             dict(r)
