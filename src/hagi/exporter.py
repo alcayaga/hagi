@@ -370,6 +370,8 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
             try:
                 os.utime(audio_out, None)
                 os.utime(image_out, None)
+                if os.path.exists(src_tag_file):
+                    os.utime(src_tag_file, None)
                 is_cached = True
                 return True, "Media returned from cache", audio_out, image_out, combined_text, is_cached
             except Exception:

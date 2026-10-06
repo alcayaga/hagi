@@ -1046,6 +1046,8 @@ def extract_mkv_subtitles(
                         seen_langs.add(final_lang)
                 except Exception as parse_e:
                     print(f"Error parsing track {i} in {file_path}: {parse_e}")
+                    if not allow_partial:
+                        return None, False, True
 
         return subs_by_lang, had_timeout, True
     finally:

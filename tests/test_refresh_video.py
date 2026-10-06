@@ -911,7 +911,10 @@ def test_extract_media_sole_candidate_with_generic_dir(test_db, tmp_path):
     ):
         mock_sub.return_value.returncode = 0
         with (
-            patch("os.path.exists", side_effect=lambda p: p == new_file or "tmp" in p),
+            patch(
+                "os.path.exists",
+                side_effect=lambda p: p == new_file or os.path.basename(p).startswith((".hagi_", "hagi_")),
+            ),
             patch("os.path.getsize", return_value=100),
             patch("os.replace"),
         ):
@@ -920,6 +923,8 @@ def test_extract_media_sole_candidate_with_generic_dir(test_db, tmp_path):
             )
             assert success is True
             assert cached is False
+            cmd_calls = [call[0][0] for call in mock_sub.call_args_list]
+            assert any(new_file in cmd for cmd in cmd_calls)
 
 
 def test_extract_media_invalidates_cache_on_source_change(test_db, tmp_path):
