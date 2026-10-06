@@ -739,16 +739,17 @@ def test_prune_database_uses_resolved_timeouts(monkeypatch, test_db):
         assert called_timeouts.get("probe") == 888
 
 
-def test_refresh_file_directory_rejects_options(tmp_path):
+def test_refresh_file_directory_rejects_options(test_db, tmp_path):
     """Test that refresh_file rejects calls on a directory when old_path or media_id is passed."""
     dummy_dir = tmp_path / "Season 1"
     dummy_dir.mkdir()
 
-    # Reject when old_path is provided
-    assert indexer.refresh_file(str(dummy_dir), old_path="/some/old/path") is False
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        # Reject when old_path is provided
+        assert indexer.refresh_file(str(dummy_dir), old_path="/some/old/path") is False
 
-    # Reject when media_id is provided
-    assert indexer.refresh_file(str(dummy_dir), media_id=42) is False
+        # Reject when media_id is provided
+        assert indexer.refresh_file(str(dummy_dir), media_id=42) is False
 
 
 
