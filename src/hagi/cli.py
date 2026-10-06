@@ -330,12 +330,18 @@ def anki(
 
 @app.command()
 def refresh(
-    path: str = typer.Argument(..., help="Path to the subtitle file to refresh."),
+    path: str = typer.Argument(..., help="Path to the subtitle or media file, or directory to refresh."),
+    old_path: Optional[str] = typer.Option(
+        None, "--old", "-o", help="Optional path to old media file being replaced."
+    ),
+    media_id: Optional[int] = typer.Option(
+        None, "--media-id", "-m", help="Optional media ID to refresh into."
+    ),
 ):
-    """Smart refresh an existing subtitle file in the database."""
+    """Smart refresh an existing subtitle or media file in the database."""
     db.init_db()
     console.print(f"[yellow]Refreshing {path}...[/yellow]")
-    success = indexer.refresh_file(path)
+    success = indexer.refresh_file(path, old_path=old_path, media_id=media_id)
     if not success:
         raise typer.Exit(code=1)
 

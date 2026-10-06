@@ -246,6 +246,20 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                     break
             if found_video:
                 break
+        if not found_video and target["media_id"]:
+            meta = conn.execute("SELECT season, episode FROM media WHERE id = ?", (target["media_id"],)).fetchone()
+            if meta and meta["season"] is not None and meta["episode"] is not None:
+                try:
+                    from .indexer import parse_media_identifiers
+                    if os.path.isdir(dir_name):
+                        for entry in os.scandir(dir_name):
+                            if entry.is_file() and entry.name.lower().endswith(video_exts):
+                                ids = parse_media_identifiers(entry.path)
+                                if ids.get("season") == meta["season"] and ids.get("episode") == meta["episode"]:
+                                    found_video = entry.path
+                                    break
+                except Exception:
+                    pass
 
         if found_video:
             mkv_path = found_video

@@ -190,5 +190,7 @@ config.json
 
 hagi.db-shm
 hagi.db-wal
+hagi.db.backup*
+*.backup*
 .vscode/
 
