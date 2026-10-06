@@ -264,7 +264,14 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
                                     cand_videos.append((entry.path, ids))
 
                         if len(cand_videos) == 1:
-                            found_video = cand_videos[0][0]
+                            cand_path, cand_ids = cand_videos[0]
+                            if meta["show_title"] and cand_ids.get("show_hint"):
+                                norm_show = re.sub(r"[^\w]", "", meta["show_title"].lower())
+                                norm_hint = re.sub(r"[^\w]", "", cand_ids["show_hint"].lower())
+                                if norm_show in norm_hint or norm_hint in norm_show:
+                                    found_video = cand_path
+                            else:
+                                found_video = cand_path
                         elif len(cand_videos) > 1 and meta["show_title"]:
                             norm_show = re.sub(r"[^\w]", "", meta["show_title"].lower())
                             matched = [

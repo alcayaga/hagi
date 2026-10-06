@@ -499,3 +499,109 @@ def test_find_matching_media_fingerprint_rejects_conflicting_episode(test_db, tm
 
     matched = indexer.find_matching_media(test_db, str(new_sub), media_type="subtitle")
     assert matched is None
+
+
+def test_refresh_file_specified_old_not_found(test_db, tmp_path):
+    """Test that refresh_file returns False when an explicit old path does not exist in DB."""
+    new_file = tmp_path / "new_video.mkv"
+    new_file.write_text("video content")
+
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        res = indexer.refresh_file(str(new_file), old_path="/nonexistent/old_video.mkv")
+        assert res is False
+
+
+def test_refresh_media_alignment_failure_rolls_back(test_db, tmp_path):
+    """Test that refresh_media rolls back changes if alignment reports a failure."""
+    old_sub = "/old/sub.srt"
+    mid = db.add_media(test_db, old_sub, "subtitle", show_title="Show", season=1, episode=1)
+    db.add_sentences(test_db, mid, [("eng", 1.0, 2.0, "Original sentence")])
+    test_db.commit()
+
+    new_sub = tmp_path / "sub.srt"
+    new_sub.write_text("1\n00:00:01,000 --> 00:00:02,000\nOriginal sentence\n\n")
+
+    with patch("hagi.indexer.align_and_update_sentences", return_value=(-1, -1, -1)):
+        res = indexer.refresh_media(test_db, mid, str(new_sub))
+        assert res is False
+
+    # Path and sentences should be uncommitted / rolled back
+    row = test_db.execute("SELECT path FROM media WHERE id = ?", (mid,)).fetchone()
+    assert row["path"] == old_sub
+    sentences = test_db.execute("SELECT text FROM sentences WHERE media_id = ?", (mid,)).fetchall()
+    assert len(sentences) == 1
+    assert sentences[0]["text"] == "Original sentence"
+
+
+def test_exporter_video_fallback_single_candidate_show_mismatch(test_db, tmp_path):
+    """Test that single candidate fallback does not match when show_hint conflicts with meta."""
+    from hagi import exporter
+
+    dir_path = tmp_path / "Season 34"
+    dir_path.mkdir()
+
+    # Video file from a completely different show with same season/episode
+    naruto_file = dir_path / "Naruto Shippuden - S34E21.mkv"
+    naruto_file.write_text("dummy video")
+
+    sub_file = dir_path / "Detective Conan - S34E21.srt"
+    mid = db.add_media(
+        test_db,
+        str(sub_file),
+        "subtitle",
+        show_title="Detective Conan",
+        season=34,
+        episode=21,
+    )
+    db.add_sentences(test_db, mid, [("jpn", 1.0, 3.0, "テスト台詞")])
+    test_db.commit()
+
+    sid = test_db.execute("SELECT id FROM sentences").fetchone()["id"]
+    exporter.clear_stream_info_cache()
+
+    with patch("hagi.exporter.db.get_db", return_value=test_db):
+        # Should reject Naruto and fall back to non-existent Detective Conan .mkv path
+        success, msg, _, _, _, _ = exporter.extract_media(sid, "/tmp/media")
+        assert success is False
+        assert "Video file not found" in msg
+        assert "Detective Conan - S34E21.mkv" in msg
+        assert "Naruto" not in msg
+
+    # Now add matching Detective Conan upgraded video file and remove Naruto file
+    naruto_file.unlink()
+    conan_file = dir_path / "Detective Conan - S34E21 - 1207 - Erai-raws.mkv"
+    conan_file.write_text("conan video")
+
+    real_exists = os.path.exists
+
+    def mock_exists(p: str) -> bool:
+        """Mock file existence so temporary media targets succeed while caches miss."""
+        base = os.path.basename(p)
+        if "_tmp_" in base or ".tmp." in base:
+            return True
+        if base.startswith(("hagi_", ".hagi_")):
+            return False
+        return real_exists(p)
+
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=mock_exists),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+    ):
+        mock_res = MagicMock()
+        mock_res.returncode = 0
+        mock_res.stdout = json.dumps(
+            {"streams": [{"codec_type": "video", "codec_name": "h264"}, {"codec_type": "audio", "codec_name": "aac"}]}
+        )
+        mock_subrun.return_value = mock_res
+
+        success, msg, _, _, _, _ = exporter.extract_media(sid, "/tmp/media")
+        assert success is True
+        ffprobe_args = mock_subrun.call_args_list[0][0][0]
+        assert str(conan_file) in ffprobe_args
+
+
+

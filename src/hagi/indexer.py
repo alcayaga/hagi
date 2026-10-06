@@ -981,7 +981,7 @@ def align_and_update_sentences(
         global_offset (float): Pre-estimated constant time offset between releases. Defaults to 0.0.
 
     Returns:
-        tuple[int, int, int]: (updates_count, inserts_count, deletes_count)
+        tuple[int, int, int]: (updates_count, inserts_count, deletes_count) or (-1, -1, -1) on failure.
     """
     query = (
         "SELECT id, language, start_time, end_time, text FROM sentences "
@@ -1153,7 +1153,7 @@ def align_and_update_sentences(
 
     if M > 0 and not curr_dp:
         print(f"Alignment notice: Could not align subtitle sentences for language {language}.")
-        return (0, 0, 0)
+        return (-1, -1, -1)
 
     if M not in back_ptr[N]:
         j = max(curr_dp.keys()) if curr_dp else 0
@@ -1473,6 +1473,10 @@ def refresh_media(
                 up, ins, d = align_and_update_sentences(
                     conn, media_id, lang, new_sentences, global_offset=offset
                 )
+                if up < 0:
+                    print(f"Alignment failed for media {media_id} [{lang}]; rolling back.")
+                    conn.rollback()
+                    return False
                 total_updates += up
                 total_inserts += ins
                 total_deletes += d
@@ -1577,6 +1581,10 @@ def refresh_media(
         up, ins, d = align_and_update_sentences(
             conn, media_id, lang, new_sentences, global_offset=offset
         )
+        if up < 0:
+            print(f"Alignment failed for media {media_id} [{lang}]; rolling back.")
+            conn.rollback()
+            return False
         print(f"Refreshed subtitle media {media_id} [{lang}]: {up} updated, {ins} inserted, {d} deleted.")
 
     else:
@@ -1673,6 +1681,9 @@ def refresh_file(
         row = conn.execute("SELECT id FROM media WHERE path = ?", (old_abs,)).fetchone()
         if row:
             target_id = row["id"]
+        else:
+            print(f"Specified old file path '{old_abs}' not found in database.")
+            return False
 
     if target_id is None:
         row = conn.execute("SELECT id FROM media WHERE path = ?", (abs_path,)).fetchone()
