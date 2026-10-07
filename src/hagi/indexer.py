@@ -120,25 +120,43 @@ def load_and_sanitize_subs(file_path, encoding="utf-8"):
     return pysubs2.SSAFile.from_string(content)
 
 
+class PlexError(Exception):
+    """Raised when an error occurs while communicating with Plex."""
+
+
 _plex_instance = None
 _plex_initialized = False
 
 
 def _get_plex():
+    """Connect to Plex server if configured.
+
+    Returns:
+        Optional[PlexServer]: PlexServer instance if configured, or None if not configured.
+
+    Raises:
+        PlexError: If Plex credentials are provided but connecting fails, or configuration is partial.
+    """
     global _plex_instance, _plex_initialized
     if _plex_initialized:
         return _plex_instance
-    _plex_initialized = True
+    PLEX_URL = os.getenv("PLEX_URL")
+    PLEX_TOKEN = os.getenv("PLEX_TOKEN")
+    if not PLEX_URL and not PLEX_TOKEN:
+        _plex_initialized = True
+        _plex_instance = None
+        return None
+    if bool(PLEX_URL) != bool(PLEX_TOKEN):
+        raise PlexError("Both PLEX_URL and PLEX_TOKEN must be set to connect to Plex.")
     try:
         from plexapi.server import PlexServer
 
-        PLEX_URL = os.getenv("PLEX_URL")
-        PLEX_TOKEN = os.getenv("PLEX_TOKEN")
-        if PLEX_URL and PLEX_TOKEN:
-            _plex_instance = PlexServer(PLEX_URL, PLEX_TOKEN)
+        _plex_instance = PlexServer(PLEX_URL, PLEX_TOKEN)
+        _plex_initialized = True
+        return _plex_instance
     except Exception as e:
-        print(f"Warning: Could not connect to Plex: {e}")
-    return _plex_instance
+        _plex_initialized = False
+        raise PlexError(f"Could not connect to Plex: {e}") from e
 
 
 plex_path_cache = {}
@@ -148,7 +166,11 @@ _plex_cache_built = False
 
 
 def build_plex_cache():
-    """Build the cache of Plex paths and metadata."""
+    """Build the cache of Plex paths and metadata.
+
+    Raises:
+        PlexError: If connecting to Plex or querying Plex libraries fails.
+    """
     global _plex_cache_built
     if _plex_cache_built:
         return
@@ -207,7 +229,9 @@ def build_plex_cache():
                                 plex_path_cache[base_key] = val
         _plex_cache_built = True
     except Exception as e:
-        print(f"Error building Plex cache: {e}")
+        _plex_cache_built = False
+        plex_path_cache.clear()
+        raise PlexError(f"Error building Plex cache: {e}") from e
 
 
 SUPPORTED_LOCALES = {

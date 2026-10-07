@@ -410,3 +410,23 @@ def test_cli_anki_search_json(monkeypatch):
     assert len(output_data) == 2
     assert output_data[0]["noteId"] == 55555
     assert output_data[1]["noteId"] == 66666
+
+
+def test_index_cli_halts_on_plex_error(tmp_path, monkeypatch):
+    """Test that index command stops and exits with code 1 when a PlexError occurs."""
+    from hagi import db, indexer
+
+    def mock_index_dir(dir_path, extract_timeout=None):
+        """Simulate index_directory failing due to a Plex error."""
+        raise indexer.PlexError("Error building Plex cache: (401) unauthorized")
+
+    monkeypatch.setattr(indexer, "index_directory", mock_index_dir)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    d = tmp_path / "anime_dir"
+    d.mkdir()
+
+    result = runner.invoke(app, ["index", str(d)])
+    assert result.exit_code == 1
+    assert "Error building Plex cache: (401) unauthorized" in result.stdout
+    assert "Indexing complete!" not in result.stdout

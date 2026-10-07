@@ -70,22 +70,28 @@ def index(
             console.print("[red]Error: Please provide a directory argument or specify 'directories' in config.json.[/red]")
             raise typer.Exit(code=1)
 
-    for dir_path in directories_to_index:
-        if not os.path.isdir(dir_path):
-            if directory:
-                console.print(f"[red]Error: Directory '{dir_path}' does not exist or is not a directory.[/red]")
-                raise typer.Exit(code=1)
+    try:
+        for dir_path in directories_to_index:
+            if not os.path.isdir(dir_path):
+                if directory:
+                    console.print(f"[red]Error: Directory '{dir_path}' does not exist or is not a directory.[/red]")
+                    raise typer.Exit(code=1)
+                else:
+                    console.print(
+                        f"[yellow]Warning: Directory '{dir_path}' does not exist or is not a directory. Skipping.[/yellow]"
+                    )
+                    continue
+
+            console.print(f"Indexing directory: [bold]{dir_path}[/bold]...")
+            if timeout is not None:
+                indexer.index_directory(dir_path, extract_timeout=timeout)
             else:
-                console.print(f"[yellow]Warning: Directory '{dir_path}' does not exist or is not a directory. Skipping.[/yellow]")
-                continue
+                indexer.index_directory(dir_path)
 
-        console.print(f"Indexing directory: [bold]{dir_path}[/bold]...")
-        if timeout is not None:
-            indexer.index_directory(dir_path, extract_timeout=timeout)
-        else:
-            indexer.index_directory(dir_path)
-
-    console.print("[green]Indexing complete![/green]")
+        console.print("[green]Indexing complete![/green]")
+    except indexer.PlexError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(code=1)
 
 
 @app.command()

@@ -1038,3 +1038,64 @@ def test_mkv_both_batch_and_retry_fail(test_db):
         assert len(sentences) == 0
 
 
+def test_build_plex_cache_raises_plex_error(monkeypatch):
+    """Ensure build_plex_cache raises PlexError and clears cache on Plex API error."""
+    with patch("hagi.indexer._get_plex") as mock_get_plex, patch("os.path.exists", return_value=False):
+        mock_plex = mock_get_plex.return_value
+        mock_plex.library.sections.side_effect = Exception("(401) unauthorized")
+
+        monkeypatch.setattr(indexer, "_plex_cache_built", False)
+        monkeypatch.setattr(indexer, "plex_path_cache", {"pre_existing": ("Old Show", 1, 1, "Old Title")})
+
+        with pytest.raises(indexer.PlexError) as exc_info:
+            indexer.build_plex_cache()
+
+        assert "Error building Plex cache" in str(exc_info.value)
+        assert "(401) unauthorized" in str(exc_info.value)
+        assert indexer._plex_cache_built is False
+        assert len(indexer.plex_path_cache) == 0
+
+
+def test_get_plex_connection_error_raises_plex_error(monkeypatch):
+    """Ensure _get_plex raises PlexError when PlexServer connection fails."""
+    monkeypatch.setenv("PLEX_URL", "http://localhost:32400")
+    monkeypatch.setenv("PLEX_TOKEN", "fake_token")
+    monkeypatch.setattr(indexer, "_plex_initialized", False)
+    monkeypatch.setattr(indexer, "_plex_instance", None)
+
+    with patch("plexapi.server.PlexServer", side_effect=Exception("Connection refused")):
+        with pytest.raises(indexer.PlexError) as exc_info:
+            indexer._get_plex()
+
+        assert "Could not connect to Plex" in str(exc_info.value)
+        assert "Connection refused" in str(exc_info.value)
+        assert indexer._plex_initialized is False
+
+
+def test_get_plex_partial_env_raises_plex_error(monkeypatch):
+    """Ensure _get_plex raises PlexError when only one of PLEX_URL or PLEX_TOKEN is set."""
+    monkeypatch.setenv("PLEX_URL", "http://localhost:32400")
+    monkeypatch.delenv("PLEX_TOKEN", raising=False)
+    monkeypatch.setattr(indexer, "_plex_initialized", False)
+    monkeypatch.setattr(indexer, "_plex_instance", None)
+
+    with pytest.raises(indexer.PlexError) as exc_info:
+        indexer._get_plex()
+
+    assert "Both PLEX_URL and PLEX_TOKEN must be set" in str(exc_info.value)
+
+
+def test_index_directory_halts_on_plex_error(monkeypatch):
+    """Ensure index_directory raises PlexError and stops before processing files."""
+    def mock_build_cache():
+        """Raise PlexError simulating a Plex communication failure."""
+        raise indexer.PlexError("Plex connection failed")
+
+    monkeypatch.setattr(indexer, "build_plex_cache", mock_build_cache)
+
+    with pytest.raises(indexer.PlexError) as exc_info:
+        indexer.index_directory("/fake/path")
+
+    assert "Plex connection failed" in str(exc_info.value)
+
+
