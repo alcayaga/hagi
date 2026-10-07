@@ -12,6 +12,7 @@ from .config import (
     DEFAULT_PROBE_TIMEOUT,
     _load_config,
     _resolve_timeouts,
+    is_missing_file,
 )
 from .extractor import (
     BITMAP_SUBTITLE_CODECS,
@@ -80,6 +81,7 @@ __all__ = [
     "index_directory",
     "prune_database",
     "get_db",
+    "is_missing_file",
     "_load_config",
     "_resolve_timeouts",
     "_get_plex",

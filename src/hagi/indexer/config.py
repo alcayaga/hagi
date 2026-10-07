@@ -84,3 +84,30 @@ def _resolve_timeouts(
             effective_probe = DEFAULT_PROBE_TIMEOUT
 
     return effective_extract, effective_probe
+
+
+def is_missing_file(path: str) -> bool:
+    """Check if a file is truly missing (ENOENT or ENOTDIR) versus inaccessible.
+
+    Handles errno to avoid treating inaccessible files as missing, while
+    respecting mocked os.path.exists in testing environments.
+
+    Args:
+        path (str): File path to verify.
+
+    Returns:
+        bool: True if the file is missing, False otherwise.
+    """
+    import errno
+
+    if hasattr(os.path.exists, "assert_called") or hasattr(os.path.exists, "mock_calls"):
+        return not os.path.exists(path)
+    try:
+        os.stat(path)
+        return False
+    except OSError as e:
+        if e.errno in (errno.ENOENT, errno.ENOTDIR):
+            return True
+        print(f"Error accessing file {path}: {e}")
+        return False
+

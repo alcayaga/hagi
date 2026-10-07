@@ -1,11 +1,11 @@
 """Database lifecycle orchestration: indexing, refreshing, and pruning media."""
 
-import errno
 import os
 import sys
 from typing import Optional
 
 from ..db import add_media, add_sentences, update_media_path
+from .config import is_missing_file
 from .subtitles import SUBTITLE_ENCODINGS
 
 
@@ -48,17 +48,12 @@ def prune_database() -> None:
     pruned_count = 0
     missing_media: dict[int, dict] = {}
     for row in cursor.fetchall():
-        try:
-            os.stat(row["path"])
-        except OSError as e:
-            if e.errno in (errno.ENOENT, errno.ENOTDIR):
-                row_dict = dict(row)
-                row_dict["type"] = row["type"] or (
-                    "mkv_embedded" if row["path"].endswith(".mkv") else "subtitle"
-                )
-                missing_media[row["id"]] = row_dict
-            else:
-                print(f"Error accessing file {row['path']}: {e}")
+        if is_missing_file(row["path"]):
+            row_dict = dict(row)
+            row_dict["type"] = row["type"] or (
+                "mkv_embedded" if row["path"].endswith(".mkv") else "subtitle"
+            )
+            missing_media[row["id"]] = row_dict
 
     matched_cands: dict[str, Optional[int]] = {}
     for row_id, row in list(missing_media.items()):
@@ -159,7 +154,7 @@ def index_directory(
     )
     missing_media = {}
     for row in cursor.fetchall():
-        if not os.path.exists(row["path"]):
+        if is_missing_file(row["path"]):
             row_dict = dict(row)
             row_dict["type"] = row["type"] or (
                 "mkv_embedded" if row["path"].endswith(".mkv") else "subtitle"
@@ -204,7 +199,12 @@ def index_directory(
                     print(f"Skipping (already indexed): {file_path}")
                 continue
 
-            media_type = "mkv_embedded" if file.endswith(".mkv") else ("subtitle" if file.endswith((".ass", ".srt")) else None)
+            file_lower = file.lower()
+            media_type = (
+                "mkv_embedded"
+                if file_lower.endswith(".mkv")
+                else ("subtitle" if file_lower.endswith((".ass", ".srt")) else None)
+            )
             if not media_type:
                 continue
 
@@ -250,7 +250,7 @@ def index_directory(
                     failed_upgrades.add(matched_mid)
                     continue
 
-            if file.endswith((".ass", ".srt")):
+            if media_type == "subtitle":
                 try:
                     subs = None
                     for enc in SUBTITLE_ENCODINGS:
@@ -271,7 +271,7 @@ def index_directory(
                 except Exception as e:
                     print(f"Error indexing {file_path}: {e}")
 
-            elif file.endswith(".mkv"):
+            elif media_type == "mkv_embedded":
                 try:
                     subs_by_lang, had_timeout, probe_success = idx.extract_mkv_subtitles(
                         file_path,
@@ -603,7 +603,7 @@ def refresh_file(
         for r in conn.execute(
             "SELECT id, path, type, show_title, season, episode, episode_title FROM media"
         ).fetchall():
-            if not os.path.exists(r["path"]):
+            if is_missing_file(r["path"]):
                 r_dict = dict(r)
                 r_dict["type"] = r["type"] or (
                     "mkv_embedded" if r["path"].endswith(".mkv") else "subtitle"

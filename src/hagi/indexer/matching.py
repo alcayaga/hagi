@@ -5,6 +5,7 @@ import re
 import sys
 from typing import Optional
 
+from .config import is_missing_file
 from .plex import get_plex_metadata
 from .subtitles import (
     SUBTITLE_ENCODINGS,
@@ -222,7 +223,7 @@ def find_matching_media(
         ).fetchall()
         missing_media_rows = []
         for r in rows:
-            if not os.path.exists(r["path"]):
+            if is_missing_file(r["path"]):
                 r_dict = dict(r)
                 r_dict["type"] = r["type"] or (
                     "mkv_embedded" if r["path"].endswith(".mkv") else "subtitle"
