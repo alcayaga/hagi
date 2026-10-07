@@ -147,8 +147,8 @@ def index_directory(
 
     # Collect missing files that fall under the directory being indexed
     abs_dir = os.path.abspath(directory_path)
-    like_pattern = abs_dir if abs_dir.endswith(os.sep) else f"{abs_dir}{os.sep}"
-    like_pattern = like_pattern.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    dir_prefix = abs_dir if abs_dir.endswith(os.sep) else f"{abs_dir}{os.sep}"
+    like_pattern = dir_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
 
     cursor = conn.execute(
         "SELECT id, path, type, show_title, season, episode, episode_title FROM media WHERE path LIKE ? ESCAPE '\\'",
@@ -156,6 +156,8 @@ def index_directory(
     )
     missing_media = {}
     for row in cursor.fetchall():
+        if not row["path"].startswith(dir_prefix):
+            continue
         if idx.is_missing_file(row["path"]):
             row_dict = dict(row)
             row_dict["type"] = _infer_media_type(row)
