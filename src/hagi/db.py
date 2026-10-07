@@ -160,6 +160,36 @@ def add_media(conn, path, media_type, show_title=None, season=None, episode=None
     return cursor.lastrowid
 
 
+def update_media_path(conn, media_id, new_path, show_title=None, season=None, episode=None, episode_title=None):
+    """Update the file path and metadata of an existing media entry.
+
+    Args:
+        conn (sqlite3.Connection): Database connection.
+        media_id (int): The ID of the media file to update.
+        new_path (str): The new file path.
+        show_title (str, optional): The name of the show.
+        season (int, optional): The season number.
+        episode (int, optional): The episode number.
+        episode_title (str, optional): The title of the episode.
+
+    Returns:
+        bool: True if a row was updated, False otherwise.
+    """
+    cursor = conn.execute(
+        """
+        UPDATE media
+        SET path = ?,
+            show_title = COALESCE(?, show_title),
+            season = COALESCE(?, season),
+            episode = COALESCE(?, episode),
+            episode_title = COALESCE(?, episode_title)
+        WHERE id = ?
+        """,
+        (new_path, show_title, season, episode, episode_title, media_id),
+    )
+    return cursor.rowcount > 0
+
+
 def add_sentences(conn, media_id, sentences):
     """Add sentences to the database.
 
