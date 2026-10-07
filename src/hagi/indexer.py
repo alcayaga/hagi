@@ -199,8 +199,7 @@ def build_plex_cache():
     try:
         config = _load_config()
     except Exception as e:
-        print(f"Error reading config.json for Plex libraries: {e}")
-        return
+        raise PlexError(f"Error reading config.json for Plex libraries: {e}") from e
 
     try:
         allowed_libraries = config.get("plex_libraries") if config else None

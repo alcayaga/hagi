@@ -405,7 +405,9 @@ def test_build_plex_cache_filtering():
         indexer._plex_cache_built = False
         indexer.plex_path_cache = {}
         with patch("builtins.open", mock_open(read_data="INVALID_JSON")):
-            indexer.build_plex_cache()
+            with pytest.raises(indexer.PlexError) as exc_info:
+                indexer.build_plex_cache()
+            assert "Error reading config.json for Plex libraries" in str(exc_info.value)
         assert len(indexer.plex_path_cache) == 0
 
 
