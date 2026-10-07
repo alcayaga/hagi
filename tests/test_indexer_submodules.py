@@ -37,9 +37,9 @@ from hagi.indexer.subtitles import (
 
 
 @pytest.fixture
-def test_db():
+def test_db(monkeypatch):
     """Create an in-memory SQLite database connection for testing."""
-    db.DB_PATH = ":memory:"
+    monkeypatch.setattr(db, "DB_PATH", ":memory:")
     conn = db.init_db()
     yield conn
     conn.close()

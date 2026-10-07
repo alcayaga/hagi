@@ -245,17 +245,17 @@ def find_matching_media(
                 cand_ids = [c["id"] for c in candidates]
                 ph = ",".join("?" for _ in cand_ids)
                 lang_rows = conn.execute(
-                    f"SELECT media_id, language FROM sentences WHERE media_id IN ({ph})",
+                    f"SELECT DISTINCT media_id, language FROM sentences WHERE media_id IN ({ph})",
                     cand_ids,
                 ).fetchall()
                 stored_by_mid: dict[int, set[str]] = {}
                 for r in lang_rows:
                     if r["language"]:
                         stored_by_mid.setdefault(r["media_id"], set()).add(norm_lang_fn(r["language"]))
-                    candidates = [
-                        c for c in candidates
-                        if not stored_by_mid.get(c["id"]) or new_lang_tag in stored_by_mid[c["id"]]
-                    ]
+                candidates = [
+                    c for c in candidates
+                    if not stored_by_mid.get(c["id"]) or new_lang_tag in stored_by_mid[c["id"]]
+                ]
         else:
             candidates = [
                 c for c in candidates
