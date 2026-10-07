@@ -1093,10 +1093,13 @@ def test_index_directory_halts_on_plex_error(monkeypatch):
 
     monkeypatch.setattr(indexer, "build_plex_cache", mock_build_cache)
 
-    with pytest.raises(indexer.PlexError) as exc_info:
-        indexer.index_directory("/fake/path")
+    with patch("os.walk") as mock_walk, patch("hagi.indexer.get_db") as mock_get_db:
+        with pytest.raises(indexer.PlexError) as exc_info:
+            indexer.index_directory("/fake/path")
 
-    assert "Plex connection failed" in str(exc_info.value)
+        assert "Plex connection failed" in str(exc_info.value)
+        mock_walk.assert_not_called()
+        mock_get_db.assert_not_called()
 
 
 def test_get_plex_timeout_configuration(monkeypatch):

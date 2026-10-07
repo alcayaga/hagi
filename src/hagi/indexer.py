@@ -156,8 +156,8 @@ def _get_plex():
             raw_cfg_timeout = config.get("plex_timeout") or config.get("plexTimeout")
             if raw_cfg_timeout is not None and int(raw_cfg_timeout) > 0:
                 plex_timeout = int(raw_cfg_timeout)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Warning: Failed to load plex_timeout from config.json: {e}")
     env_timeout = os.getenv("PLEX_TIMEOUT")
     if env_timeout:
         try:
@@ -165,7 +165,7 @@ def _get_plex():
             if val > 0:
                 plex_timeout = val
         except ValueError:
-            pass
+            print(f"Warning: Invalid PLEX_TIMEOUT environment variable: {env_timeout}")
     try:
         from plexapi.server import PlexServer
 
