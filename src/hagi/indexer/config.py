@@ -100,8 +100,6 @@ def is_missing_file(path: str) -> bool:
     """
     import errno
 
-    if hasattr(os.path.exists, "assert_called") or hasattr(os.path.exists, "mock_calls"):
-        return not os.path.exists(path)
     try:
         os.stat(path)
         return False
