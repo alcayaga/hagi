@@ -437,17 +437,14 @@ def test_incremental_indexing_removes_missing_files(test_db):
     other_media_id = db.add_media(test_db, "/other/path/other_episode.srt", "subtitle")
     db.add_sentences(test_db, other_media_id, [("eng", 0, 1, "Other sentence")])
 
-    def mock_exists(path):
-        if path == "/fake/path/deleted_episode.srt":
-            return False
-        if path == "/other/path/other_episode.srt":
-            return False
-        return True
+    def mock_is_missing(path):
+        """Mock is_missing_file to simulate deleted files."""
+        return path in ("/fake/path/deleted_episode.srt", "/other/path/other_episode.srt")
 
     with (
         patch("os.walk") as mock_walk,
         patch("hagi.indexer.get_db", return_value=test_db),
-        patch("os.path.exists", side_effect=mock_exists),
+        patch("hagi.indexer.is_missing_file", side_effect=mock_is_missing),
     ):
         mock_walk.return_value = []
         indexer.index_directory("/fake/path")
