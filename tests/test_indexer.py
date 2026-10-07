@@ -1099,3 +1099,59 @@ def test_index_directory_halts_on_plex_error(monkeypatch):
     assert "Plex connection failed" in str(exc_info.value)
 
 
+def test_get_plex_timeout_configuration(monkeypatch):
+    """Ensure _get_plex forwards timeout from default, config.json, and PLEX_TIMEOUT env."""
+    monkeypatch.setenv("PLEX_URL", "http://localhost:32400")
+    monkeypatch.setenv("PLEX_TOKEN", "fake_token")
+    monkeypatch.delenv("PLEX_TIMEOUT", raising=False)
+
+    recorded_timeouts = []
+
+    def mock_server(baseurl, token, timeout=None):
+        """Record PlexServer initialization arguments."""
+        recorded_timeouts.append(timeout)
+        return MagicMock()
+
+    # 1. Default timeout (120s) when no config or env
+    monkeypatch.setattr(indexer, "_plex_initialized", False)
+    monkeypatch.setattr(indexer, "_plex_instance", None)
+    with (
+        patch("plexapi.server.PlexServer", side_effect=mock_server),
+        patch("hagi.indexer._load_config", return_value=None),
+    ):
+        indexer._get_plex()
+    assert recorded_timeouts[-1] == 120
+
+    # 2. Config timeout from config.json ("plex_timeout")
+    monkeypatch.setattr(indexer, "_plex_initialized", False)
+    monkeypatch.setattr(indexer, "_plex_instance", None)
+    with (
+        patch("plexapi.server.PlexServer", side_effect=mock_server),
+        patch("hagi.indexer._load_config", return_value={"plex_timeout": 90}),
+    ):
+        indexer._get_plex()
+    assert recorded_timeouts[-1] == 90
+
+    # 3. Env timeout overrides config.json
+    monkeypatch.setenv("PLEX_TIMEOUT", "180")
+    monkeypatch.setattr(indexer, "_plex_initialized", False)
+    monkeypatch.setattr(indexer, "_plex_instance", None)
+    with (
+        patch("plexapi.server.PlexServer", side_effect=mock_server),
+        patch("hagi.indexer._load_config", return_value={"plex_timeout": 90}),
+    ):
+        indexer._get_plex()
+    assert recorded_timeouts[-1] == 180
+
+    # 4. Non-positive timeout values retain default
+    monkeypatch.setenv("PLEX_TIMEOUT", "0")
+    monkeypatch.setattr(indexer, "_plex_initialized", False)
+    monkeypatch.setattr(indexer, "_plex_instance", None)
+    with (
+        patch("plexapi.server.PlexServer", side_effect=mock_server),
+        patch("hagi.indexer._load_config", return_value={"plex_timeout": -5}),
+    ):
+        indexer._get_plex()
+    assert recorded_timeouts[-1] == 120
+
+

@@ -20,6 +20,7 @@ load_dotenv()
 REFRESH_THRESHOLD_SECONDS = 2.0
 DEFAULT_EXTRACT_TIMEOUT = 1800
 DEFAULT_PROBE_TIMEOUT = 300
+DEFAULT_PLEX_TIMEOUT = 120
 BITMAP_SUBTITLE_CODECS = {
     "hdmv_pgs_subtitle",
     "dvd_subtitle",
@@ -148,10 +149,27 @@ def _get_plex():
         return None
     if bool(PLEX_URL) != bool(PLEX_TOKEN):
         raise PlexError("Both PLEX_URL and PLEX_TOKEN must be set to connect to Plex.")
+    plex_timeout = DEFAULT_PLEX_TIMEOUT
+    try:
+        config = _load_config()
+        if config:
+            raw_cfg_timeout = config.get("plex_timeout") or config.get("plexTimeout")
+            if raw_cfg_timeout is not None and int(raw_cfg_timeout) > 0:
+                plex_timeout = int(raw_cfg_timeout)
+    except Exception:
+        pass
+    env_timeout = os.getenv("PLEX_TIMEOUT")
+    if env_timeout:
+        try:
+            val = int(env_timeout)
+            if val > 0:
+                plex_timeout = val
+        except ValueError:
+            pass
     try:
         from plexapi.server import PlexServer
 
-        _plex_instance = PlexServer(PLEX_URL, PLEX_TOKEN)
+        _plex_instance = PlexServer(PLEX_URL, PLEX_TOKEN, timeout=plex_timeout)
         _plex_initialized = True
         return _plex_instance
     except Exception as e:
