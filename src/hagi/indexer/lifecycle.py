@@ -4,14 +4,13 @@ import os
 import sys
 from typing import Optional
 
-from ..db import add_media, add_sentences, update_media_path
-from .config import is_missing_file
-from .subtitles import SUBTITLE_ENCODINGS
+
 
 
 def _get_indexer():
     """Return the parent hagi.indexer module to support dynamic mock patching."""
-    return sys.modules.get("hagi.indexer") or sys.modules[__name__]
+    import hagi.indexer
+    return sys.modules.get("hagi.indexer") or hagi.indexer
 
 
 def process_subs(conn, file_path: str, subs, media_type: str = "subtitle", language: str = "unknown") -> None:
@@ -26,7 +25,7 @@ def process_subs(conn, file_path: str, subs, media_type: str = "subtitle", langu
     """
     idx = _get_indexer()
     show_title, season, episode, episode_title = idx.get_plex_metadata(file_path)
-    media_id = add_media(conn, file_path, media_type, show_title, season, episode, episode_title)
+    media_id = idx.add_media(conn, file_path, media_type, show_title, season, episode, episode_title)
     sentences = []
 
     for line in subs:
@@ -35,8 +34,13 @@ def process_subs(conn, file_path: str, subs, media_type: str = "subtitle", langu
             sentences.append((language, line.start / 1000.0, line.end / 1000.0, text))
 
     if sentences:
-        add_sentences(conn, media_id, sentences)
+        idx.add_sentences(conn, media_id, sentences)
         print(f"Indexed: {file_path} [{language}] ({len(sentences)} lines)")
+
+
+def _infer_media_type(row) -> str:
+    """Return the stored media type, or infer it from the file extension."""
+    return row["type"] or ("mkv_embedded" if row["path"].lower().endswith(".mkv") else "subtitle")
 
 
 def prune_database() -> None:
@@ -48,11 +52,9 @@ def prune_database() -> None:
     pruned_count = 0
     missing_media: dict[int, dict] = {}
     for row in cursor.fetchall():
-        if is_missing_file(row["path"]):
+        if idx.is_missing_file(row["path"]):
             row_dict = dict(row)
-            row_dict["type"] = row["type"] or (
-                "mkv_embedded" if row["path"].endswith(".mkv") else "subtitle"
-            )
+            row_dict["type"] = _infer_media_type(row)
             missing_media[row["id"]] = row_dict
 
     matched_cands: dict[str, Optional[int]] = {}
@@ -154,11 +156,9 @@ def index_directory(
     )
     missing_media = {}
     for row in cursor.fetchall():
-        if is_missing_file(row["path"]):
+        if idx.is_missing_file(row["path"]):
             row_dict = dict(row)
-            row_dict["type"] = row["type"] or (
-                "mkv_embedded" if row["path"].endswith(".mkv") else "subtitle"
-            )
+            row_dict["type"] = _infer_media_type(row)
             missing_media[row["id"]] = row_dict
     failed_upgrades = set()
 
@@ -253,7 +253,7 @@ def index_directory(
             if media_type == "subtitle":
                 try:
                     subs = None
-                    for enc in SUBTITLE_ENCODINGS:
+                    for enc in idx.SUBTITLE_ENCODINGS:
                         try:
                             subs = idx.load_and_sanitize_subs(file_path, encoding=enc)
                             break
@@ -270,6 +270,7 @@ def index_directory(
                         print(f"Failed to decode subtitle file: {file_path}")
                 except Exception as e:
                     print(f"Error indexing {file_path}: {e}")
+                    conn.rollback()
 
             elif media_type == "mkv_embedded":
                 try:
@@ -282,7 +283,7 @@ def index_directory(
                         conn.rollback()
                     else:
                         show_title, season, episode, episode_title = idx.get_plex_metadata(file_path)
-                        media_id = add_media(
+                        media_id = idx.add_media(
                             conn,
                             file_path,
                             "mkv_embedded",
@@ -297,11 +298,12 @@ def index_directory(
                                 for s in sentences_list
                             ]
                             if sentence_tuples:
-                                add_sentences(conn, media_id, sentence_tuples)
+                                idx.add_sentences(conn, media_id, sentence_tuples)
                                 print(f"Indexed: {file_path} [{lang}] ({len(sentence_tuples)} lines)")
                         conn.commit()
                 except Exception as e:
                     print(f"Error extracting from {file_path}: {e}")
+                    conn.rollback()
 
     # Remove remaining missing files that were not upgraded
     for mid, m in list(missing_media.items()):
@@ -449,7 +451,7 @@ def refresh_media(
 
     elif abs_path.lower().endswith((".ass", ".srt")):
         subs = None
-        for enc in SUBTITLE_ENCODINGS:
+        for enc in idx.SUBTITLE_ENCODINGS:
             try:
                 subs = idx.load_and_sanitize_subs(abs_path, encoding=enc)
                 break
@@ -561,7 +563,7 @@ def refresh_media(
         return False
 
     show_title, season, episode, episode_title = idx.get_plex_metadata(abs_path)
-    update_media_path(conn, media_id, abs_path, show_title, season, episode, episode_title)
+    idx.update_media_path(conn, media_id, abs_path, show_title, season, episode, episode_title)
     conn.commit()
     return True
 
@@ -603,11 +605,9 @@ def refresh_file(
         for r in conn.execute(
             "SELECT id, path, type, show_title, season, episode, episode_title FROM media"
         ).fetchall():
-            if is_missing_file(r["path"]):
+            if idx.is_missing_file(r["path"]):
                 r_dict = dict(r)
-                r_dict["type"] = r["type"] or (
-                    "mkv_embedded" if r["path"].endswith(".mkv") else "subtitle"
-                )
+                r_dict["type"] = _infer_media_type(r)
                 all_missing.append(r_dict)
         missing_by_type = {
             "mkv_embedded": [m for m in all_missing if m.get("type") == "mkv_embedded"],

@@ -59,11 +59,8 @@ def test_config_submodule_load(tmp_path, monkeypatch):
 
     # Invalid non-dict JSON raises ValueError
     cfg_file.write_text(json.dumps(["not", "a", "dict"]))
-    try:
+    with pytest.raises(ValueError):
         _load_config()
-        assert False, "Expected ValueError"
-    except ValueError:
-        pass
 
 
 def test_config_submodule_resolve_timeouts(tmp_path, monkeypatch):
@@ -211,3 +208,49 @@ def test_package_facade_all_exports():
 
     for symbol in indexer.__all__:
         assert hasattr(indexer, symbol), f"Symbol {symbol} missing from indexer"
+
+
+def test_lifecycle_infer_media_type():
+    """Verify media type inference handles explicit types, lowercase, and uppercase extensions."""
+    from hagi.indexer.lifecycle import _infer_media_type
+
+    # Explicit type is preserved
+    assert _infer_media_type({"type": "subtitle", "path": "/path/to/video.mkv"}) == "subtitle"
+    assert _infer_media_type({"type": "mkv_embedded", "path": "/path/to/sub.srt"}) == "mkv_embedded"
+
+    # NULL type falls back to extension check
+    assert _infer_media_type({"type": None, "path": "/path/to/video.mkv"}) == "mkv_embedded"
+    assert _infer_media_type({"type": None, "path": "/path/to/video.MKV"}) == "mkv_embedded"
+    assert _infer_media_type({"type": None, "path": "/path/to/sub.srt"}) == "subtitle"
+    assert _infer_media_type({"type": None, "path": "/path/to/sub.SRT"}) == "subtitle"
+
+
+def test_facade_patch_propagation_for_collaborators(monkeypatch, test_db):
+    """Verify that monkeypatching hagi.indexer exports propagates to lifecycle callers."""
+    import hagi.indexer as indexer
+    from hagi.indexer.lifecycle import process_subs
+
+    called = {"add_media": False, "add_sentences": False}
+
+    def fake_add_media(conn, file_path, media_type, show_title, season, episode, episode_title):
+        """Mock add_media to verify patch propagation."""
+        called["add_media"] = True
+        return 999
+
+    def fake_add_sentences(conn, media_id, sentences):
+        """Mock add_sentences to verify patch propagation."""
+        called["add_sentences"] = True
+
+    monkeypatch.setattr(indexer, "add_media", fake_add_media)
+    monkeypatch.setattr(indexer, "add_sentences", fake_add_sentences)
+    monkeypatch.setattr(indexer, "get_plex_metadata", lambda p: ("Test", 1, 1, "Ep"))
+
+    mock_sub = MagicMock()
+    mock_sub.plaintext = "Hello world"
+    mock_sub.start = 1000
+    mock_sub.end = 2000
+
+    process_subs(test_db, "/fake/path.srt", [mock_sub], "subtitle", "eng")
+
+    assert called["add_media"] is True
+    assert called["add_sentences"] is True

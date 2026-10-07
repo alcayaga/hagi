@@ -115,10 +115,16 @@ def extract_mkv_subtitles(
         elif lang in ["unknown", "und", ""]:
             unk_streams.append(stream)
 
+    indexer = sys.modules.get("hagi.indexer")
+    select_stream_fn = (
+        getattr(indexer, "select_best_stream", select_best_stream)
+        if indexer
+        else select_best_stream
+    )
     selected_streams = []
-    best_eng = select_best_stream(eng_streams, is_spanish=False)
-    best_spa = select_best_stream(spa_streams, is_spanish=True)
-    best_jpn = select_best_stream(jpn_streams, is_spanish=False)
+    best_eng = select_stream_fn(eng_streams, is_spanish=False)
+    best_spa = select_stream_fn(spa_streams, is_spanish=True)
+    best_jpn = select_stream_fn(jpn_streams, is_spanish=False)
 
     if best_eng:
         selected_streams.append(best_eng)
@@ -131,7 +137,6 @@ def extract_mkv_subtitles(
     extracted_subs = []
     had_timeout = False
     temp_paths_to_clean = []
-    indexer = sys.modules.get("hagi.indexer")
     load_subs_fn = (
         getattr(indexer, "load_and_sanitize_subs", load_and_sanitize_subs)
         if indexer

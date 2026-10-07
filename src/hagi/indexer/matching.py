@@ -215,6 +215,11 @@ def find_matching_media(
         if indexer
         else titles_match
     )
+    is_missing_file_fn = (
+        getattr(indexer, "is_missing_file", is_missing_file)
+        if indexer
+        else is_missing_file
+    )
 
     if missing_media_rows is None:
         rows = conn.execute(
@@ -223,17 +228,17 @@ def find_matching_media(
         ).fetchall()
         missing_media_rows = []
         for r in rows:
-            if is_missing_file(r["path"]):
+            if is_missing_file_fn(r["path"]):
                 r_dict = dict(r)
                 r_dict["type"] = r["type"] or (
-                    "mkv_embedded" if r["path"].endswith(".mkv") else "subtitle"
+                    "mkv_embedded" if r["path"].lower().endswith(".mkv") else "subtitle"
                 )
                 missing_media_rows.append(r_dict)
 
     candidates = [
         c
         for c in missing_media_rows
-        if (c.get("type") or ("mkv_embedded" if c.get("path", "").endswith(".mkv") else "subtitle")) == media_type
+        if (c.get("type") or ("mkv_embedded" if c.get("path", "").lower().endswith(".mkv") else "subtitle")) == media_type
     ]
     new_lang_tag = extract_lang_fn(new_file_path)
     if new_lang_tag:

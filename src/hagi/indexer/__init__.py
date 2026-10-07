@@ -1,6 +1,11 @@
 """Module for indexing media files and subtitles."""
 
-from ..db import get_db
+from ..db import (
+    add_media,
+    add_sentences,
+    get_db,
+    update_media_path,
+)
 from .alignment import (
     REFRESH_THRESHOLD_SECONDS,
     align_and_update_sentences,
@@ -81,6 +86,9 @@ __all__ = [
     "index_directory",
     "prune_database",
     "get_db",
+    "add_media",
+    "add_sentences",
+    "update_media_path",
     "is_missing_file",
     "_load_config",
     "_resolve_timeouts",
