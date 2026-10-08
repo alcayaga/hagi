@@ -309,14 +309,14 @@ def get_thumbnail(
     success, msg, image_out, is_cached = exporter.extract_image(
         sentence_id, "./media", pad_start, pad_end
     )
-    if not is_cached:
-        background_tasks.add_task(exporter.cleanup_media_cache, "./media")
-
     if not success:
         if "not found" in msg.lower():
             detail_msg = "Video file not found" if "video file not found" in msg.lower() else msg
             raise HTTPException(status_code=404, detail=detail_msg)
         raise HTTPException(status_code=500, detail="Failed to generate thumbnail image.")
+
+    if not is_cached:
+        background_tasks.add_task(exporter.cleanup_media_cache, "./media")
 
     if not image_out or not os.path.exists(image_out):
         raise HTTPException(status_code=500, detail="Thumbnail image not found on disk.")

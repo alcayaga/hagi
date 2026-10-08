@@ -878,36 +878,35 @@ async function extractMedia(id, triggerElement) {
   history.pushState(null, "", `/sentence/${id}`);
   setCardExtractionState(id, true);
 
-  const r = allSearchResults.find((x) => x.id === id);
-  if (r) {
-    const mainTitle = r.show_title || r.path.split("/").pop();
-    const subParts = [];
-
-    if (r.season !== null && r.episode !== null) {
-      subParts.push(`S${r.season} E${r.episode}`);
-    } else if (r.episode !== null) {
-      subParts.push(`EP ${r.episode}`);
-    }
-
-    if (r.episode_title) {
-      subParts.push(`"${r.episode_title}"`);
-    }
-
-    const timeStr = formatTime(r.start_time);
-
-    document.getElementById("mediaMetadata").innerHTML = `
-      <div class="flex flex-col leading-tight">
-        <span class="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">${escapeHtml(mainTitle)}</span>
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate mt-0.5">
-          ${subParts.length > 0 ? subParts.map(escapeHtml).join(" &bull; ") : "Unknown Episode"}
-        </span>
-      </div>
-    `;
-
-    document.getElementById("mediaTimestampBadge").innerText = timeStr;
-  }
-
   try {
+    const r = allSearchResults.find((x) => x.id === id);
+    if (r) {
+      const mainTitle = r.show_title || r.path.split("/").pop();
+      const subParts = [];
+
+      if (r.season !== null && r.episode !== null) {
+        subParts.push(`S${r.season} E${r.episode}`);
+      } else if (r.episode !== null) {
+        subParts.push(`EP ${r.episode}`);
+      }
+
+      if (r.episode_title) {
+        subParts.push(`"${r.episode_title}"`);
+      }
+
+      const timeStr = formatTime(r.start_time);
+
+      document.getElementById("mediaMetadata").innerHTML = `
+        <div class="flex flex-col leading-tight">
+          <span class="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">${escapeHtml(mainTitle)}</span>
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate mt-0.5">
+            ${subParts.length > 0 ? subParts.map(escapeHtml).join(" &bull; ") : "Unknown Episode"}
+          </span>
+        </div>
+      `;
+
+      document.getElementById("mediaTimestampBadge").innerText = timeStr;
+    }
     const response = await fetch(`/api/extract/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
