@@ -153,6 +153,8 @@ test("search result cards include responsive thumbnail container and skeleton lo
   assert.match(mainSource, /class="thumb-error hidden absolute inset-0/);
   assert.match(mainSource, /class="btn-extract/);
   assert.match(mainSource, /thumbnailManager\.observe\(thumbContainer\)/);
+  assert.match(mainSource, /sm:group-hover:opacity-100 transition-opacity/);
+  assert.match(mainSource, /text-\[0\.65rem\] md:text-\[0\.7rem\] font-medium text-gray-500/);
 });
 
 test("ThumbnailManager limits concurrent thumbnail extraction requests to maxConcurrent", () => {

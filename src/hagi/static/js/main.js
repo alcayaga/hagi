@@ -722,12 +722,10 @@ function renderResults() {
       <div class="flex flex-col flex-grow min-w-0 justify-between self-stretch">
         <div class="flex flex-col gap-2">
           <!-- Top Metadata -->
-          <div class="flex flex-wrap items-center gap-1.5 md:gap-2 text-[0.7rem] md:text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+          <div class="flex flex-wrap items-center gap-1.5 md:gap-2 text-[0.65rem] md:text-[0.7rem] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
             <span class="text-gray-800 dark:text-gray-200 font-bold">${escapeHtml(sourceDisplay)}</span>
             ${subParts.length > 0 ? `<span class="opacity-50">&bull;</span><span>${escapeHtml(subParts.join(" "))}</span>` : ""}
             ${r.episode_title ? `<span class="opacity-50">&bull;</span><span class="italic">"${escapeHtml(r.episode_title)}"</span>` : ""}
-            <span class="opacity-50">&bull;</span>
-            <span class="font-mono bg-gray-500/10 dark:bg-gray-400/10 px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-300">${timeStr}</span>
           </div>
           
           <!-- Primary Japanese Text -->
@@ -735,15 +733,15 @@ function renderResults() {
           
           <!-- Translations -->
           <div class="flex flex-col gap-2">
-            ${cleanSpa ? `<div class="text-sm md:text-base flex items-start gap-2"><span class="flex-shrink-0 px-2 py-0.5 rounded-md text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm mt-0.5">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanSpa)}</span></div>` : ""}
-            ${cleanEng ? `<div class="text-sm md:text-base flex items-start gap-2"><span class="flex-shrink-0 px-2 py-0.5 rounded-md text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm mt-0.5">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanEng)}</span></div>` : ""}
+            ${cleanSpa ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanSpa)}</span></div>` : ""}
+            ${cleanEng ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanEng)}</span></div>` : ""}
           </div>
         </div>
 
         <!-- Integrated Bottom-Right Action Toolbar -->
-        <div class="flex items-center justify-end gap-2.5 pt-3 mt-3 border-t border-gray-100 dark:border-gray-800/80">
-          <button onclick="viewContext(${r.id})" class="px-3.5 py-1.5 sm:px-4 sm:py-2 bg-white/60 dark:bg-gray-700/40 text-gray-700 dark:text-gray-200 rounded-xl hover:bg-white dark:hover:bg-gray-600/60 border border-gray-200/80 dark:border-gray-600/50 font-medium text-xs md:text-sm transition-all shadow-sm backdrop-blur-sm">Context</button>
-          <button onclick="extractMedia(${r.id}, this)" data-sentence-id="${r.id}" class="btn-extract min-w-[5.5rem] sm:min-w-[6.5rem] px-3.5 py-1.5 sm:px-4 sm:py-2 bg-indigo-600/90 text-white rounded-xl hover:bg-indigo-500 border border-indigo-500/50 font-medium text-xs md:text-sm transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] backdrop-blur-sm">Extract</button>
+        <div class="flex items-center justify-between sm:justify-end gap-2.5 pt-3 mt-3 border-t border-gray-100 dark:border-gray-800/80 w-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300">
+          <button onclick="viewContext(${r.id})" class="flex-1 sm:flex-none sm:w-28 px-3.5 py-2 sm:px-4 sm:py-2 bg-white/60 dark:bg-gray-700/40 text-gray-700 dark:text-gray-200 rounded-xl hover:bg-white dark:hover:bg-gray-600/60 border border-gray-200/80 dark:border-gray-600/50 font-medium text-xs md:text-sm transition-all shadow-sm backdrop-blur-sm text-center">Context</button>
+          <button onclick="extractMedia(${r.id}, this)" data-sentence-id="${r.id}" class="btn-extract flex-1 sm:flex-none sm:w-28 px-3.5 py-2 sm:px-4 sm:py-2 bg-indigo-600/90 text-white rounded-xl hover:bg-indigo-500 border border-indigo-500/50 font-medium text-xs md:text-sm transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] backdrop-blur-sm text-center">Extract</button>
         </div>
       </div>
     `;
