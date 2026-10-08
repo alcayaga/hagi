@@ -1,5 +1,7 @@
 """Web application for Hagi Local UI."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import json
 import logging
 import math
@@ -285,8 +287,14 @@ class ExtractConfig(BaseModel):
     search_query: str | None = None
 
 
+_thumbnail_executor = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="thumbnail_worker",
+)
+
+
 @app.get("/api/thumbnail/{sentence_id}")
-def get_thumbnail(
+async def get_thumbnail(
     sentence_id: int,
     background_tasks: BackgroundTasks,
     pad_start: float = 0.25,
@@ -306,8 +314,14 @@ def get_thumbnail(
             detail="Padding values must be finite and between 0 and 30 seconds",
         )
 
-    success, msg, image_out, is_cached = exporter.extract_image(
-        sentence_id, "./media", pad_start, pad_end
+    loop = asyncio.get_running_loop()
+    success, msg, image_out, is_cached = await loop.run_in_executor(
+        _thumbnail_executor,
+        exporter.extract_image,
+        sentence_id,
+        "./media",
+        pad_start,
+        pad_end,
     )
     if not success:
         if "not found" in msg.lower():
