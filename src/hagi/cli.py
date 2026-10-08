@@ -383,6 +383,8 @@ def refresh(
         console.print("[red]Error: No valid files or directories found to refresh.[/red]")
         raise typer.Exit(code=1)
 
+    resolved_paths = indexer.filter_covered_paths(resolved_paths)
+
     if len(resolved_paths) > 1 and (old_path or media_id is not None):
         console.print("[red]Error: Cannot specify --old or --media-id when refreshing multiple files.[/red]")
         raise typer.Exit(code=1)
@@ -390,8 +392,12 @@ def refresh(
     has_failure = False
     for p in resolved_paths:
         console.print(f"[yellow]Refreshing {p}...[/yellow]")
-        success = indexer.refresh_file(p, old_path=old_path, media_id=media_id)
-        if not success:
+        try:
+            success = indexer.refresh_file(p, old_path=old_path, media_id=media_id)
+            if not success:
+                has_failure = True
+        except Exception as e:
+            console.print(f"[red]Error refreshing {p}: {e}[/red]")
             has_failure = True
 
     if has_failure:

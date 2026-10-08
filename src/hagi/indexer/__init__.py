@@ -25,6 +25,7 @@ from .extractor import (
     select_best_stream,
 )
 from .lifecycle import (
+    filter_covered_paths,
     index_directory,
     process_subs,
     prune_database,
@@ -81,6 +82,7 @@ __all__ = [
     "estimate_timestamp_offset",
     "align_and_update_sentences",
     "process_subs",
+    "filter_covered_paths",
     "refresh_media",
     "refresh_file",
     "index_directory",

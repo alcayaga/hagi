@@ -571,6 +571,30 @@ def refresh_media(
     return True
 
 
+def filter_covered_paths(paths: list[str]) -> list[str]:
+    """Filter out paths that are already covered by an ancestor directory in the list.
+
+    Args:
+        paths (list[str]): List of candidate file or directory paths.
+
+    Returns:
+        list[str]: Filtered list of paths without duplicate descendant coverage.
+    """
+    dirs = {os.path.abspath(p) for p in paths if os.path.isdir(p)}
+    if not dirs:
+        return paths
+    filtered = []
+    for p in paths:
+        abs_p = os.path.abspath(p)
+        is_covered = any(
+            abs_p != d and abs_p.startswith(d if d.endswith(os.sep) else f"{d}{os.sep}")
+            for d in dirs
+        )
+        if not is_covered:
+            filtered.append(p)
+    return filtered
+
+
 def refresh_file(
     file_path: str,
     old_path: Optional[str] = None,
@@ -610,6 +634,7 @@ def refresh_file(
         else:
             escaped_pattern = abs_path.replace("[", "[[]")
             matches = sorted(glob.glob(escaped_pattern, recursive=True))
+        matches = filter_covered_paths(matches)
         if not matches:
             print(f"No files matched pattern: {file_path}")
             return False

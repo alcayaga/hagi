@@ -619,3 +619,58 @@ def test_cli_refresh_partial_failure_exits_code_1(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert attempted == [str(f1), str(f2)]
 
+
+def test_cli_refresh_filters_covered_paths(tmp_path, monkeypatch):
+    """Test that refresh removes files covered by an ancestor directory in the list."""
+    from hagi import db, indexer
+
+    sub_dir = tmp_path / "Season 1"
+    sub_dir.mkdir()
+    sub_file = sub_dir / "ep01.srt"
+    sub_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    # Pass both the parent directory and the child file
+    result = runner.invoke(app, ["refresh", str(sub_dir), str(sub_file)])
+
+    assert result.exit_code == 0
+    assert refreshed_files == [str(sub_dir)]
+
+
+def test_cli_refresh_handles_exception_per_path(tmp_path, monkeypatch):
+    """Test that an exception on one path does not abort processing subsequent paths."""
+    from hagi import db, indexer
+
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+    f1.write_text("content 1")
+    f2.write_text("content 2")
+
+    attempted = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file raising error on ep01 and succeeding on ep02."""
+        attempted.append(path)
+        if path == str(f1):
+            raise RuntimeError("Disk read error")
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    result = runner.invoke(app, ["refresh", str(f1), str(f2)])
+
+    assert result.exit_code == 1
+    assert "Error refreshing" in result.stdout
+    assert "Disk read error" in result.stdout
+    assert attempted == [str(f1), str(f2)]
+

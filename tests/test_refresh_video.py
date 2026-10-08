@@ -1432,4 +1432,53 @@ def test_refresh_file_glob_no_matches_returns_false(test_db, tmp_path):
         assert indexer.refresh_file(f"{tmp_path}/*.nonexistent") is False
 
 
+def test_filter_covered_paths(tmp_path):
+    """Test that filter_covered_paths removes paths covered by an ancestor directory in the list."""
+    parent_dir = tmp_path / "Season 1"
+    parent_dir.mkdir()
+    child_file = parent_dir / "ep01.srt"
+    child_file.write_text("content")
+
+    sibling_dir = tmp_path / "Season 2"
+    sibling_dir.mkdir()
+
+    raw_paths = [str(parent_dir), str(child_file), str(sibling_dir)]
+    filtered = indexer.filter_covered_paths(raw_paths)
+
+    assert str(parent_dir) in filtered
+    assert str(sibling_dir) in filtered
+    assert str(child_file) not in filtered
+    assert len(filtered) == 2
+
+
+def test_refresh_file_glob_filters_covered_paths(test_db, tmp_path):
+    """Test that refresh_file filters covered descendant paths when expanding glob matches."""
+    parent_dir = tmp_path / "Show"
+    parent_dir.mkdir()
+    child_file = parent_dir / "ep01.srt"
+    child_file.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+
+    mid = db.add_media(test_db, str(child_file), "subtitle")
+    db.add_sentences(test_db, mid, [("ja", 1.0, 2.0, "Hello")])
+    test_db.commit()
+
+    refreshed = []
+
+    def mock_refresh_media(conn, media_id, path, **kwargs):
+        """Mock refresh_media recording target paths."""
+        refreshed.append(path)
+        return True
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.refresh_media", side_effect=mock_refresh_media),
+    ):
+        # Glob that matches both parent directory and child file
+        res = indexer.refresh_file(f"{tmp_path}/*")
+        assert res is True
+        # Parent directory was processed, and child_file was not double-refreshed separately
+        assert len(refreshed) == 1
+
+
+
 
