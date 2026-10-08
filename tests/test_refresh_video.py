@@ -1382,3 +1382,54 @@ def test_find_matching_media_excludes_incompatible_stored_subtitle_language(test
     assert matched_en == mid_en
 
 
+def test_refresh_file_glob_pattern_success(test_db, tmp_path):
+    """Test that refresh_file expands glob patterns and successfully refreshes all matching files."""
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+
+    f1.write_text("1\n00:00:01,000 --> 00:00:02,000\nOld 1\n\n")
+    f2.write_text("1\n00:00:01,000 --> 00:00:02,000\nOld 2\n\n")
+
+    mid1 = db.add_media(test_db, str(f1), "subtitle")
+    mid2 = db.add_media(test_db, str(f2), "subtitle")
+    db.add_sentences(test_db, mid1, [("ja", 1.0, 2.0, "Old 1")])
+    db.add_sentences(test_db, mid2, [("ja", 1.0, 2.0, "Old 2")])
+    test_db.commit()
+
+    id1 = test_db.execute("SELECT id FROM sentences WHERE media_id = ?", (mid1,)).fetchone()["id"]
+    id2 = test_db.execute("SELECT id FROM sentences WHERE media_id = ?", (mid2,)).fetchone()["id"]
+
+    # Update files on disk with new retimed text
+    f1.write_text("1\n00:00:01,500 --> 00:00:02,500\nNew 1\n\n")
+    f2.write_text("1\n00:00:01,500 --> 00:00:02,500\nNew 2\n\n")
+
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        res = indexer.refresh_file(f"{tmp_path}/*.srt")
+        assert res is True
+
+    row1 = test_db.execute("SELECT id, start_time, text FROM sentences WHERE media_id = ?", (mid1,)).fetchone()
+    row2 = test_db.execute("SELECT id, start_time, text FROM sentences WHERE media_id = ?", (mid2,)).fetchone()
+
+    assert row1["id"] == id1
+    assert row1["start_time"] == 1.5
+    assert row1["text"] == "New 1"
+
+    assert row2["id"] == id2
+    assert row2["start_time"] == 1.5
+    assert row2["text"] == "New 2"
+
+
+def test_refresh_file_glob_pattern_rejects_old_or_media_id(test_db, tmp_path):
+    """Test that refresh_file rejects --old or --media-id options when a glob pattern is used."""
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        assert indexer.refresh_file(f"{tmp_path}/*.srt", old_path="/old/file") is False
+        assert indexer.refresh_file(f"{tmp_path}/*.srt", media_id=42) is False
+
+
+def test_refresh_file_glob_no_matches_returns_false(test_db, tmp_path):
+    """Test that refresh_file returns False when a glob pattern does not match any files."""
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        assert indexer.refresh_file(f"{tmp_path}/*.nonexistent") is False
+
+
+

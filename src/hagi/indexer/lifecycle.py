@@ -1,5 +1,6 @@
 """Database lifecycle orchestration: indexing, refreshing, and pruning media."""
 
+import glob
 import os
 import sys
 from typing import Optional
@@ -597,6 +598,34 @@ def refresh_file(
     extract_timeout, probe_timeout = idx._resolve_timeouts(
         extract_timeout, probe_timeout
     )
+
+    if any(c in file_path for c in ("*", "?")) and not os.path.exists(abs_path):
+        if old_path or media_id is not None:
+            print("Cannot specify --old or --media-id when refreshing a glob pattern.")
+            return False
+        dir_name = os.path.dirname(abs_path)
+        file_pat = os.path.basename(abs_path)
+        if dir_name and os.path.isdir(dir_name):
+            matches = sorted(glob.glob(os.path.join(glob.escape(dir_name), file_pat), recursive=True))
+        else:
+            matches = sorted(glob.glob(abs_path, recursive=True))
+        if not matches:
+            print(f"No files matched pattern: {file_path}")
+            return False
+        all_ok = True
+        for match in matches:
+            try:
+                if not idx.refresh_file(
+                    match,
+                    extract_timeout=extract_timeout,
+                    probe_timeout=probe_timeout,
+                ):
+                    all_ok = False
+            except Exception as ref_err:
+                print(f"Error refreshing {match}: {ref_err}")
+                conn.rollback()
+                all_ok = False
+        return all_ok
 
     if os.path.isdir(abs_path):
         if old_path or media_id is not None:
