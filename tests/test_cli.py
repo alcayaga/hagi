@@ -556,6 +556,30 @@ def test_cli_refresh_glob_escapes_bracketed_basenames(tmp_path, monkeypatch):
     assert refreshed_files == [str(sub_file)]
 
 
+def test_cli_refresh_glob_escapes_adjacent_bracket_filenames(tmp_path, monkeypatch):
+    """Test that glob expansion escapes adjacent square brackets like [[Group]]."""
+    from hagi import db, indexer
+
+    sub_file = tmp_path / "[[Group]] episode 01.srt"
+    sub_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    pattern = f"{tmp_path}/[[Group]]*.srt"
+    result = runner.invoke(app, ["refresh", pattern])
+
+    assert result.exit_code == 0
+    assert refreshed_files == [str(sub_file)]
+
+
 def test_cli_refresh_glob_no_matches_exits_code_1(tmp_path, monkeypatch):
     """Test that refresh exits with code 1 if a glob pattern yields no matches."""
     from hagi import db, indexer

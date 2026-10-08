@@ -2,7 +2,6 @@
 
 import glob
 import os
-import re
 import sys
 from typing import Optional
 
@@ -605,11 +604,11 @@ def refresh_file(
             print("Cannot specify --old or --media-id when refreshing a glob pattern.")
             return False
         dir_name = os.path.dirname(abs_path)
-        file_pat = re.sub(r"(?<!\[)\[(?!\[)", "[[]", os.path.basename(abs_path))
+        file_pat = os.path.basename(abs_path).replace("[", "[[]")
         if dir_name and os.path.isdir(dir_name):
             matches = sorted(glob.glob(os.path.join(glob.escape(dir_name), file_pat), recursive=True))
         else:
-            escaped_pattern = re.sub(r"(?<!\[)\[(?!\[)", "[[]", abs_path)
+            escaped_pattern = abs_path.replace("[", "[[]")
             matches = sorted(glob.glob(escaped_pattern, recursive=True))
         if not matches:
             print(f"No files matched pattern: {file_path}")

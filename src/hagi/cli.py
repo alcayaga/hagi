@@ -3,7 +3,6 @@
 import glob
 import json
 import os
-import re
 from typing import Optional
 import typer
 from rich.console import Console
@@ -350,10 +349,10 @@ def _expand_path(pattern: str) -> list[str]:
     if not any(c in pattern for c in ("*", "?")):
         return [pattern]
     dir_name = os.path.dirname(pattern)
-    file_pattern = re.sub(r"(?<!\[)\[(?!\[)", "[[]", os.path.basename(pattern))
+    file_pattern = os.path.basename(pattern).replace("[", "[[]")
     if dir_name and os.path.isdir(dir_name):
         return sorted(glob.glob(os.path.join(glob.escape(dir_name), file_pattern), recursive=True))
-    escaped_pattern = re.sub(r"(?<!\[)\[(?!\[)", "[[]", pattern)
+    escaped_pattern = pattern.replace("[", "[[]")
     return sorted(glob.glob(escaped_pattern, recursive=True))
 
 
