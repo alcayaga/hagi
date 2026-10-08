@@ -497,5 +497,55 @@ def test_api_extract_build_source_info_failure(test_db):
         assert data["source_info"] == ""
 
 
+def test_api_thumbnail_success(tmp_path):
+    """Test that GET /api/thumbnail/{sentence_id} successfully returns a jpeg image."""
+    fake_img = tmp_path / "hagi_img_1_0.250_0.000.jpg"
+    fake_img.write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
 
+    with patch("hagi.web.exporter.extract_image") as mock_extract_img:
+        mock_extract_img.return_value = (True, "Image extracted", str(fake_img), False)
+
+        response = client.get("/api/thumbnail/1?pad_start=0.25&pad_end=0.0")
+        assert response.status_code == 200
+        assert "image/jpeg" in response.headers["content-type"]
+        assert "no-cache" in response.headers.get("cache-control", "")
+        assert response.content == b"\xff\xd8\xff\xe0fakejpeg"
+
+
+def test_api_thumbnail_not_found():
+    """Test that GET /api/thumbnail/{sentence_id} returns 404 when sentence or video is not found."""
+    with patch("hagi.web.exporter.extract_image") as mock_extract_img:
+        mock_extract_img.return_value = (False, "Sentence not found", None, False)
+
+        response = client.get("/api/thumbnail/99999")
+        assert response.status_code == 404
+
+
+def test_api_thumbnail_invalid_padding():
+    """Test that GET /api/thumbnail/{sentence_id} returns 400 when padding is out of bounds or invalid."""
+    response = client.get("/api/thumbnail/1?pad_start=-0.5")
+    assert response.status_code == 400
+
+    response_high = client.get("/api/thumbnail/1?pad_start=35.0")
+    assert response_high.status_code == 400
+
+
+def test_api_thumbnail_video_not_found():
+    """Test that GET /api/thumbnail/{sentence_id} returns 404 when video file is missing."""
+    with patch("hagi.web.exporter.extract_image") as mock_extract_img:
+        mock_extract_img.return_value = (False, "Video file not found", None, False)
+
+        response = client.get("/api/thumbnail/1")
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Video file not found"
+
+
+def test_api_thumbnail_extract_failure():
+    """Test that GET /api/thumbnail/{sentence_id} returns 500 when frame extraction fails."""
+    with patch("hagi.web.exporter.extract_image") as mock_extract_img:
+        mock_extract_img.return_value = (False, "Failed to extract thumbnail image.", None, False)
+
+        response = client.get("/api/thumbnail/1")
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to generate thumbnail image."
 
