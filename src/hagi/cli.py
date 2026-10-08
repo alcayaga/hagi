@@ -1,6 +1,5 @@
 """Command-line interface for Hagi Local."""
 
-import glob
 import json
 import os
 from typing import Optional
@@ -344,16 +343,7 @@ def _expand_path(pattern: str) -> list[str]:
     Returns:
         list[str]: List of resolved file paths, or original pattern if not a glob or already existing.
     """
-    if os.path.exists(pattern):
-        return [pattern]
-    if not any(c in pattern for c in ("*", "?")):
-        return [pattern]
-    dir_name = os.path.dirname(pattern)
-    file_pattern = os.path.basename(pattern).replace("[", "[[]")
-    if dir_name and os.path.isdir(dir_name):
-        return sorted(glob.glob(os.path.join(glob.escape(dir_name), file_pattern), recursive=True))
-    escaped_pattern = pattern.replace("[", "[[]")
-    return sorted(glob.glob(escaped_pattern, recursive=True))
+    return indexer.expand_glob_pattern(pattern)
 
 
 @app.command()
@@ -371,11 +361,21 @@ def refresh(
     """Smart refresh existing subtitle or media files in the database."""
     db.init_db()
 
+    is_glob = any(
+        any(c in p for c in ("*", "?", "[")) and not os.path.exists(p)
+        for p in paths
+    )
+    if (len(paths) > 1 or is_glob) and (old_path or media_id is not None):
+        console.print("[red]Error: Cannot specify --old or --media-id when refreshing multiple files or glob patterns.[/red]")
+        raise typer.Exit(code=1)
+
+    has_failure = False
     resolved_paths: list[str] = []
     for p in paths:
         expanded = _expand_path(p)
-        if not expanded and any(c in p for c in ("*", "?")):
+        if not expanded and any(c in p for c in ("*", "?", "[")):
             console.print(f"[yellow]Warning: No files matched pattern '{p}'. Skipping.[/yellow]")
+            has_failure = True
             continue
         resolved_paths.extend(expanded)
 
@@ -385,11 +385,6 @@ def refresh(
 
     resolved_paths = indexer.filter_covered_paths(resolved_paths)
 
-    if len(resolved_paths) > 1 and (old_path or media_id is not None):
-        console.print("[red]Error: Cannot specify --old or --media-id when refreshing multiple files.[/red]")
-        raise typer.Exit(code=1)
-
-    has_failure = False
     for p in resolved_paths:
         console.print(f"[yellow]Refreshing {p}...[/yellow]")
         try:

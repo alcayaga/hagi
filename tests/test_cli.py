@@ -506,6 +506,47 @@ def test_cli_refresh_multiple_files_rejects_old_or_media_id(tmp_path, monkeypatc
     assert "Cannot specify --old or --media-id when refreshing multiple files" in res_mid.stdout
 
 
+def test_cli_refresh_glob_rejects_old_or_media_id(tmp_path, monkeypatch):
+    """Test that refresh rejects --old or --media-id when glob patterns are provided."""
+    from hagi import db, indexer
+
+    monkeypatch.setattr(indexer, "refresh_file", lambda *args, **kwargs: True)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    pattern = f"{tmp_path}/*.srt"
+    err_msg = "Cannot specify --old or --media-id when refreshing multiple files or glob patterns"
+
+    res_old = runner.invoke(app, ["refresh", pattern, "--old", "/old/ep.srt"])
+    assert res_old.exit_code == 1
+    assert err_msg in " ".join(res_old.stdout.split())
+
+    res_mid = runner.invoke(app, ["refresh", pattern, "--media-id", "99"])
+    assert res_mid.exit_code == 1
+    assert err_msg in " ".join(res_mid.stdout.split())
+
+
+def test_cli_refresh_literal_wildcard_file_allows_media_id(tmp_path, monkeypatch):
+    """Test that an existing single file with wildcard characters in its name allows --media-id."""
+    from hagi import db, indexer
+
+    wildcard_file = tmp_path / "ep?01.srt"
+    wildcard_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append((path, media_id))
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    result = runner.invoke(app, ["refresh", str(wildcard_file), "--media-id", "42"])
+    assert result.exit_code == 0
+    assert refreshed_files == [(str(wildcard_file), 42)]
+
+
 def test_cli_refresh_glob_escapes_bracketed_directories(tmp_path, monkeypatch):
     """Test that glob expansion escapes square brackets in directory names."""
     from hagi import db, indexer
@@ -593,6 +634,31 @@ def test_cli_refresh_glob_no_matches_exits_code_1(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "No files matched pattern" in result.stdout
     assert "No valid files or directories found to refresh" in result.stdout
+
+
+def test_cli_refresh_unmatched_glob_with_valid_file_exits_code_1(tmp_path, monkeypatch):
+    """Test that refresh exits with code 1 when an unmatched glob is present alongside a valid file."""
+    from hagi import db, indexer
+
+    valid_file = tmp_path / "valid.srt"
+    valid_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    unmatched_pattern = f"{tmp_path}/*.missing"
+    result = runner.invoke(app, ["refresh", str(valid_file), unmatched_pattern])
+
+    assert result.exit_code == 1
+    assert refreshed_files == [str(valid_file)]
+    assert "No files matched pattern" in result.stdout
 
 
 def test_cli_refresh_partial_failure_exits_code_1(tmp_path, monkeypatch):
