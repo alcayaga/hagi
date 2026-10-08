@@ -671,6 +671,6 @@ def test_cli_refresh_handles_exception_per_path(tmp_path, monkeypatch):
 
     assert result.exit_code == 1
     assert "Error refreshing" in result.stdout
-    assert "Disk read error" in result.stdout
+    assert "Disk read error" in " ".join(result.stdout.split())
     assert attempted == [str(f1), str(f2)]
 
