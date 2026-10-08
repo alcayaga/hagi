@@ -142,3 +142,285 @@ test("updateEncompassedText renders secondary translation badge followed by a sp
 
   assert.match(elements.mediaTranslations.innerHTML, /<span [^>]*>ENG<\/span> <span [^>]*>Test translation.<\/span>/);
 });
+
+test("search result cards include responsive thumbnail container and skeleton loader", () => {
+  assert.match(mainSource, /class="thumb-container relative w-full sm:w-72 md:w-80 lg:w-96 aspect-video rounded-2xl overflow-hidden flex-shrink-0 self-center/);
+  assert.match(mainSource, /class="thumb-skeleton absolute inset-0/);
+  assert.match(mainSource, /class="shimmer-wave"/);
+  assert.doesNotMatch(mainSource, /class="thumb-status-badge/);
+  assert.match(mainSource, /class="thumb-wait-overlay hidden/);
+  assert.match(mainSource, /class="thumb-img absolute inset-0/);
+  assert.match(mainSource, /class="thumb-error hidden absolute inset-0/);
+  assert.match(mainSource, /class="btn-extract/);
+  assert.match(mainSource, /thumbnailManager\.observe\(thumbContainer\)/);
+  assert.match(mainSource, /sm:group-hover:opacity-100 transition-opacity/);
+  assert.match(mainSource, /text-\[0\.65rem\] md:text-\[0\.7rem\] font-medium text-gray-500/);
+});
+
+test("ThumbnailManager limits concurrent thumbnail extraction requests to maxConcurrent", () => {
+  const thumbManagerStart = mainSource.indexOf("class ThumbnailManager {");
+  const thumbManagerEnd = mainSource.indexOf("const thumbnailManager =", thumbManagerStart);
+  const thumbManagerSource = mainSource.slice(thumbManagerStart, thumbManagerEnd);
+
+  const context = {
+    document: {
+      /**
+       * Mock document.getElementById returning default padding values.
+       * @param {string} id - The element ID.
+       */
+      getElementById: (id) => {
+        if (id === "padStart") return { value: "0.25" };
+        if (id === "padEnd") return { value: "0.0" };
+        return null;
+      },
+    },
+  };
+
+  vm.runInNewContext(thumbManagerSource + "\nglobalThis.ThumbnailManager = ThumbnailManager;", context);
+  const manager = new context.ThumbnailManager(2, "100px 0px");
+
+  /**
+   * Helper creating a fake thumbnail container for concurrency testing.
+   * @param {number} id - Target sentence ID.
+   */
+  const createFakeContainer = (id) => {
+    const img = {
+      classList: { add() {}, remove() {} },
+      onload: null,
+      onerror: null,
+      src: "",
+    };
+    const skeleton = { classList: { add() {} } };
+    const errorFallback = { classList: { remove() {} } };
+    return {
+      dataset: { sentenceId: String(id) },
+      isConnected: true,
+      querySelector: (sel) => {
+        if (sel === ".thumb-img") return img;
+        if (sel === ".thumb-skeleton") return skeleton;
+        if (sel === ".thumb-error") return errorFallback;
+        return null;
+      },
+      img,
+    };
+  };
+
+  const c1 = createFakeContainer(1);
+  const c2 = createFakeContainer(2);
+  const c3 = createFakeContainer(3);
+
+  manager.enqueue(c1);
+  manager.enqueue(c2);
+  manager.enqueue(c3);
+
+  // Active count should be capped at maxConcurrent (2)
+  assert.equal(manager.activeCount, 2);
+  assert.equal(manager.queue.length, 1);
+  assert.equal(c1.img.src, "/api/thumbnail/1?pad_start=0.25&pad_end=0");
+  assert.equal(c2.img.src, "/api/thumbnail/2?pad_start=0.25&pad_end=0");
+  assert.equal(c3.img.src, "");
+
+  // When c1 finishes loading, c3 should be dequeued and start loading
+  c1.img.onload();
+  assert.equal(manager.activeCount, 2);
+  assert.equal(manager.queue.length, 0);
+  assert.equal(c3.img.src, "/api/thumbnail/3?pad_start=0.25&pad_end=0");
+
+  // When c2 finishes loading, activeCount drops to 1
+  c2.img.onload();
+  assert.equal(manager.activeCount, 1);
+
+  // When c3 finishes loading, activeCount drops to 0
+  c3.img.onload();
+  assert.equal(manager.activeCount, 0);
+});
+
+test("setCardExtractionState synchronizes thumbnail wait overlay and extract button spinner", () => {
+  const extractStateStart = mainSource.indexOf("function setCardExtractionState(");
+  const extractStateEnd = mainSource.indexOf("/**\n * Calls the backend API to extract audio", extractStateStart);
+  const extractStateSource = mainSource.slice(extractStateStart, extractStateEnd);
+
+  /**
+   * Mock classList implementation for tracking DOM token changes in unit tests.
+   */
+  const createMockClassList = () => {
+    const classes = new Set();
+    return {
+      /**
+       * Adds CSS classes to mock token list.
+       * @param {...string} cls - Classes to add.
+       */
+      add: (...cls) => cls.forEach((c) => classes.add(c)),
+      /**
+       * Removes CSS classes from mock token list.
+       * @param {...string} cls - Classes to remove.
+       */
+      remove: (...cls) => cls.forEach((c) => classes.delete(c)),
+      /**
+       * Checks if class exists in mock token list.
+       * @param {string} c - Class name.
+       */
+      contains: (c) => classes.has(c),
+    };
+  };
+
+  const waitOverlay = { classList: createMockClassList() };
+  waitOverlay.classList.add("hidden");
+
+  const thumb = {
+    classList: createMockClassList(),
+    /**
+     * Mock querySelector for wait overlay inside thumbnail.
+     * @param {string} sel - CSS selector.
+     */
+    querySelector: (sel) => (sel === ".thumb-wait-overlay" ? waitOverlay : null),
+  };
+
+  const btn = {
+    dataset: {},
+    disabled: false,
+    innerHTML: "Extract",
+    classList: createMockClassList(),
+  };
+
+  const context = {
+    document: {
+      /**
+       * Mock document.querySelector for sentence card components.
+       * @param {string} sel - CSS selector.
+       */
+      querySelector: (sel) => {
+        if (sel === '.thumb-container[data-sentence-id="42"]') return thumb;
+        if (sel === '.btn-extract[data-sentence-id="42"]') return btn;
+        return null;
+      },
+    },
+  };
+
+  vm.runInNewContext(extractStateSource + "\nglobalThis.setCardExtractionState = setCardExtractionState;", context);
+
+  // Trigger loading state
+  context.setCardExtractionState(42, true);
+  assert.equal(waitOverlay.classList.contains("hidden"), false);
+  assert.equal(thumb.classList.contains("pointer-events-none"), true);
+  assert.equal(btn.disabled, true);
+  assert.equal(btn.classList.contains("cursor-wait"), true);
+  assert.match(btn.innerHTML, /Extracting/);
+  assert.doesNotMatch(btn.innerHTML, /Extracting\.\.\./);
+  assert.match(btn.innerHTML, /whitespace-nowrap/);
+  assert.equal(btn.dataset.originalHtml, "Extract");
+
+  // Revert loading state
+  context.setCardExtractionState(42, false);
+  assert.equal(waitOverlay.classList.contains("hidden"), true);
+  assert.equal(thumb.classList.contains("pointer-events-none"), false);
+  assert.equal(btn.disabled, false);
+  assert.equal(btn.classList.contains("cursor-wait"), false);
+  assert.equal(btn.innerHTML, "Extract");
+  assert.equal(btn.dataset.originalHtml, undefined);
+});
+
+test("ThumbnailManager clear resets queue, activeCount, advances generation, and ignores stale callbacks", () => {
+  const thumbManagerStart = mainSource.indexOf("class ThumbnailManager {");
+  const thumbManagerEnd = mainSource.indexOf("const thumbnailManager =", thumbManagerStart);
+  const thumbManagerSource = mainSource.slice(thumbManagerStart, thumbManagerEnd);
+
+  const context = {
+    document: {
+      /**
+       * Mock getElementById for manager initialization.
+       */
+      getElementById: () => null,
+    },
+  };
+
+  vm.runInNewContext(thumbManagerSource + "\nglobalThis.ThumbnailManager = ThumbnailManager;", context);
+  const manager = new context.ThumbnailManager(2, "100px 0px");
+  assert.equal(manager.generation, 0);
+
+  /**
+   * Helper creating a fake thumbnail container.
+   * @param {number} id - Target sentence ID.
+   */
+  const createFakeContainer = (id) => {
+    const img = { classList: { add() {}, remove() {} }, onload: null, onerror: null, src: "" };
+    return {
+      dataset: { sentenceId: String(id) },
+      isConnected: true,
+      querySelector: (sel) => (sel === ".thumb-img" ? img : null),
+      img,
+    };
+  };
+
+  const c1 = createFakeContainer(10);
+  manager.enqueue(c1);
+  assert.equal(manager.activeCount, 1);
+  assert.equal(manager.generation, 0);
+
+  // Clear resets queue and activeCount, advances generation, and aborts in-flight images
+  manager.queue.push({}, {});
+  manager.clear();
+  assert.equal(manager.queue.length, 0);
+  assert.equal(manager.activeCount, 0);
+  assert.equal(manager.generation, 1);
+  assert.equal(c1.img.src, "");
+  assert.equal(c1.img.onload, null);
+  assert.equal(c1.img.onerror, null);
+});
+
+test("extractMedia returns early without starting duplicate extraction when card is already extracting", async () => {
+  const extractMediaStart = mainSource.indexOf("async function extractMedia(");
+  const extractMediaEnd = mainSource.indexOf("/**\n * Fetches the surrounding subtitle context", extractMediaStart);
+  const extractMediaSource = mainSource.slice(extractMediaStart, extractMediaEnd);
+
+  const thumb = {
+    classList: {
+      /**
+       * Mock classList check for disabled state.
+       * @param {string} cls - CSS class name.
+       */
+      contains: (cls) => cls === "pointer-events-none",
+    },
+  };
+  const btn = {
+    disabled: true,
+  };
+
+  let historyPushed = false;
+  const context = {
+    document: {
+      /**
+       * Mock querySelector for extraction trigger guard.
+       * @param {string} sel - Selector string.
+       */
+      querySelector: (sel) => {
+        if (sel.startsWith(".thumb-container")) return thumb;
+        if (sel.startsWith(".btn-extract")) return btn;
+        return null;
+      },
+      /**
+       * Mock getElementById returning padding.
+       */
+      getElementById: () => ({ value: "0.25" }),
+    },
+    history: {
+      /**
+       * Mock pushState tracking whether navigation occurred.
+       */
+      pushState: () => {
+        historyPushed = true;
+      },
+    },
+    currentExtraction: {},
+    /**
+     * Mock setCardExtractionState.
+     */
+    setCardExtractionState: () => {},
+    allSearchResults: [],
+  };
+
+  vm.runInNewContext(extractMediaSource + "\nglobalThis.extractMedia = extractMedia;", context);
+
+  await context.extractMedia(42);
+  assert.equal(historyPushed, false);
+});

@@ -179,35 +179,36 @@ def anki_request(anki_url, action, timeout=10.0, **params):
     return res.get("result")
 
 
-def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
-    """Extract audio and image for a given sentence.
+def _resolve_target_media(
+    sentence_id: int,
+    pad_start: float = 0.25,
+    pad_end: float = 0.0,
+    conn=None,
+) -> tuple[dict | None, str | None, float, float, float, float, str, str, str | None]:
+    """Resolve sentence row, media file path, and timing bounds.
 
     Args:
-        sentence_id (int): ID of the sentence to extract.
-        out_dir (str): Output directory for the extracted media.
-        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.25.
-        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.0.
+        sentence_id (int): Sentence ID to resolve.
+        pad_start (float, optional): Seconds to pad before start time.
+        pad_end (float, optional): Seconds to pad after end time.
+        conn (sqlite3.Connection, optional): Optional active database connection.
 
     Returns:
-        tuple: A tuple containing:
-            - bool: Success status.
-            - str: Status message.
-            - str: Path to the extracted audio file.
-            - str: Path to the extracted image file.
-            - str: The sentence text.
-            - bool: Whether the media was served from cache.
+        tuple: (target, mkv_path, start, end, duration, midpoint, mkv_id, expected_tag, error_msg)
     """
     try:
         sentence_id = int(sentence_id)
     except (TypeError, ValueError):
-        return False, "Invalid sentence ID", None, None, None, False
+        return None, None, 0.0, 0.0, 0.0, 0.0, "", "", "Invalid sentence ID"
 
     if not (-9223372036854775808 <= sentence_id <= 9223372036854775807):
-        return False, "Sentence not found", None, None, None, False
+        return None, None, 0.0, 0.0, 0.0, 0.0, "", "", "Sentence not found"
 
     pad_start = round(pad_start, 3)
     pad_end = round(pad_end, 3)
-    conn = db.get_db()
+    if conn is None:
+        conn = db.get_db()
+
     target = conn.execute(
         """
         SELECT s.id, s.text, s.start_time, s.end_time, s.language, s.media_id, m.path
@@ -219,9 +220,7 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
     ).fetchone()
 
     if not target:
-        return False, "Sentence not found", None, None, None, False
-
-    os.makedirs(out_dir, exist_ok=True)
+        return None, None, 0.0, 0.0, 0.0, 0.0, "", "", "Sentence not found"
 
     media_path = target["path"]
     found_video = None
@@ -286,22 +285,359 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
         elif media_path.endswith((".mkv", ".mp4")):
             mkv_path = media_path
         else:
-            # Fallback
             mkv_path = os.path.join(dir_name, base_name + ".mkv")
 
     if not os.path.exists(mkv_path):
-        return False, f"Video file not found: {mkv_path}", None, None, None, False
+        return None, None, 0.0, 0.0, 0.0, 0.0, "", "", f"Video file not found: {mkv_path}"
 
-    # Timestamps
     if target["start_time"] is None or target["end_time"] is None:
-        return False, f"Missing timestamp data for sentence {sentence_id}", None, None, None, False
+        return None, None, 0.0, 0.0, 0.0, 0.0, "", "", f"Missing timestamp data for sentence {sentence_id}"
 
     start = max(0, target["start_time"] - pad_start)
     end = target["end_time"] + pad_end
     duration = end - start
     if duration <= 0:
-        return False, "Requested clip range is empty. Adjust the padding values.", None, None, None, False
+        return None, None, 0.0, 0.0, 0.0, 0.0, "", "", "Requested clip range is empty. Adjust the padding values."
     midpoint = start + (duration / 2)
+
+    try:
+        mkv_stat = os.stat(mkv_path)
+        mkv_id = f"{mkv_stat.st_size}|{mkv_stat.st_mtime:.3f}"
+    except OSError:
+        mkv_id = "unknown"
+    expected_tag = f"{os.path.abspath(mkv_path)}|{mkv_id}|{start:.3f}|{end:.3f}"
+
+    return target, mkv_path, start, end, duration, midpoint, mkv_id, expected_tag, None
+
+
+def _is_file_cache_valid(
+    media_file: str,
+    tag_file_paths: list[str],
+    expected_tag: str,
+) -> bool:
+    """Check if a media file exists and has a matching cache tag.
+
+    Args:
+        media_file (str): Path to the media file.
+        tag_file_paths (list[str]): Candidate tag file paths to check.
+        expected_tag (str): Expected cache signature.
+
+    Returns:
+        bool: True if media file exists and matches any candidate tag.
+    """
+    if not os.path.exists(media_file):
+        return False
+    try:
+        if os.path.getsize(media_file) == 0:
+            return False
+    except OSError:
+        return False
+
+    for tag_path in tag_file_paths:
+        if os.path.exists(tag_path):
+            try:
+                with open(tag_path, "r", encoding="utf-8") as f:
+                    if f.read().strip() == expected_tag:
+                        try:
+                            os.utime(media_file, None)
+                            os.utime(tag_path, None)
+                        except Exception:
+                            pass
+                        return True
+            except Exception:
+                continue
+    return False
+
+
+def _extract_frame_ffmpeg(
+    mkv_path: str,
+    midpoint: float,
+    image_tmp: str,
+    is_hdr: bool,
+    x264_build: int | None,
+    allow_full_decode: bool = True,
+    fast_timeout: int = 120,
+) -> bool:
+    """Extract a single video frame at midpoint using ffmpeg with fallback modes.
+
+    Args:
+        mkv_path (str): Path to input video file.
+        midpoint (float): Target timestamp in seconds.
+        image_tmp (str): Output temporary file path.
+        is_hdr (bool): Whether HDR color grading tonemapping is needed.
+        x264_build (int | None): Detected x264 build number if applicable.
+        allow_full_decode (bool, optional): Whether to attempt slow full-file accurate seek. Defaults to True.
+        fast_timeout (int, optional): Timeout in seconds for fast seek. Defaults to 120.
+
+    Returns:
+        bool: True if frame extraction succeeded and file is non-empty, False otherwise.
+    """
+    img_cmd = [
+        "ffmpeg",
+        "-y",
+        "-ss",
+        str(midpoint),
+    ]
+    if x264_build is not None:
+        img_cmd.extend(["-x264_build", str(x264_build)])
+    img_cmd.extend([
+        "-i",
+        mkv_path,
+        "-map",
+        "0:V:0",
+        "-vframes",
+        "1",
+        "-q:v",
+        "2",
+    ])
+
+    if is_hdr:
+        img_cmd.extend([
+            "-vf",
+            "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
+        ])
+    else:
+        img_cmd.extend(["-pix_fmt", "yuv420p"])
+
+    img_cmd.append(image_tmp)
+
+    needs_fallback = False
+    try:
+        img_res = subprocess.run(
+            img_cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=fast_timeout,
+        )
+
+        img_stderr = (img_res.stderr or "").lower()
+        if (
+            img_res.returncode != 0
+            or "corrupt decoded frame" in img_stderr
+            or "error while decoding" in img_stderr
+            or "output file is empty" in img_stderr
+            or not os.path.exists(image_tmp)
+            or os.path.getsize(image_tmp) == 0
+        ):
+            needs_fallback = True
+    except subprocess.TimeoutExpired:
+        needs_fallback = True
+
+    if needs_fallback:
+        logger.warning(
+            "Fast-seek image extraction produced corrupt frames. "
+            "Falling back to accurate bounded seek..."
+        )
+        if os.path.exists(image_tmp):
+            try:
+                os.remove(image_tmp)
+            except OSError:
+                pass
+        preroll_start = max(0.0, midpoint - 10.0)
+        relative_offset = max(0.0, midpoint - preroll_start)
+        acc_cmd = [
+            "ffmpeg",
+            "-y",
+            "-ss",
+            str(preroll_start),
+        ]
+        if x264_build is not None:
+            acc_cmd.extend(["-x264_build", str(x264_build)])
+        acc_cmd.extend([
+            "-i",
+            mkv_path,
+            "-ss",
+            str(relative_offset),
+            "-map",
+            "0:V:0",
+            "-vframes",
+            "1",
+            "-q:v",
+            "2",
+        ])
+        if is_hdr:
+            acc_cmd.extend([
+                "-vf",
+                "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
+            ])
+        else:
+            acc_cmd.extend(["-pix_fmt", "yuv420p"])
+
+        acc_cmd.append(image_tmp)
+        bounded_succeeded = False
+        try:
+            acc_res = subprocess.run(
+                acc_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+                timeout=30,
+            )
+            has_corrupt_frame = any(
+                term in (acc_res.stderr or "").lower()
+                for term in ["corrupt decoded frame", "error while decoding"]
+            )
+            if not has_corrupt_frame and os.path.exists(image_tmp) and os.path.getsize(image_tmp) > 0:
+                bounded_succeeded = True
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            logger.warning(f"Accurate bounded seek failed: {e}. Falling back to full-file accurate seek...")
+
+        if not bounded_succeeded:
+            if not allow_full_decode:
+                logger.warning(
+                    "Fast and bounded seek failed; skipping slow full-file accurate seek for thumbnail."
+                )
+                return False
+
+            if os.path.exists(image_tmp):
+                try:
+                    os.remove(image_tmp)
+                except OSError:
+                    pass
+            full_cmd = [
+                "ffmpeg",
+                "-y",
+            ]
+            if x264_build is not None:
+                full_cmd.extend(["-x264_build", str(x264_build)])
+            full_cmd.extend([
+                "-i",
+                mkv_path,
+                "-ss",
+                str(midpoint),
+                "-map",
+                "0:V:0",
+                "-vframes",
+                "1",
+                "-q:v",
+                "2",
+            ])
+            if is_hdr:
+                full_cmd.extend([
+                    "-vf",
+                    "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
+                ])
+            else:
+                full_cmd.extend(["-pix_fmt", "yuv420p"])
+
+            full_cmd.append(image_tmp)
+            try:
+                full_res = subprocess.run(
+                    full_cmd,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    check=True,
+                    timeout=300,
+                )
+                if any(term in full_res.stderr.lower() for term in ["corrupt decoded frame", "error while decoding"]):
+                    raise subprocess.CalledProcessError(0, full_cmd, output="", stderr=full_res.stderr)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+                logger.error(f"Full-file accurate seek failed: {e}")
+                return False
+
+    return bool(os.path.exists(image_tmp) and os.path.getsize(image_tmp) > 0)
+
+
+def extract_image(
+    sentence_id: int,
+    out_dir: str,
+    pad_start: float = 0.25,
+    pad_end: float = 0.0,
+) -> tuple[bool, str, str | None, bool]:
+    """Extract only the thumbnail image frame for a sentence, independent of audio.
+
+    Args:
+        sentence_id (int): ID of the sentence to extract image for.
+        out_dir (str): Output directory for the extracted media.
+        pad_start (float, optional): Seconds to pad before start time. Defaults to 0.25.
+        pad_end (float, optional): Seconds to pad after end time. Defaults to 0.0.
+
+    Returns:
+        tuple: (success: bool, message: str, image_out: str | None, is_cached: bool)
+    """
+    target, mkv_path, start, end, duration, midpoint, mkv_id, expected_tag, err = _resolve_target_media(
+        sentence_id, pad_start, pad_end
+    )
+    if err:
+        return False, err, None, False
+
+    os.makedirs(out_dir, exist_ok=True)
+    image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
+    img_tag_file = os.path.join(out_dir, f".hagi_cache_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+    legacy_tag_file = os.path.join(out_dir, f".hagi_cache_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+
+    if _is_file_cache_valid(image_out, [img_tag_file, legacy_tag_file], expected_tag):
+        return True, "Media returned from cache", image_out, True
+
+    _tmp_id = uuid.uuid4().hex
+    image_tmp = os.path.join(out_dir, f".hagi_img_tmp_{_tmp_id}.jpg")
+
+    try:
+        _stream_idx, is_hdr, x264_build = get_media_stream_info(mkv_path)
+        ok = _extract_frame_ffmpeg(
+            mkv_path,
+            midpoint,
+            image_tmp,
+            is_hdr,
+            x264_build,
+            allow_full_decode=False,
+            fast_timeout=15,
+        )
+        if not ok:
+            if os.path.exists(image_tmp):
+                try:
+                    os.remove(image_tmp)
+                except OSError:
+                    pass
+            return False, "Failed to extract thumbnail image (output was empty or corrupt).", None, False
+
+        os.replace(image_tmp, image_out)
+        try:
+            with open(img_tag_file, "w", encoding="utf-8") as f:
+                f.write(expected_tag)
+        except Exception:
+            pass
+
+        return True, "Media extracted successfully", image_out, False
+    except Exception:
+        logger.exception("Image extraction failed for sentence %s", sentence_id)
+        if os.path.exists(image_tmp):
+            try:
+                os.remove(image_tmp)
+            except OSError:
+                pass
+        return False, "An internal error occurred during extraction.", None, False
+
+
+def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
+    """Extract audio and image for a given sentence.
+
+    Args:
+        sentence_id (int): ID of the sentence to extract.
+        out_dir (str): Output directory for the extracted media.
+        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.25.
+        pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.0.
+
+    Returns:
+        tuple: A tuple containing:
+            - bool: Success status.
+            - str: Status message.
+            - str: Path to the extracted audio file.
+            - str: Path to the extracted image file.
+            - str: The sentence text.
+            - bool: Whether the media was served from cache.
+    """
+    conn = db.get_db()
+    target, mkv_path, start, end, duration, midpoint, mkv_id, expected_tag, err = _resolve_target_media(
+        sentence_id, pad_start, pad_end, conn=conn
+    )
+    if err:
+        return False, err, None, None, None, False
+
+    os.makedirs(out_dir, exist_ok=True)
 
     # Grab overlapping text whose midpoint falls within the padded timeframe (matching UI logic)
     overlapping_sentences = conn.execute(
@@ -345,245 +681,75 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
 
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.mp3")
     image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
-    src_tag_file = os.path.join(out_dir, f".hagi_cache_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+    audio_tag_file = os.path.join(out_dir, f".hagi_cache_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+    img_tag_file = os.path.join(out_dir, f".hagi_cache_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+    legacy_tag_file = os.path.join(out_dir, f".hagi_cache_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+
+    audio_cached = _is_file_cache_valid(audio_out, [audio_tag_file, legacy_tag_file], expected_tag)
+    image_cached = _is_file_cache_valid(image_out, [img_tag_file, legacy_tag_file], expected_tag)
+
+    if audio_cached and image_cached:
+        return True, "Media returned from cache", audio_out, image_out, combined_text, True
 
     _tmp_id = uuid.uuid4().hex
     audio_tmp = os.path.join(out_dir, f".hagi_audio_tmp_{_tmp_id}.mp3")
     image_tmp = os.path.join(out_dir, f".hagi_img_tmp_{_tmp_id}.jpg")
 
     try:
-        mkv_stat = os.stat(mkv_path)
-        mkv_id = f"{mkv_stat.st_size}|{mkv_stat.st_mtime:.3f}"
-    except OSError:
-        mkv_id = "unknown"
-    expected_tag = f"{os.path.abspath(mkv_path)}|{mkv_id}|{start:.3f}|{end:.3f}"
-    is_cached = False
-    if os.path.exists(audio_out) and os.path.exists(image_out):
-        is_valid = False
-        if os.path.exists(src_tag_file):
-            try:
-                with open(src_tag_file, "r", encoding="utf-8") as f:
-                    cached_tag = f.read().strip()
-                if cached_tag == expected_tag:
-                    is_valid = True
-            except Exception:
-                is_valid = False
-
-        if is_valid:
-            try:
-                os.utime(audio_out, None)
-                os.utime(image_out, None)
-                if os.path.exists(src_tag_file):
-                    os.utime(src_tag_file, None)
-                is_cached = True
-                return True, "Media returned from cache", audio_out, image_out, combined_text, is_cached
-            except Exception:
-                pass
-
-    try:
         audio_stream_idx, is_hdr, x264_build = get_media_stream_info(mkv_path)
 
-        # Extract Audio using the detected stream index
-        subprocess.run(
-            [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(start),
-                "-i",
-                mkv_path,
-                "-t",
-                str(duration),
-                "-q:a",
-                "0",
-                "-map",
-                f"0:a:{audio_stream_idx}",
-                audio_tmp,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=True,
-            timeout=120,
-        )
-
-        # Build Image extraction command
-        img_cmd = [
-            "ffmpeg",
-            "-y",
-            "-ss",
-            str(midpoint),
-        ]
-        if x264_build is not None:
-            img_cmd.extend(["-x264_build", str(x264_build)])
-        img_cmd.extend([
-            "-i",
-            mkv_path,
-            "-map",
-            "0:V:0",
-            "-vframes",
-            "1",
-            "-q:v",
-            "2",
-        ])
-
-        if is_hdr:
-            img_cmd.extend([
-                "-vf",
-                "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
-            ])
-        else:
-            img_cmd.extend(["-pix_fmt", "yuv420p"])
-
-        img_cmd.append(image_tmp)
-
-        # Extract Image
-        needs_fallback = False
-        try:
-            img_res = subprocess.run(
-                img_cmd,
-                capture_output=True,
-                text=True,
-                check=False,
+        if not audio_cached:
+            subprocess.run(
+                [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    str(start),
+                    "-i",
+                    mkv_path,
+                    "-t",
+                    str(duration),
+                    "-q:a",
+                    "0",
+                    "-map",
+                    f"0:a:{audio_stream_idx}",
+                    audio_tmp,
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=True,
                 timeout=120,
             )
 
-            # Open-GOP / Hi10P videos (like some anime rips) can produce corrupt frames
-            # when fast-seeking to a non-IDR keyframe. Check ffmpeg's stderr for corruption.
-            img_stderr = (img_res.stderr or "").lower()
-            if (
-                img_res.returncode != 0
-                or "corrupt decoded frame" in img_stderr
-                or "error while decoding" in img_stderr
-                or "output file is empty" in img_stderr
-                or not os.path.exists(image_tmp)
-                or os.path.getsize(image_tmp) == 0
-            ):
-                needs_fallback = True
-        except subprocess.TimeoutExpired:
-            needs_fallback = True
+        if not image_cached:
+            ok = _extract_frame_ffmpeg(mkv_path, midpoint, image_tmp, is_hdr, x264_build)
+            if not ok:
+                for tmp_path in (audio_tmp, image_tmp):
+                    if os.path.exists(tmp_path):
+                        try:
+                            os.remove(tmp_path)
+                        except OSError:
+                            pass
+                return False, "Failed to extract thumbnail image (output was empty or corrupt).", None, None, None, False
 
-        if needs_fallback:
-            logger.warning(
-                "Fast-seek image extraction produced corrupt frames. "
-                "Falling back to accurate bounded seek..."
-            )
-            if os.path.exists(image_tmp):
-                try:
-                    os.remove(image_tmp)
-                except OSError:
-                    pass
-            preroll_start = max(0.0, midpoint - 10.0)
-            relative_offset = max(0.0, midpoint - preroll_start)
-            acc_cmd = [
-                "ffmpeg",
-                "-y",
-                "-ss",
-                str(preroll_start),
-            ]
-            if x264_build is not None:
-                acc_cmd.extend(["-x264_build", str(x264_build)])
-            acc_cmd.extend([
-                "-i",
-                mkv_path,
-                "-ss",
-                str(relative_offset),
-                "-map",
-                "0:V:0",
-                "-vframes",
-                "1",
-                "-q:v",
-                "2",
-            ])
-            if is_hdr:
-                acc_cmd.extend([
-                    "-vf",
-                    "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
-                ])
-            else:
-                acc_cmd.extend(["-pix_fmt", "yuv420p"])
-
-            acc_cmd.append(image_tmp)
-            bounded_succeeded = False
+        if not audio_cached:
+            os.replace(audio_tmp, audio_out)
             try:
-                acc_res = subprocess.run(
-                    acc_cmd,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.PIPE,
-                    text=True,
-                    check=True,
-                    timeout=30,
-                )
-                # In Open-GOP streams, pre-roll decoding inherently emits concealment warnings
-                # for the skipped initial frames while cleanly decoding the target frame.
-                # A 0 exit code and non-empty image file confirm the target thumbnail succeeded.
-                if acc_res.returncode == 0 and os.path.exists(image_tmp) and os.path.getsize(image_tmp) > 0:
-                    bounded_succeeded = True
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-                logger.warning(f"Accurate bounded seek failed: {e}. Falling back to full-file accurate seek...")
+                with open(audio_tag_file, "w", encoding="utf-8") as f:
+                    f.write(expected_tag)
+            except Exception:
+                pass
 
-            if not bounded_succeeded:
-                if os.path.exists(image_tmp):
-                    try:
-                        os.remove(image_tmp)
-                    except OSError:
-                        pass
-                # Fallback to full-file accurate seek (-i BEFORE -ss)
-                full_cmd = [
-                    "ffmpeg",
-                    "-y",
-                ]
-                if x264_build is not None:
-                    full_cmd.extend(["-x264_build", str(x264_build)])
-                full_cmd.extend([
-                    "-i",
-                    mkv_path,
-                    "-ss",
-                    str(midpoint),
-                    "-map",
-                    "0:V:0",
-                    "-vframes",
-                    "1",
-                    "-q:v",
-                    "2",
-                ])
-                if is_hdr:
-                    full_cmd.extend([
-                        "-vf",
-                        "zscale=t=linear:npl=100,format=gbrpf32le,zscale=p=bt709,tonemap=tonemap=hable:desat=0,zscale=t=bt709:m=bt709:r=tv,format=yuv420p",
-                    ])
-                else:
-                    full_cmd.extend(["-pix_fmt", "yuv420p"])
+        if not image_cached:
+            os.replace(image_tmp, image_out)
+            try:
+                with open(img_tag_file, "w", encoding="utf-8") as f:
+                    f.write(expected_tag)
+            except Exception:
+                pass
 
-                full_cmd.append(image_tmp)
-                try:
-                    full_res = subprocess.run(
-                        full_cmd,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.PIPE,
-                        text=True,
-                        check=True,
-                        timeout=300,
-                    )
-                    # Full-file accurate seek can encounter unrecoverable stream decoding errors without crashing
-                    if any(term in full_res.stderr.lower() for term in ["corrupt decoded frame", "error while decoding"]):
-                        raise subprocess.CalledProcessError(0, full_cmd, output="", stderr=full_res.stderr)
-                except subprocess.CalledProcessError as e:
-                    logger.error(f"Full-file accurate seek failed: {e.stderr}")
-                    raise e
-
-        if not os.path.exists(image_tmp) or os.path.getsize(image_tmp) == 0:
-            for tmp_path in (audio_tmp, image_tmp):
-                if os.path.exists(tmp_path):
-                    try:
-                        os.remove(tmp_path)
-                    except OSError:
-                        pass
-            return False, "Failed to extract thumbnail image (output was empty or corrupt).", None, None, None, False
-
-        os.replace(audio_tmp, audio_out)
-        os.replace(image_tmp, image_out)
         try:
-            with open(src_tag_file, "w", encoding="utf-8") as f:
+            with open(legacy_tag_file, "w", encoding="utf-8") as f:
                 f.write(expected_tag)
         except Exception:
             pass

@@ -1,5 +1,6 @@
 """Test module."""
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -1279,3 +1280,175 @@ def test_extract_media_bounded_seek_relative_offset(test_db):
         assert bounded_call_args.index("-ss") < bounded_call_args.index("-i")
         assert bounded_call_args.index("-i") < bounded_call_args.index("-ss", bounded_call_args.index("-i"))
         assert "-copyts" not in bounded_call_args
+
+
+def test_extract_image_independent(test_db):
+    """Test that extract_image extracts only the image and does not run audio extraction."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        mock_subrun.return_value.returncode = 0
+        mock_subrun.return_value.stderr = ""
+        mock_subrun.return_value.stdout = "{}"
+
+        success, msg, image_out, is_cached = exporter.extract_image(sid, "/fake/out")
+
+        assert success is True
+        assert is_cached is False
+        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.250_0.000.jpg"
+
+        # mock_subrun should only be called twice: ffprobe stream detection + ffmpeg image
+        assert mock_subrun.call_count == 2
+        assert mock_subrun.call_args_list[1][1].get("timeout") == 15
+        # Absolutely NO audio extraction command should be present
+        for call_args in mock_subrun.call_args_list:
+            cmd = call_args[0][0]
+            assert "0:a:" not in " ".join(cmd)
+            assert "audio" not in " ".join(cmd).lower()
+
+
+def test_extract_media_decoupled_reuses_cached_image(test_db):
+    """Test that extract_media skips ffmpeg image extraction if the image is already cached."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_path = os.path.join(tmpdir, "episode1.mkv")
+        with open(video_path, "w") as f:
+            f.write("fake video content")
+        test_db.execute("UPDATE media SET path = ?", (video_path,))
+
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        with (
+            patch("hagi.exporter.db.get_db", return_value=test_db),
+            patch("hagi.exporter.get_media_stream_info", return_value=(0, False, None)),
+            patch("subprocess.run") as mock_subrun,
+        ):
+            def mock_side_effect(cmd, *args, **kwargs):
+                """Create fake media files on disk for ffmpeg."""
+                from unittest.mock import MagicMock
+                if "jpg" in cmd[-1]:
+                    with open(cmd[-1], "w") as f:
+                        f.write("image")
+                elif "mp3" in cmd[-1]:
+                    with open(cmd[-1], "w") as f:
+                        f.write("audio")
+                res = MagicMock()
+                res.returncode = 0
+                res.stderr = ""
+                return res
+
+            mock_subrun.side_effect = mock_side_effect
+
+            # Step 1: Extract only image
+            success, msg, img_out, is_cached = exporter.extract_image(sid, tmpdir)
+            assert success is True
+            assert is_cached is False
+            assert os.path.exists(img_out)
+
+            # Reset call count
+            mock_subrun.reset_mock()
+
+            # Step 2: Now call extract_media. It should see image is already cached and only extract audio!
+            success, msg, a_out, i_out, text, is_cached = exporter.extract_media(sid, tmpdir)
+            assert success is True
+            assert is_cached is False
+            assert os.path.exists(a_out)
+
+            # ffmpeg video should NOT have been called in mock_subrun!
+            ffmpeg_calls = [c[0][0] for c in mock_subrun.call_args_list if "ffmpeg" in c[0][0]]
+            # Only 1 ffmpeg call: audio
+            assert len(ffmpeg_calls) == 1
+            assert "0:a:0" in ffmpeg_calls[0]
+
+
+def test_extract_media_decoupled_reuses_cached_audio(test_db):
+    """Test that extract_media skips ffmpeg audio extraction if the audio is already cached."""
+    import tempfile
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_path = os.path.join(tmpdir, "episode1.mkv")
+        with open(video_path, "w") as f:
+            f.write("fake video content")
+        test_db.execute("UPDATE media SET path = ?", (video_path,))
+
+        sentence = test_db.execute("SELECT id FROM sentences WHERE text = 'This is a test sentence.'").fetchone()
+        sid = sentence["id"]
+
+        # Pre-create audio file and audio cache tag
+        a_file = os.path.join(tmpdir, f"hagi_audio_{sid}_0.250_0.000.mp3")
+        tag_file = os.path.join(tmpdir, f".hagi_cache_audio_{sid}_0.250_0.000.src")
+        with open(a_file, "w") as f:
+            f.write("existing audio")
+
+        mkv_stat = os.stat(video_path)
+        mkv_id = f"{mkv_stat.st_size}|{mkv_stat.st_mtime:.3f}"
+        expected_tag = f"{os.path.abspath(video_path)}|{mkv_id}|9.750|15.000"
+        with open(tag_file, "w") as f:
+            f.write(expected_tag)
+
+        with (
+            patch("hagi.exporter.db.get_db", return_value=test_db),
+            patch("hagi.exporter.get_media_stream_info", return_value=(0, False, None)),
+            patch("subprocess.run") as mock_subrun,
+        ):
+            def mock_side_effect(cmd, *args, **kwargs):
+                """Create fake image file on disk for ffmpeg."""
+                from unittest.mock import MagicMock
+                if "jpg" in cmd[-1]:
+                    with open(cmd[-1], "w") as f:
+                        f.write("image")
+                res = MagicMock()
+                res.returncode = 0
+                res.stderr = ""
+                return res
+
+            mock_subrun.side_effect = mock_side_effect
+
+            success, msg, a_out, i_out, text, is_cached = exporter.extract_media(sid, tmpdir)
+            assert success is True
+            assert is_cached is False
+
+            # ffmpeg audio should NOT have been called!
+            ffmpeg_calls = [c[0][0] for c in mock_subrun.call_args_list if "ffmpeg" in c[0][0]]
+            assert len(ffmpeg_calls) == 1
+            assert "0:V:0" in ffmpeg_calls[0]
+
+
+def test_extract_frame_ffmpeg_bounded_rejects_corrupt_frame(tmp_path):
+    """Test that _extract_frame_ffmpeg rejects bounded seek output when stderr reports decoding errors."""
+    fake_video = tmp_path / "video.mkv"
+    fake_video.write_text("video")
+    fake_img = tmp_path / "test.jpg"
+
+    with patch("subprocess.run") as mock_subrun:
+        # Fast seek produces corrupt frame error
+        fast_res = MagicMock()
+        fast_res.returncode = 0
+        fast_res.stderr = "Error while decoding frame"
+
+        # Bounded seek also reports corrupt decoded frame
+        bounded_res = MagicMock()
+        bounded_res.returncode = 0
+        bounded_res.stderr = "Corrupt decoded frame in stream"
+
+        mock_subrun.side_effect = [fast_res, bounded_res]
+
+        # Call with allow_full_decode=False (thumbnail mode)
+        ok = exporter._extract_frame_ffmpeg(
+            str(fake_video),
+            midpoint=10.0,
+            image_tmp=str(fake_img),
+            is_hdr=False,
+            x264_build=None,
+            allow_full_decode=False,
+        )
+
+        assert ok is False

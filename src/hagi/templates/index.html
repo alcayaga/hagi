@@ -7,6 +7,52 @@
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg" />
     <!-- Use Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      @keyframes shimmer-sweep {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(100%);
+        }
+      }
+      .shimmer-wave {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(255, 255, 255, 0.35) 50%,
+          transparent 100%
+        );
+        transform: translateX(-100%);
+        animation: shimmer-sweep 1.8s infinite;
+        pointer-events: none;
+      }
+      @media (prefers-color-scheme: dark) {
+        .shimmer-wave {
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(255, 255, 255, 0.08) 50%,
+            transparent 100%
+          );
+        }
+      }
+      .dark .shimmer-wave {
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(255, 255, 255, 0.08) 50%,
+          transparent 100%
+        );
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .shimmer-wave {
+          animation: none;
+        }
+      }
+    </style>
   </head>
   <body class="bg-gray-100 min-h-screen dark:bg-gray-900 dark:text-gray-100 transition-colors">
     <div class="container mx-auto p-4 md:p-8">
@@ -75,10 +121,10 @@
       </div>
 
       <!-- Results List -->
-      <div id="resultsList" class="flex flex-col gap-4 max-w-4xl mx-auto"></div>
+      <div id="resultsList" class="flex flex-col gap-5 max-w-5xl mx-auto"></div>
 
       <!-- Nadeshiko Results List -->
-      <div id="nadeshikoResultsWrapper" class="hidden flex flex-col gap-3 max-w-4xl mx-auto mt-8 border-t dark:border-gray-700 pt-6">
+      <div id="nadeshikoResultsWrapper" class="hidden flex flex-col gap-3 max-w-5xl mx-auto mt-8 border-t dark:border-gray-700 pt-6">
         <div class="flex items-center gap-2 mb-2">
           <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
           <span class="font-bold text-gray-700 dark:text-gray-200 text-lg">Nadeshiko Global Matches</span>

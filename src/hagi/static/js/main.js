@@ -240,6 +240,155 @@ function populateDropdowns() {
   return false;
 }
 
+/**
+ * Viewport-driven lazy loader with concurrency throttling for scene thumbnails.
+ */
+class ThumbnailManager {
+  /**
+   * @param {number} maxConcurrent - Maximum concurrent thumbnail extraction requests.
+   * @param {string} rootMargin - IntersectionObserver root margin for pre-loading.
+   */
+  constructor(maxConcurrent = 3, rootMargin = "100px 0px") {
+    this.maxConcurrent = maxConcurrent;
+    this.rootMargin = rootMargin;
+    this.queue = [];
+    this.activeCount = 0;
+    this.generation = 0;
+    this.inFlightImages = new Set();
+    this.observer = null;
+    this.initObserver();
+  }
+
+  /**
+   * Initializes or re-initializes the IntersectionObserver.
+   */
+  initObserver() {
+    if (typeof IntersectionObserver === "undefined") return;
+    this.observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            const container = entry.target;
+            if (this.observer) {
+              this.observer.unobserve(container);
+            }
+            this.enqueue(container);
+          }
+        });
+      },
+      { rootMargin: this.rootMargin },
+    );
+  }
+
+  /**
+   * Starts observing a thumbnail container element.
+   * @param {HTMLElement} element - The thumbnail container to observe.
+   */
+  observe(element) {
+    if (!this.observer || !element) return;
+    this.observer.observe(element);
+  }
+
+  /**
+   * Adds a thumbnail container to the pending queue and triggers processing.
+   * @param {HTMLElement} container - The container waiting to load.
+   */
+  enqueue(container) {
+    if (!this.queue.includes(container)) {
+      this.queue.push(container);
+      this.processQueue();
+    }
+  }
+
+  /**
+   * Processes queued items up to the maximum concurrent limit.
+   */
+  processQueue() {
+    while (this.activeCount < this.maxConcurrent && this.queue.length > 0) {
+      const container = this.queue.shift();
+      if (!container || !container.isConnected) continue;
+      this.loadThumbnail(container);
+    }
+  }
+
+  /**
+   * Triggers the thumbnail load for a single container.
+   * @param {HTMLElement} container - Container element with data-sentence-id.
+   */
+  loadThumbnail(container) {
+    const sentenceId = container.dataset.sentenceId;
+    const img = container.querySelector(".thumb-img");
+    const skeleton = container.querySelector(".thumb-skeleton");
+    const errorFallback = container.querySelector(".thumb-error");
+
+    if (!sentenceId || !img) {
+      this.processQueue();
+      return;
+    }
+
+    const requestGen = this.generation;
+    this.activeCount++;
+    this.inFlightImages.add(img);
+
+    const sStart = parseFloat(document.getElementById("padStart")?.value);
+    const sEnd = parseFloat(document.getElementById("padEnd")?.value);
+    const padStart = isNaN(sStart) ? 0.25 : sStart;
+    const padEnd = isNaN(sEnd) ? 0.0 : sEnd;
+
+    const url = `/api/thumbnail/${encodeURIComponent(sentenceId)}?pad_start=${padStart}&pad_end=${padEnd}`;
+
+    const cleanup = () => {
+      this.inFlightImages.delete(img);
+      if (this.generation !== requestGen) return;
+      this.activeCount--;
+      this.processQueue();
+    };
+
+    img.onload = () => {
+      if (this.generation === requestGen) {
+        if (skeleton) skeleton.classList.add("hidden");
+        img.classList.remove("opacity-0");
+      }
+      cleanup();
+    };
+
+    img.onerror = () => {
+      if (this.generation === requestGen) {
+        if (skeleton) skeleton.classList.add("hidden");
+        img.classList.add("hidden");
+        if (errorFallback) errorFallback.classList.remove("hidden");
+      }
+      cleanup();
+    };
+
+    img.src = url;
+  }
+
+  /**
+   * Clears the pending queue, resets active concurrency state, advances generation, and disconnects the observer.
+   */
+  clear() {
+    this.queue = [];
+    this.inFlightImages.forEach((img) => {
+      img.onload = null;
+      img.onerror = null;
+      img.src = "";
+    });
+    this.inFlightImages.clear();
+    this.activeCount = 0;
+    this.generation++;
+    if (this.observer) {
+      this.observer.disconnect();
+    }
+    this.initObserver();
+  }
+}
+
+const thumbnailManager = new ThumbnailManager(3, "100px 0px");
+if (typeof window !== "undefined") {
+  window.thumbnailManager = thumbnailManager;
+}
+
 let currentSearchAbortController = null;
 
 /**
@@ -253,6 +402,8 @@ async function performSearch(pushState = true, resetFilters = false) {
   const query = document.getElementById("searchInput").value;
   const loading = document.getElementById("loading");
   const container = document.getElementById("resultsList");
+
+  thumbnailManager.clear();
 
   if (currentSearchAbortController) {
     currentSearchAbortController.abort();
@@ -449,6 +600,7 @@ async function performNadeshikoSearch(query) {
  * and dynamically generates the HTML for the results table.
  */
 function renderResults() {
+  thumbnailManager.clear();
   const container = document.getElementById("resultsList");
   container.innerHTML = "";
 
@@ -511,37 +663,93 @@ function renderResults() {
     const cleanEng = r.eng_translation ? r.eng_translation.replace(/\n/g, " ") : "";
 
     const card = document.createElement("div");
-    card.className = "bg-white/60 dark:bg-gray-800/40 backdrop-blur-md rounded-2xl shadow-sm border border-white/20 dark:border-gray-700/50 hover:bg-white/80 dark:hover:bg-gray-800/60 transition-all duration-300 p-4 md:p-5 flex flex-col md:flex-row gap-4 md:gap-5 justify-between group";
+    card.className = "result-card bg-white/70 dark:bg-gray-800/50 backdrop-blur-md rounded-2xl md:rounded-3xl shadow-sm hover:shadow-md border border-gray-200/70 dark:border-gray-700/60 hover:bg-white/90 dark:hover:bg-gray-800/70 transition-all duration-300 p-4 sm:p-5 md:p-6 flex flex-col sm:flex-row gap-5 md:gap-6 items-start group";
+    card.dataset.sentenceId = r.id;
 
     card.innerHTML = `
-      <!-- Left: Content -->
-      <div class="flex flex-col gap-2 flex-grow">
-        <!-- Top Metadata -->
-        <div class="flex flex-wrap items-center gap-1.5 md:gap-2 text-[0.65rem] md:text-[0.7rem] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-          <span class="text-gray-700 dark:text-gray-200 font-bold">${escapeHtml(sourceDisplay)}</span>
-          ${subParts.length > 0 ? `<span class="opacity-50">&bull;</span><span>${escapeHtml(subParts.join(" "))}</span>` : ""}
-          ${r.episode_title ? `<span class="opacity-50">&bull;</span><span class="italic">"${escapeHtml(r.episode_title)}"</span>` : ""}
-          <span class="opacity-50">&bull;</span>
-          <span class="font-mono bg-gray-500/10 dark:bg-gray-400/10 px-1.5 md:px-2 py-0.5 rounded-md text-gray-600 dark:text-gray-300">${timeStr}</span>
+      <!-- Left: Thumbnail (16:9, lazy loaded, interactive) -->
+      <div class="thumb-container relative w-full sm:w-72 md:w-80 lg:w-96 aspect-video rounded-2xl overflow-hidden flex-shrink-0 self-center bg-gray-200 dark:bg-gray-800/80 group/thumb cursor-pointer shadow-md shadow-black/5 dark:shadow-black/30 border border-black/5 dark:border-white/10 select-none transition-all duration-300"
+           data-sentence-id="${r.id}"
+           role="button"
+           tabindex="0"
+           aria-label="Preview and extract scene"
+           onclick="extractMedia(${r.id}, this)"
+           onkeydown="if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); extractMedia(${r.id}, this); }"
+           title="Click to preview & extract">
+        
+        <!-- Skeleton Loader with Radiant Shimmer Wave -->
+        <div class="thumb-skeleton absolute inset-0 bg-gray-200 dark:bg-gray-800 transition-opacity duration-300 overflow-hidden">
+          <div class="shimmer-wave"></div>
         </div>
-        
-        <!-- Primary Text -->
-        <div class="text-xl md:text-2xl font-medium tracking-tight text-gray-900 dark:text-gray-50 mt-1 mb-2">${highlightText(cleanText)}</div>
-        
-        <!-- Translations -->
-        <div class="flex flex-col gap-2">
-          ${cleanSpa ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanSpa)}</span></div>` : ""}
-          ${cleanEng ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanEng)}</span></div>` : ""}
+
+        <!-- Lazy Image Target -->
+        <img alt="Scene thumbnail"
+             class="thumb-img absolute inset-0 w-full h-full object-cover opacity-0 transition-all duration-500 group-hover/thumb:scale-105" />
+
+        <!-- Timestamp Badge Overlay -->
+        <div class="absolute bottom-2 right-2 bg-black/75 backdrop-blur-xs text-white text-[10px] md:text-xs font-mono px-2 py-0.5 rounded-lg shadow z-10 pointer-events-none">
+          ${timeStr}
+        </div>
+
+        <!-- Play/Inspect Overlay on Hover -->
+        <div class="thumb-hover-overlay absolute inset-0 flex items-center justify-center opacity-0 group-hover/thumb:opacity-100 transition-opacity duration-200 bg-black/25 z-10 pointer-events-none">
+          <div class="bg-black/60 text-white rounded-full p-2.5 backdrop-blur-sm shadow transform scale-90 group-hover/thumb:scale-100 transition-transform">
+            <svg class="w-5 h-5 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </div>
+        </div>
+
+        <!-- Click / Wait Overlay (shown when extraction is triggered) -->
+        <div class="thumb-wait-overlay hidden absolute inset-0 flex flex-col items-center justify-center bg-black/70 backdrop-blur-xs text-white z-20 pointer-events-none transition-opacity duration-200">
+          <svg class="animate-spin w-5 h-5 text-indigo-400 mb-1.5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span class="text-[11px] font-semibold text-indigo-200 tracking-wide">Opening Scene...</span>
+        </div>
+
+        <!-- Error / No Preview Fallback (hidden by default) -->
+        <div class="thumb-error hidden absolute inset-0 flex flex-col items-center justify-center bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 p-2 text-center">
+          <svg class="w-5 h-5 mb-1 opacity-50" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path>
+          </svg>
+          <span class="text-[9px] font-medium uppercase tracking-wider">No Preview</span>
         </div>
       </div>
 
-      <!-- Right: Actions -->
-      <div class="flex flex-row md:flex-col gap-2 md:gap-3 justify-start md:justify-center flex-shrink-0 pt-3 md:pt-0 mt-1 md:mt-0 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-opacity duration-300">
-         <button onclick="viewContext(${r.id})" class="flex-1 md:flex-none md:w-28 bg-white/50 dark:bg-gray-700/30 text-gray-700 dark:text-gray-200 px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl hover:bg-white dark:hover:bg-gray-600/50 border border-gray-200 dark:border-gray-600/50 font-medium text-xs md:text-sm transition-all shadow-sm backdrop-blur-sm">Context</button>
-         <button onclick="extractMedia(${r.id}, this)" class="flex-1 md:flex-none md:w-28 bg-indigo-600/90 text-white px-3 py-2 md:px-4 md:py-2.5 rounded-lg md:rounded-xl hover:bg-indigo-500 border border-indigo-500/50 font-medium text-xs md:text-sm transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] backdrop-blur-sm">Extract</button>
+      <!-- Right: Content Column with Integrated Actions (Option A) -->
+      <div class="flex flex-col flex-grow min-w-0 justify-between self-stretch">
+        <div class="flex flex-col gap-2">
+          <!-- Top Metadata -->
+          <div class="flex flex-wrap items-center gap-1.5 md:gap-2 text-[0.65rem] md:text-[0.7rem] font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+            <span class="text-gray-800 dark:text-gray-200 font-bold">${escapeHtml(sourceDisplay)}</span>
+            ${subParts.length > 0 ? `<span class="opacity-50">&bull;</span><span>${escapeHtml(subParts.join(" "))}</span>` : ""}
+            ${r.episode_title ? `<span class="opacity-50">&bull;</span><span class="italic">"${escapeHtml(r.episode_title)}"</span>` : ""}
+          </div>
+          
+          <!-- Primary Japanese Text -->
+          <div class="text-2xl md:text-3xl font-semibold tracking-tight text-gray-900 dark:text-gray-50 leading-snug my-1.5">${highlightText(cleanText)}</div>
+          
+          <!-- Translations -->
+          <div class="flex flex-col gap-2">
+            ${cleanSpa ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20 shadow-sm">SPA</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanSpa)}</span></div>` : ""}
+            ${cleanEng ? `<div class="text-sm flex items-center gap-2"><span class="flex-shrink-0 px-1.5 py-0.5 rounded text-[0.65rem] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shadow-sm">ENG</span><span class="text-gray-600 dark:text-gray-300 font-normal leading-relaxed"> ${highlightText(cleanEng)}</span></div>` : ""}
+          </div>
+        </div>
+
+        <!-- Integrated Bottom-Right Action Toolbar -->
+        <div class="flex items-center justify-between sm:justify-end gap-2.5 pt-3 mt-3 border-t border-gray-100 dark:border-gray-800/80 w-full opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity duration-300">
+          <button onclick="viewContext(${r.id})" class="flex-1 sm:flex-none sm:w-28 px-3.5 py-2 sm:px-4 sm:py-2 bg-white/60 dark:bg-gray-700/40 text-gray-700 dark:text-gray-200 rounded-xl hover:bg-white dark:hover:bg-gray-600/60 border border-gray-200/80 dark:border-gray-600/50 font-medium text-xs md:text-sm transition-all shadow-sm backdrop-blur-sm text-center">Context</button>
+          <button onclick="extractMedia(${r.id}, this)" data-sentence-id="${r.id}" class="btn-extract flex-1 sm:flex-none sm:w-28 px-3.5 py-2 sm:px-4 sm:py-2 bg-indigo-600/90 text-white rounded-xl hover:bg-indigo-500 border border-indigo-500/50 font-medium text-xs md:text-sm transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] hover:shadow-[0_0_20px_rgba(79,70,229,0.4)] backdrop-blur-sm text-center">Extract</button>
+        </div>
       </div>
     `;
     container.appendChild(card);
+    const thumbContainer = card.querySelector(".thumb-container");
+    if (thumbContainer) {
+      thumbnailManager.observe(thumbContainer);
+    }
   });
 }
 
@@ -595,13 +803,69 @@ if (typeof window !== "undefined") {
 }
 
 /**
+ * Sets or clears the waiting state for both the thumbnail and the extract button of a card.
+ *
+ * @param {number} sentenceId - The ID of the sentence being extracted.
+ * @param {boolean} isExtracting - Whether the card is currently in an extracting/loading state.
+ */
+function setCardExtractionState(sentenceId, isExtracting) {
+  const thumb = document.querySelector(`.thumb-container[data-sentence-id="${sentenceId}"]`);
+  const btn = document.querySelector(`.btn-extract[data-sentence-id="${sentenceId}"]`);
+
+  if (thumb) {
+    const waitOverlay = thumb.querySelector(".thumb-wait-overlay");
+    if (waitOverlay) {
+      if (isExtracting) {
+        waitOverlay.classList.remove("hidden");
+        thumb.classList.add("pointer-events-none");
+      } else {
+        waitOverlay.classList.add("hidden");
+        thumb.classList.remove("pointer-events-none");
+      }
+    }
+  }
+
+  if (btn) {
+    if (isExtracting) {
+      if (!btn.dataset.originalHtml) {
+        btn.dataset.originalHtml = btn.innerHTML;
+      }
+      btn.innerHTML = `
+        <span class="inline-flex items-center justify-center gap-1.5 text-xs whitespace-nowrap">
+          <svg class="animate-spin w-3.5 h-3.5 text-white flex-shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span>Extracting</span>
+        </span>
+      `;
+      btn.disabled = true;
+      btn.classList.add("opacity-75", "cursor-wait");
+    } else {
+      if (btn.dataset.originalHtml) {
+        btn.innerHTML = btn.dataset.originalHtml;
+        delete btn.dataset.originalHtml;
+      }
+      btn.disabled = false;
+      btn.classList.remove("opacity-75", "cursor-wait");
+    }
+  }
+}
+
+/**
  * Calls the backend API to extract audio and snapshot images for a specific sentence.
  * Displays the extracted media in a modal.
  *
  * @param {number} id - The ID of the sentence to extract.
- * @param {HTMLElement} btnElement - The button element that triggered the extraction.
+ * @param {HTMLElement} [triggerElement] - The button or element that triggered the extraction.
  */
-async function extractMedia(id, btnElement) {
+async function extractMedia(id, triggerElement) {
+  const thumb = document.querySelector(`.thumb-container[data-sentence-id="${id}"]`);
+  const btn = document.querySelector(`.btn-extract[data-sentence-id="${id}"]`);
+  if ((btn && btn.disabled) || (thumb && thumb.classList.contains("pointer-events-none"))) {
+    return;
+  }
+
   const sStart = parseFloat(document.getElementById("padStart").value);
   const sEnd = parseFloat(document.getElementById("padEnd").value);
   const padStart = isNaN(sStart) ? 0.25 : sStart;
@@ -611,47 +875,38 @@ async function extractMedia(id, btnElement) {
   currentExtraction.padStart = padStart;
   currentExtraction.padEnd = padEnd;
 
-  const originalText = btnElement ? btnElement.innerText : "";
-
-  if (btnElement) {
-    history.pushState(null, "", `/sentence/${id}`);
-  }
-
-  const r = allSearchResults.find((x) => x.id === id);
-  if (r) {
-    const mainTitle = r.show_title || r.path.split("/").pop();
-    const subParts = [];
-
-    if (r.season !== null && r.episode !== null) {
-      subParts.push(`S${r.season} E${r.episode}`);
-    } else if (r.episode !== null) {
-      subParts.push(`EP ${r.episode}`);
-    }
-
-    if (r.episode_title) {
-      subParts.push(`"${r.episode_title}"`);
-    }
-
-    const timeStr = formatTime(r.start_time);
-
-    document.getElementById("mediaMetadata").innerHTML = `
-      <div class="flex flex-col leading-tight">
-        <span class="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">${escapeHtml(mainTitle)}</span>
-        <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate mt-0.5">
-          ${subParts.length > 0 ? subParts.map(escapeHtml).join(" &bull; ") : "Unknown Episode"}
-        </span>
-      </div>
-    `;
-
-    document.getElementById("mediaTimestampBadge").innerText = timeStr;
-  }
-  if (btnElement) {
-    btnElement.innerText = "Wait...";
-    btnElement.disabled = true;
-    btnElement.classList.add("opacity-50");
-  }
+  history.pushState(null, "", `/sentence/${id}`);
+  setCardExtractionState(id, true);
 
   try {
+    const r = allSearchResults.find((x) => x.id === id);
+    if (r) {
+      const mainTitle = r.show_title || r.path.split("/").pop();
+      const subParts = [];
+
+      if (r.season !== null && r.episode !== null) {
+        subParts.push(`S${r.season} E${r.episode}`);
+      } else if (r.episode !== null) {
+        subParts.push(`EP ${r.episode}`);
+      }
+
+      if (r.episode_title) {
+        subParts.push(`"${r.episode_title}"`);
+      }
+
+      const timeStr = formatTime(r.start_time);
+
+      document.getElementById("mediaMetadata").innerHTML = `
+        <div class="flex flex-col leading-tight">
+          <span class="text-lg font-bold text-gray-900 dark:text-gray-100 truncate">${escapeHtml(mainTitle)}</span>
+          <span class="text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wide truncate mt-0.5">
+            ${subParts.length > 0 ? subParts.map(escapeHtml).join(" &bull; ") : "Unknown Episode"}
+          </span>
+        </div>
+      `;
+
+      document.getElementById("mediaTimestampBadge").innerText = timeStr;
+    }
     const response = await fetch(`/api/extract/${id}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -694,11 +949,7 @@ async function extractMedia(id, btnElement) {
   } catch (error) {
     alert("Error calling extraction API: " + error);
   } finally {
-    if (btnElement) {
-      btnElement.innerText = originalText;
-      btnElement.disabled = false;
-      btnElement.classList.remove("opacity-50");
-    }
+    setCardExtractionState(id, false);
   }
 }
 

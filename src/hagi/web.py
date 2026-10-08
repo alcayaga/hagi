@@ -1,16 +1,18 @@
 """Web application for Hagi Local UI."""
 
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+import json
+import logging
+import math
 import os
 import urllib.parse
 
-from fastapi import FastAPI, HTTPException, Request, BackgroundTasks
-from fastapi.responses import HTMLResponse
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field
-
-import json
-import logging
 
 from . import db
 from . import exporter
@@ -283,6 +285,61 @@ class ExtractConfig(BaseModel):
     pad_end: float = 0.0
     target_note_id: int | None = Field(default=None, gt=0)
     search_query: str | None = None
+
+
+_thumbnail_executor = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="thumbnail_worker",
+)
+
+
+@app.get("/api/thumbnail/{sentence_id}")
+async def get_thumbnail(
+    sentence_id: int,
+    background_tasks: BackgroundTasks,
+    pad_start: float = 0.25,
+    pad_end: float = 0.0,
+):
+    """Serve a scene thumbnail image for a sentence, generating it on the fly if needed."""
+    if (
+        not math.isfinite(pad_start)
+        or not math.isfinite(pad_end)
+        or pad_start < 0
+        or pad_end < 0
+        or pad_start > 30.0
+        or pad_end > 30.0
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Padding values must be finite and between 0 and 30 seconds",
+        )
+
+    loop = asyncio.get_running_loop()
+    success, msg, image_out, is_cached = await loop.run_in_executor(
+        _thumbnail_executor,
+        exporter.extract_image,
+        sentence_id,
+        "./media",
+        pad_start,
+        pad_end,
+    )
+    if not success:
+        if "not found" in msg.lower():
+            detail_msg = "Video file not found" if "video file not found" in msg.lower() else msg
+            raise HTTPException(status_code=404, detail=detail_msg)
+        raise HTTPException(status_code=500, detail="Failed to generate thumbnail image.")
+
+    if not is_cached:
+        background_tasks.add_task(exporter.cleanup_media_cache, "./media")
+
+    if not image_out or not os.path.exists(image_out):
+        raise HTTPException(status_code=500, detail="Thumbnail image not found on disk.")
+
+    return FileResponse(
+        image_out,
+        media_type="image/jpeg",
+        headers={"Cache-Control": "private, no-cache"},
+    )
 
 
 @app.post("/api/extract/{sentence_id}")
