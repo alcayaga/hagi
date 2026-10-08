@@ -5,6 +5,7 @@ import os
 from typing import Optional
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from . import db
@@ -374,7 +375,7 @@ def refresh(
     for p in paths:
         expanded = _expand_path(p)
         if not expanded and any(c in p for c in ("*", "?", "[")):
-            console.print(f"[yellow]Warning: No files matched pattern '{p}'. Skipping.[/yellow]")
+            console.print(f"[yellow]Warning: No files matched pattern '{escape(p)}'. Skipping.[/yellow]")
             has_failure = True
             continue
         resolved_paths.extend(expanded)
@@ -386,13 +387,13 @@ def refresh(
     resolved_paths = indexer.filter_covered_paths(resolved_paths)
 
     for p in resolved_paths:
-        console.print(f"[yellow]Refreshing {p}...[/yellow]")
+        console.print(f"[yellow]Refreshing {escape(p)}...[/yellow]")
         try:
             success = indexer.refresh_file(p, old_path=old_path, media_id=media_id)
             if not success:
                 has_failure = True
         except Exception as e:
-            console.print(f"[red]Error refreshing {p}: {e}[/red]")
+            console.print(f"[red]Error refreshing {escape(p)}: {e}[/red]")
             has_failure = True
 
     if has_failure:

@@ -1479,7 +1479,10 @@ def test_filter_covered_paths_preserves_symlinked_descendants(tmp_path):
     parent_dir = tmp_path / "parent_dir"
     parent_dir.mkdir()
     symlink_dir = parent_dir / "linked"
-    symlink_dir.symlink_to(real_dir)
+    try:
+        symlink_dir.symlink_to(real_dir)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks not supported on this platform")
 
     target_file = symlink_dir / "ep01.srt"
     filtered = indexer.filter_covered_paths([str(parent_dir), str(target_file)])

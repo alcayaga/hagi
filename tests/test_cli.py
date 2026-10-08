@@ -571,6 +571,7 @@ def test_cli_refresh_glob_escapes_bracketed_directories(tmp_path, monkeypatch):
 
     assert result.exit_code == 0
     assert refreshed_files == [str(sub_file)]
+    assert "[Underwater] Panty [Batch]" in " ".join(result.stdout.split())
 
 
 def test_cli_refresh_glob_escapes_bracketed_basenames(tmp_path, monkeypatch):

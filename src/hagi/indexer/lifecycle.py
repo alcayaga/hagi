@@ -624,6 +624,10 @@ def filter_covered_paths(paths: list[str]) -> list[str]:
 def expand_glob_pattern(pattern: str) -> list[str]:
     """Expand a potential glob pattern, escaping directory brackets for anime release names.
 
+    Literal-bracket matches take precedence: the raw glob fallback is used only
+    when the escaped-pattern search returns no matches, even if character-class
+    matches also exist.
+
     Args:
         pattern (str): File path or glob pattern to expand.
 
