@@ -20,9 +20,22 @@ function formatTime(seconds) {
   return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
-document.getElementById("searchInput").addEventListener("keypress", function (e) {
-  if (e.key === "Enter") performSearch();
-});
+/**
+ * Resolves standard fallback padding values from window.HAGI_DEFAULTS or built-in constants.
+ * @returns {{ padStart: number, padEnd: number }}
+ */
+function getSystemDefaultPadding() {
+  const defaults = typeof window !== "undefined" ? window.HAGI_DEFAULTS : null;
+  const padStart = defaults?.padStart ?? 0.1;
+  const padEnd = defaults?.padEnd ?? 0.0;
+  return { padStart, padEnd };
+}
+
+if (typeof document !== "undefined" && document.getElementById("searchInput")) {
+  document.getElementById("searchInput").addEventListener("keypress", function (e) {
+    if (e.key === "Enter") performSearch();
+  });
+}
 
 // Responsive Placeholder Text
 /**
@@ -315,6 +328,21 @@ class ThumbnailManager {
    * Triggers the thumbnail load for a single container.
    * @param {HTMLElement} container - Container element with data-sentence-id.
    */
+  /**
+   * Resolves default padding values from window.HAGI_DEFAULTS or standard fallbacks.
+   * @returns {{ padStart: number, padEnd: number }}
+   */
+  getDefaultPadding() {
+    if (typeof getSystemDefaultPadding === "function") {
+      return getSystemDefaultPadding();
+    }
+    const defaults = typeof window !== "undefined" ? window.HAGI_DEFAULTS : null;
+    return {
+      padStart: defaults?.padStart ?? 0.1,
+      padEnd: defaults?.padEnd ?? 0.0,
+    };
+  }
+
   loadThumbnail(container) {
     const sentenceId = container.dataset.sentenceId;
     const img = container.querySelector(".thumb-img");
@@ -332,8 +360,9 @@ class ThumbnailManager {
 
     const sStart = parseFloat(document.getElementById("padStart")?.value);
     const sEnd = parseFloat(document.getElementById("padEnd")?.value);
-    const padStart = isNaN(sStart) ? 0.1 : sStart;
-    const padEnd = isNaN(sEnd) ? 0.0 : sEnd;
+    const defPad = this.getDefaultPadding();
+    const padStart = isNaN(sStart) ? defPad.padStart : sStart;
+    const padEnd = isNaN(sEnd) ? defPad.padEnd : sEnd;
 
     const url = `/api/thumbnail/${encodeURIComponent(sentenceId)}?pad_start=${padStart}&pad_end=${padEnd}`;
 
@@ -797,7 +826,11 @@ function highlightSearchTerms(text, queryToUse = null, escapeFunc = null) {
   return parts.join("");
 }
 
-let currentExtraction = { id: null, padStart: 0.1, padEnd: 0.0 };
+let currentExtraction = {
+  id: null,
+  padStart: getSystemDefaultPadding().padStart,
+  padEnd: getSystemDefaultPadding().padEnd,
+};
 if (typeof window !== "undefined") {
   window.currentExtraction = currentExtraction;
 }
@@ -866,10 +899,11 @@ async function extractMedia(id, triggerElement) {
     return;
   }
 
-  const sStart = parseFloat(document.getElementById("padStart").value);
-  const sEnd = parseFloat(document.getElementById("padEnd").value);
-  const padStart = isNaN(sStart) ? 0.1 : sStart;
-  const padEnd = isNaN(sEnd) ? 0.0 : sEnd;
+  const sStart = parseFloat(document.getElementById("padStart")?.value);
+  const sEnd = parseFloat(document.getElementById("padEnd")?.value);
+  const defPad = typeof getSystemDefaultPadding === "function" ? getSystemDefaultPadding() : { padStart: 0.1, padEnd: 0.0 };
+  const padStart = isNaN(sStart) ? defPad.padStart : sStart;
+  const padEnd = isNaN(sEnd) ? defPad.padEnd : sEnd;
 
   currentExtraction.id = id;
   currentExtraction.padStart = padStart;

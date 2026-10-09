@@ -11,6 +11,7 @@ from rich.table import Table
 from . import db
 from . import exporter
 from . import indexer
+from .constants import DEFAULT_PAD_END, DEFAULT_PAD_START
 
 app = typer.Typer()
 console = Console()
@@ -274,8 +275,8 @@ def context(sentence_id: int):
 def extract(
     sentence_id: int,
     out_dir: str = "./media",
-    pad_start: float = typer.Option(0.1, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
-    pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
+    pad_start: float = typer.Option(DEFAULT_PAD_START, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(DEFAULT_PAD_END, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Extract raw audio and image for a sentence without Anki formatting."""
     console.print(f"Extracting media for sentence {sentence_id}...")
@@ -293,8 +294,8 @@ def extract(
 def export(
     sentence_id: int,
     out_dir: str = "./anki_deck",
-    pad_start: float = typer.Option(0.1, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
-    pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
+    pad_start: float = typer.Option(DEFAULT_PAD_START, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(DEFAULT_PAD_END, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Export sentence context (audio, image, text) for Anki."""
     console.print(f"Exporting sentence {sentence_id} to Anki format...")
@@ -312,8 +313,8 @@ def anki(
     note_id: Optional[int] = typer.Option(
         None, "--note-id", "-n", help="Target specific Anki Note ID. Defaults to last created note."
     ),
-    pad_start: float = typer.Option(0.1, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
-    pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
+    pad_start: float = typer.Option(DEFAULT_PAD_START, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_end: float = typer.Option(DEFAULT_PAD_END, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Export sentence directly to Anki via AnkiConnect."""
     config = _load_config()

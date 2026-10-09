@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 import ankiModule from "../src/hagi/static/js/anki.js";
 
 const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence, searchAnkiCards, sendToAnki, openAnkiSettingsModal, closeAnkiSettingsModal } = ankiModule;
@@ -670,4 +672,18 @@ test("sendToAnki detects field collisions and notifies user", async () => {
     delete globalThis.window;
     delete globalThis.showToast;
   }
+});
+
+test("DEFAULT_ANKI_CONFIG adopts window.HAGI_DEFAULTS when defined", () => {
+  const ankiSource = fs.readFileSync(new URL("../src/hagi/static/js/anki.js", import.meta.url), "utf-8");
+  const context = {
+    window: {
+      HAGI_DEFAULTS: { padStart: 0.6, padEnd: 0.4 },
+      addEventListener: () => {},
+    },
+    document: {},
+  };
+  vm.runInNewContext(ankiSource + "\nglobalThis.DEFAULT_ANKI_CONFIG = DEFAULT_ANKI_CONFIG;", context);
+  assert.equal(context.DEFAULT_ANKI_CONFIG.padStart, 0.6);
+  assert.equal(context.DEFAULT_ANKI_CONFIG.padEnd, 0.4);
 });

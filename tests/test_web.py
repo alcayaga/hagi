@@ -30,6 +30,9 @@ def test_read_main():
     assert "Hagi Search" in response.text
     assert 'id="resultsList" class="flex flex-col gap-5 max-w-6xl mx-auto"' in response.text
     assert 'id="nadeshikoResultsWrapper" class="hidden flex flex-col gap-3 max-w-6xl mx-auto' in response.text
+    assert "window.HAGI_DEFAULTS = {" in response.text
+    assert "padStart: 0.1" in response.text
+    assert "padEnd: 0.0" in response.text
 
     response = client.get("/search/web")
     assert response.status_code == 200
@@ -564,4 +567,15 @@ def test_api_thumbnail_extract_failure():
         response = client.get("/api/thumbnail/1")
         assert response.status_code == 500
         assert response.json()["detail"] == "Failed to generate thumbnail image."
+
+
+def test_constants_module_exports():
+    """Verify that centralized constants are defined and exported correctly."""
+    from hagi import DEFAULT_PAD_END as ROOT_END, DEFAULT_PAD_START as ROOT_START
+    from hagi.constants import DEFAULT_PAD_END, DEFAULT_PAD_START
+
+    assert DEFAULT_PAD_START == 0.1
+    assert DEFAULT_PAD_END == 0.0
+    assert ROOT_START == DEFAULT_PAD_START
+    assert ROOT_END == DEFAULT_PAD_END
 

@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from . import db
 from . import exporter
 from . import nadeshiko
+from .constants import DEFAULT_PAD_END, DEFAULT_PAD_START
 
 
 logger = logging.getLogger(__name__)
@@ -99,7 +100,14 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 @app.get("/context/{sentence_id}", response_class=HTMLResponse)
 async def get_ui(request: Request, query: str = None, sentence_id: int = None):
     """Render the main UI page."""
-    return templates.TemplateResponse(request=request, name="index.html")
+    return templates.TemplateResponse(
+        request=request,
+        name="index.html",
+        context={
+            "default_pad_start": DEFAULT_PAD_START,
+            "default_pad_end": DEFAULT_PAD_END,
+        },
+    )
 
 
 @app.get("/api/search")
@@ -281,8 +289,8 @@ def get_context(sentence_id: int):
 class ExtractConfig(BaseModel):
     """Configuration for media extraction."""
 
-    pad_start: float = 0.1
-    pad_end: float = 0.0
+    pad_start: float = DEFAULT_PAD_START
+    pad_end: float = DEFAULT_PAD_END
     target_note_id: int | None = Field(default=None, gt=0)
     search_query: str | None = None
 
@@ -297,8 +305,8 @@ _thumbnail_executor = ThreadPoolExecutor(
 async def get_thumbnail(
     sentence_id: int,
     background_tasks: BackgroundTasks,
-    pad_start: float = 0.1,
-    pad_end: float = 0.0,
+    pad_start: float = DEFAULT_PAD_START,
+    pad_end: float = DEFAULT_PAD_END,
 ):
     """Serve a scene thumbnail image for a sentence, generating it on the fly if needed."""
     if (
@@ -404,11 +412,11 @@ def get_anki_config():
 
     pad_start = app_config.get("padStart")
     if isinstance(pad_start, bool) or not isinstance(pad_start, (int, float)) or pad_start < 0:
-        pad_start = 0.1
+        pad_start = DEFAULT_PAD_START
 
     pad_end = app_config.get("padEnd")
     if isinstance(pad_end, bool) or not isinstance(pad_end, (int, float)) or pad_end < 0:
-        pad_end = 0.0
+        pad_end = DEFAULT_PAD_END
 
     return {
         "ankiConnectUrl": app_config.get("ankiConnectUrl", "http://127.0.0.1:8765"),

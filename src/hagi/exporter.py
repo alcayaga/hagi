@@ -12,6 +12,7 @@ import re
 import threading
 
 from . import db
+from .constants import DEFAULT_PAD_END, DEFAULT_PAD_START
 
 logger = logging.getLogger(__name__)
 
@@ -181,8 +182,8 @@ def anki_request(anki_url, action, timeout=10.0, **params):
 
 def _resolve_target_media(
     sentence_id: int,
-    pad_start: float = 0.1,
-    pad_end: float = 0.0,
+    pad_start: float = DEFAULT_PAD_START,
+    pad_end: float = DEFAULT_PAD_END,
     conn=None,
 ) -> tuple[dict | None, str | None, float, float, float, float, str, str, str | None]:
     """Resolve sentence row, media file path, and timing bounds.
@@ -544,8 +545,8 @@ def _extract_frame_ffmpeg(
 def extract_image(
     sentence_id: int,
     out_dir: str,
-    pad_start: float = 0.1,
-    pad_end: float = 0.0,
+    pad_start: float = DEFAULT_PAD_START,
+    pad_end: float = DEFAULT_PAD_END,
 ) -> tuple[bool, str, str | None, bool]:
     """Extract only the thumbnail image frame for a sentence, independent of audio.
 
@@ -612,7 +613,12 @@ def extract_image(
         return False, "An internal error occurred during extraction.", None, False
 
 
-def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.1, pad_end: float = 0.0):
+def extract_media(
+    sentence_id: int,
+    out_dir: str,
+    pad_start: float = DEFAULT_PAD_START,
+    pad_end: float = DEFAULT_PAD_END,
+):
     """Extract audio and image for a given sentence.
 
     Args:
@@ -777,7 +783,12 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.1, pad_en
         return False, "An internal error occurred during extraction.", None, None, None, False
 
 
-def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.1, pad_end: float = 0.0):
+def export_anki(
+    sentence_id: int,
+    out_dir: str,
+    pad_start: float = DEFAULT_PAD_START,
+    pad_end: float = DEFAULT_PAD_END,
+):
     """Export a sentence and its media for Anki.
 
     Args:
@@ -886,8 +897,8 @@ def export_ankiconnect(
     sentence_id: int,
     config: dict,
     out_dir: str,
-    pad_start: float = 0.1,
-    pad_end: float = 0.0,
+    pad_start: float = DEFAULT_PAD_START,
+    pad_end: float = DEFAULT_PAD_END,
     target_note_id: int | None = None,
     base_url: str | None = None,
     search_query: str | None = None,

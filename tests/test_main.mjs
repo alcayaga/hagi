@@ -424,3 +424,24 @@ test("extractMedia returns early without starting duplicate extraction when card
   await context.extractMedia(42);
   assert.equal(historyPushed, false);
 });
+
+test("ThumbnailManager respects window.HAGI_DEFAULTS when present", () => {
+  const thumbManagerStart = mainSource.indexOf("class ThumbnailManager {");
+  const thumbManagerEnd = mainSource.indexOf("const thumbnailManager =", thumbManagerStart);
+  const thumbManagerSource = mainSource.slice(thumbManagerStart, thumbManagerEnd);
+
+  const context = {
+    window: {
+      HAGI_DEFAULTS: { padStart: 0.75, padEnd: 0.35 },
+    },
+    document: {
+      getElementById: () => null,
+    },
+  };
+
+  vm.runInNewContext(thumbManagerSource + "\nglobalThis.ThumbnailManager = ThumbnailManager;", context);
+  const manager = new context.ThumbnailManager(2, "100px 0px");
+  const defPad = manager.getDefaultPadding();
+  assert.equal(defPad.padStart, 0.75);
+  assert.equal(defPad.padEnd, 0.35);
+});
