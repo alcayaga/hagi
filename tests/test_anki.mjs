@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
+import vm from "node:vm";
 import ankiModule from "../src/hagi/static/js/anki.js";
 
 const { DEFAULT_ANKI_CONFIG, getActiveAnkiConfig, saveAnkiConfig, resetAnkiConfig, ankiInvoke, checkAnkiConnection, fetchBlobAsBase64, buildAnkiSearchQueries, stripHtml, buildHighlightedSentence, searchAnkiCards, sendToAnki, openAnkiSettingsModal, closeAnkiSettingsModal } = ankiModule;
@@ -24,7 +26,7 @@ test("DEFAULT_ANKI_CONFIG provides valid standard defaults", () => {
   assert.equal(DEFAULT_ANKI_CONFIG.deck, "");
   assert.equal(DEFAULT_ANKI_CONFIG.noteType, "");
   assert.deepEqual(DEFAULT_ANKI_CONFIG.tags, []);
-  assert.equal(DEFAULT_ANKI_CONFIG.padStart, 0.25);
+  assert.equal(DEFAULT_ANKI_CONFIG.padStart, 0.1);
   assert.equal(DEFAULT_ANKI_CONFIG.padEnd, 0.0);
 });
 
@@ -32,7 +34,7 @@ test("getActiveAnkiConfig merges saved localStorage overrides with defaults", ()
   globalThis.localStorage.clear();
   const initial = getActiveAnkiConfig();
   assert.equal(initial.ankiConnectUrl, "http://127.0.0.1:8765");
-  assert.equal(initial.padStart, 0.25);
+  assert.equal(initial.padStart, 0.1);
   assert.equal(initial.padEnd, 0.0);
 
   saveAnkiConfig({ deck: "CustomDeck", noteType: "CustomModel", wordField: "Front", padStart: 0.5, padEnd: 0.75 });
@@ -51,7 +53,7 @@ test("getActiveAnkiConfig merges saved localStorage overrides with defaults", ()
   resetAnkiConfig();
   const reset = getActiveAnkiConfig();
   assert.equal(reset.deck, "");
-  assert.equal(reset.padStart, 0.25);
+  assert.equal(reset.padStart, 0.1);
   assert.equal(reset.padEnd, 0.0);
 });
 
@@ -670,4 +672,18 @@ test("sendToAnki detects field collisions and notifies user", async () => {
     delete globalThis.window;
     delete globalThis.showToast;
   }
+});
+
+test("DEFAULT_ANKI_CONFIG adopts window.HAGI_DEFAULTS when defined", () => {
+  const ankiSource = fs.readFileSync(new URL("../src/hagi/static/js/anki.js", import.meta.url), "utf-8");
+  const context = {
+    window: {
+      HAGI_DEFAULTS: { padStart: 0.6, padEnd: 0.4 },
+      addEventListener: () => {},
+    },
+    document: {},
+  };
+  vm.runInNewContext(ankiSource + "\nglobalThis.DEFAULT_ANKI_CONFIG = DEFAULT_ANKI_CONFIG;", context);
+  assert.equal(context.DEFAULT_ANKI_CONFIG.padStart, 0.6);
+  assert.equal(context.DEFAULT_ANKI_CONFIG.padEnd, 0.4);
 });

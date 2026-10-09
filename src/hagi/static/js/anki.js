@@ -14,6 +14,8 @@ function ankiEscapeHtml(str) {
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
+const systemDefaults = typeof window !== "undefined" ? window.HAGI_DEFAULTS : null;
+
 // Default configuration fallback
 const DEFAULT_ANKI_CONFIG = {
   ankiConnectUrl: "http://127.0.0.1:8765",
@@ -27,8 +29,8 @@ const DEFAULT_ANKI_CONFIG = {
   imageField: "",
   sourceField: "",
   tags: [],
-  padStart: 0.25,
-  padEnd: 0.0,
+  padStart: systemDefaults?.padStart ?? 0.1,
+  padEnd: systemDefaults?.padEnd ?? 0.0,
 };
 
 let serverAnkiConfig = { ...DEFAULT_ANKI_CONFIG };
@@ -854,8 +856,8 @@ function openAnkiSettingsModal() {
   setVal("cfgImageField", config.imageField);
   setVal("cfgSourceField", config.sourceField);
   setVal("cfgTags", Array.isArray(config.tags) ? config.tags.join(", ") : "");
-  setVal("cfgPadStart", config.padStart ?? 0.25);
-  setVal("cfgPadEnd", config.padEnd ?? 0.0);
+  setVal("cfgPadStart", config.padStart ?? DEFAULT_ANKI_CONFIG.padStart);
+  setVal("cfgPadEnd", config.padEnd ?? DEFAULT_ANKI_CONFIG.padEnd);
 
   modal.classList.remove("hidden");
   if (typeof document !== "undefined" && document.body) {
@@ -1011,10 +1013,10 @@ function resetAnkiSettingsInModal() {
   const padStartEl = document.getElementById("padStart");
   const padEndEl = document.getElementById("padEnd");
   if (padStartEl && !urlParams.has("padStart")) {
-    padStartEl.value = activeAnkiConfig.padStart ?? 0.25;
+    padStartEl.value = activeAnkiConfig.padStart ?? DEFAULT_ANKI_CONFIG.padStart;
   }
   if (padEndEl && !urlParams.has("padEnd")) {
-    padEndEl.value = activeAnkiConfig.padEnd ?? 0.0;
+    padEndEl.value = activeAnkiConfig.padEnd ?? DEFAULT_ANKI_CONFIG.padEnd;
   }
 
   openAnkiSettingsModal();

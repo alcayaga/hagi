@@ -47,8 +47,8 @@ def test_extract_media(test_db):
 
         assert success is True
         assert is_cached is False
-        assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}_0.250_0.000.mp3"
-        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.250_0.000.jpg"
+        assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}_0.100_0.000.mp3"
+        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.100_0.000.jpg"
 
         assert text == "This is a test sentence."
 
@@ -685,7 +685,7 @@ def test_cache_and_cleanup(test_db):
 
         # Test 3: Cleanup
         # Create a large dummy file
-        dummy = os.path.join(tmpdir, "hagi_audio_9999_0.250_0.000.mp3")
+        dummy = os.path.join(tmpdir, "hagi_audio_9999_0.100_0.000.mp3")
         with open(dummy, "wb") as f:
             f.write(b"0" * (6 * 1024 * 1024))  # 6 MB
 
@@ -1303,7 +1303,7 @@ def test_extract_image_independent(test_db):
 
         assert success is True
         assert is_cached is False
-        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.250_0.000.jpg"
+        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.100_0.000.jpg"
 
         # mock_subrun should only be called twice: ffprobe stream detection + ffmpeg image
         assert mock_subrun.call_count == 2
@@ -1383,14 +1383,14 @@ def test_extract_media_decoupled_reuses_cached_audio(test_db):
         sid = sentence["id"]
 
         # Pre-create audio file and audio cache tag
-        a_file = os.path.join(tmpdir, f"hagi_audio_{sid}_0.250_0.000.mp3")
-        tag_file = os.path.join(tmpdir, f".hagi_cache_audio_{sid}_0.250_0.000.src")
+        a_file = os.path.join(tmpdir, f"hagi_audio_{sid}_0.100_0.000.mp3")
+        tag_file = os.path.join(tmpdir, f".hagi_cache_audio_{sid}_0.100_0.000.src")
         with open(a_file, "w") as f:
             f.write("existing audio")
 
         mkv_stat = os.stat(video_path)
         mkv_id = f"{mkv_stat.st_size}|{mkv_stat.st_mtime:.3f}"
-        expected_tag = f"{os.path.abspath(video_path)}|{mkv_id}|9.750|15.000"
+        expected_tag = f"{os.path.abspath(video_path)}|{mkv_id}|9.900|15.000"
         with open(tag_file, "w") as f:
             f.write(expected_tag)
 

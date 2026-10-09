@@ -111,8 +111,8 @@
           </div>
         </div>
       </div>
-      <input type="hidden" id="padStart" value="0.25" />
-      <input type="hidden" id="padEnd" value="0.0" />
+      <input type="hidden" id="padStart" value="{{ default_pad_start | default(0.1) }}" />
+      <input type="hidden" id="padEnd" value="{{ default_pad_end | default(0.0) }}" />
 
       <!-- Loading Indicator -->
       <div id="loading" class="hidden flex justify-center items-center mb-8">
@@ -327,11 +327,11 @@
               <div class="grid grid-cols-2 gap-4">
                 <div>
                   <label for="cfgPadStart" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">Start Padding (s)</label>
-                  <input type="number" id="cfgPadStart" step="0.05" min="0" placeholder="0.25" class="w-full px-3.5 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/60 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
+                  <input type="number" id="cfgPadStart" step="0.05" min="0" placeholder="{{ default_pad_start | default(0.1) }}" class="w-full px-3.5 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/60 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
                 </div>
                 <div>
                   <label for="cfgPadEnd" class="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1.5">End Padding (s)</label>
-                  <input type="number" id="cfgPadEnd" step="0.05" min="0" placeholder="0.0" class="w-full px-3.5 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/60 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
+                  <input type="number" id="cfgPadEnd" step="0.05" min="0" placeholder="{{ default_pad_end | default(0.0) }}" class="w-full px-3.5 py-2 text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900/60 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-500 font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-colors" />
                 </div>
               </div>
               <p class="text-[11px] text-gray-500 dark:text-gray-400 mt-2">Extra seconds added before and after subtitle bounds when generating audio and video clips.</p>
@@ -451,6 +451,12 @@
     <!-- Timeline Tooltip -->
     <div id="timelineTooltip" class="hidden fixed z-[9999] bg-gray-900 text-white text-xs px-2 py-1.5 rounded shadow-xl pointer-events-none max-w-sm whitespace-normal transform -translate-x-1/2 -translate-y-full mt-[-8px]"></div>
 
+    <script>
+      window.HAGI_DEFAULTS = {
+        padStart: {{ default_pad_start | default(0.1) }},
+        padEnd: {{ default_pad_end | default(0.0) }}
+      };
+    </script>
     <script src="/static/js/main.js"></script>
     <script src="/static/js/anki.js"></script>
 
