@@ -1382,3 +1382,186 @@ def test_find_matching_media_excludes_incompatible_stored_subtitle_language(test
     assert matched_en == mid_en
 
 
+def test_refresh_file_glob_pattern_success(test_db, tmp_path):
+    """Test that refresh_file expands glob patterns and successfully refreshes all matching files."""
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+
+    f1.write_text("1\n00:00:01,000 --> 00:00:02,000\nOld 1\n\n")
+    f2.write_text("1\n00:00:01,000 --> 00:00:02,000\nOld 2\n\n")
+
+    mid1 = db.add_media(test_db, str(f1), "subtitle")
+    mid2 = db.add_media(test_db, str(f2), "subtitle")
+    db.add_sentences(test_db, mid1, [("ja", 1.0, 2.0, "Old 1")])
+    db.add_sentences(test_db, mid2, [("ja", 1.0, 2.0, "Old 2")])
+    test_db.commit()
+
+    id1 = test_db.execute("SELECT id FROM sentences WHERE media_id = ?", (mid1,)).fetchone()["id"]
+    id2 = test_db.execute("SELECT id FROM sentences WHERE media_id = ?", (mid2,)).fetchone()["id"]
+
+    # Update files on disk with new retimed text
+    f1.write_text("1\n00:00:01,500 --> 00:00:02,500\nNew 1\n\n")
+    f2.write_text("1\n00:00:01,500 --> 00:00:02,500\nNew 2\n\n")
+
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        res = indexer.refresh_file(f"{tmp_path}/*.srt")
+        assert res is True
+
+    row1 = test_db.execute("SELECT id, start_time, text FROM sentences WHERE media_id = ?", (mid1,)).fetchone()
+    row2 = test_db.execute("SELECT id, start_time, text FROM sentences WHERE media_id = ?", (mid2,)).fetchone()
+
+    assert row1["id"] == id1
+    assert row1["start_time"] == 1.5
+    assert row1["text"] == "New 1"
+
+    assert row2["id"] == id2
+    assert row2["start_time"] == 1.5
+    assert row2["text"] == "New 2"
+
+
+def test_refresh_file_glob_pattern_rejects_old_or_media_id(test_db, tmp_path):
+    """Test that refresh_file rejects --old or --media-id options when a glob pattern is used."""
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        assert indexer.refresh_file(f"{tmp_path}/*.srt", old_path="/old/file") is False
+        assert indexer.refresh_file(f"{tmp_path}/*.srt", media_id=42) is False
+
+
+def test_refresh_file_glob_no_matches_returns_false(test_db, tmp_path):
+    """Test that refresh_file returns False when a glob pattern does not match any files."""
+    with patch("hagi.indexer.get_db", return_value=test_db):
+        assert indexer.refresh_file(f"{tmp_path}/*.nonexistent") is False
+
+
+def test_filter_covered_paths(tmp_path):
+    """Test that filter_covered_paths removes paths covered by an ancestor directory in the list."""
+    parent_dir = tmp_path / "Season 1"
+    parent_dir.mkdir()
+    child_file = parent_dir / "ep01.srt"
+    child_file.write_text("content")
+
+    sibling_dir = tmp_path / "Season 2"
+    sibling_dir.mkdir()
+
+    raw_paths = [str(parent_dir), str(child_file), str(sibling_dir)]
+    filtered = indexer.filter_covered_paths(raw_paths)
+
+    assert str(parent_dir) in filtered
+    assert str(sibling_dir) in filtered
+    assert str(child_file) not in filtered
+    assert len(filtered) == 2
+
+
+def test_filter_covered_paths_deduplicates(tmp_path):
+    """Test that filter_covered_paths deduplicates paths with or without directories."""
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+    f1.write_text("a")
+    f2.write_text("b")
+
+    # Case 1: No directories present, duplicate files
+    deduped = indexer.filter_covered_paths([str(f1), str(f2), str(f1)])
+    assert deduped == [str(f1), str(f2)]
+
+    # Case 2: Directory present, duplicate directories and covered files
+    deduped_dirs = indexer.filter_covered_paths(
+        [str(tmp_path), str(tmp_path), str(f1), str(f2)]
+    )
+    assert deduped_dirs == [str(tmp_path)]
+
+
+def test_filter_covered_paths_preserves_symlinked_descendants(tmp_path):
+    """Test that filter_covered_paths does not filter files beneath symlinked directories."""
+    real_dir = tmp_path / "real_dir"
+    real_dir.mkdir()
+    real_file = real_dir / "ep01.srt"
+    real_file.write_text("sub")
+
+    parent_dir = tmp_path / "parent_dir"
+    parent_dir.mkdir()
+    symlink_dir = parent_dir / "linked"
+    try:
+        symlink_dir.symlink_to(real_dir)
+    except (OSError, NotImplementedError):
+        pytest.skip("Symlinks not supported on this platform")
+
+    target_file = symlink_dir / "ep01.srt"
+    filtered = indexer.filter_covered_paths([str(parent_dir), str(target_file)])
+
+    assert str(parent_dir) in filtered
+    assert str(target_file) in filtered
+
+    filtered_dir = indexer.filter_covered_paths([str(parent_dir), str(symlink_dir)])
+    assert str(parent_dir) in filtered_dir
+    assert str(symlink_dir) in filtered_dir
+
+
+def test_expand_glob_pattern_bracket_classes(tmp_path):
+    """Test that expand_glob_pattern falls back to bracket character classes like [0-9]."""
+    f1 = tmp_path / "ep1.srt"
+    f2 = tmp_path / "ep2.srt"
+    f1.write_text("1")
+    f2.write_text("2")
+
+    pattern = f"{tmp_path}/ep[0-9].srt"
+    matches = indexer.expand_glob_pattern(pattern)
+    assert matches == sorted([str(f1), str(f2)])
+
+
+def test_refresh_file_glob_filters_covered_paths(test_db, tmp_path):
+    """Test that refresh_file filters covered descendant paths when expanding glob matches."""
+    parent_dir = tmp_path / "Show"
+    parent_dir.mkdir()
+    child_file = parent_dir / "ep01.srt"
+    child_file.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+
+    mid = db.add_media(test_db, str(child_file), "subtitle")
+    db.add_sentences(test_db, mid, [("ja", 1.0, 2.0, "Hello")])
+    test_db.commit()
+
+    refreshed = []
+
+    def mock_refresh_media(conn, media_id, path, **kwargs):
+        """Mock refresh_media recording target paths."""
+        refreshed.append(path)
+        return True
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.refresh_media", side_effect=mock_refresh_media),
+    ):
+        # Glob that matches both parent directory and child file
+        res = indexer.refresh_file(f"{tmp_path}/**/*")
+        assert res is True
+        # Parent directory was processed, and child_file was not double-refreshed separately
+        assert len(refreshed) == 1
+
+
+def test_refresh_file_directory_partial_failure_returns_false(test_db, tmp_path):
+    """Test that refresh_file returns False if any file refresh inside a directory fails."""
+    parent_dir = tmp_path / "Season"
+    parent_dir.mkdir()
+    f1 = parent_dir / "ep01.srt"
+    f2 = parent_dir / "ep02.srt"
+    f1.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+    f2.write_text("1\n00:00:01,000 --> 00:00:02,000\nWorld\n\n")
+
+    mid1 = db.add_media(test_db, str(f1), "subtitle")
+    mid2 = db.add_media(test_db, str(f2), "subtitle")
+    db.add_sentences(test_db, mid1, [("ja", 1.0, 2.0, "Hello")])
+    db.add_sentences(test_db, mid2, [("ja", 1.0, 2.0, "World")])
+    test_db.commit()
+
+    def mock_refresh_media(conn, media_id, path, **kwargs):
+        """Mock refresh_media failing on ep02."""
+        return path != str(f2)
+
+    with (
+        patch("hagi.indexer.get_db", return_value=test_db),
+        patch("hagi.indexer.refresh_media", side_effect=mock_refresh_media),
+    ):
+        res = indexer.refresh_file(str(parent_dir))
+        assert res is False
+
+
+
+

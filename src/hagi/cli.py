@@ -1,10 +1,11 @@
 """Command-line interface for Hagi Local."""
 
-import os
 import json
+import os
 from typing import Optional
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from . import db
@@ -334,9 +335,23 @@ def anki(
         raise typer.Exit(code=1)
 
 
+def _expand_path(pattern: str) -> list[str]:
+    """Expand a potential glob pattern, escaping directory brackets for anime release names.
+
+    Args:
+        pattern (str): File path or glob pattern to expand.
+
+    Returns:
+        list[str]: List of resolved file paths, or original pattern if not a glob or already existing.
+    """
+    return indexer.expand_glob_pattern(pattern)
+
+
 @app.command()
 def refresh(
-    path: str = typer.Argument(..., help="Path to the subtitle or media file, or directory to refresh."),
+    paths: list[str] = typer.Argument(
+        ..., help="Path(s), glob pattern, or directory to refresh."
+    ),
     old_path: Optional[str] = typer.Option(
         None, "--old", "-o", help="Optional path to old media file being replaced."
     ),
@@ -344,11 +359,44 @@ def refresh(
         None, "--media-id", "-m", help="Optional media ID to refresh into."
     ),
 ):
-    """Smart refresh an existing subtitle or media file in the database."""
+    """Smart refresh existing subtitle or media files in the database."""
     db.init_db()
-    console.print(f"[yellow]Refreshing {path}...[/yellow]")
-    success = indexer.refresh_file(path, old_path=old_path, media_id=media_id)
-    if not success:
+
+    is_glob = any(
+        any(c in p for c in ("*", "?", "[")) and not os.path.exists(p)
+        for p in paths
+    )
+    if (len(paths) > 1 or is_glob) and (old_path or media_id is not None):
+        console.print("[red]Error: Cannot specify --old or --media-id when refreshing multiple files or glob patterns.[/red]")
+        raise typer.Exit(code=1)
+
+    has_failure = False
+    resolved_paths: list[str] = []
+    for p in paths:
+        expanded = _expand_path(p)
+        if not expanded and any(c in p for c in ("*", "?", "[")):
+            console.print(f"[yellow]Warning: No files matched pattern '{escape(p)}'. Skipping.[/yellow]")
+            has_failure = True
+            continue
+        resolved_paths.extend(expanded)
+
+    if not resolved_paths:
+        console.print("[red]Error: No valid files or directories found to refresh.[/red]")
+        raise typer.Exit(code=1)
+
+    resolved_paths = indexer.filter_covered_paths(resolved_paths)
+
+    for p in resolved_paths:
+        console.print(f"[yellow]Refreshing {escape(p)}...[/yellow]")
+        try:
+            success = indexer.refresh_file(p, old_path=old_path, media_id=media_id)
+            if not success:
+                has_failure = True
+        except Exception as e:
+            console.print(f"[red]Error refreshing {escape(p)}: {e}[/red]")
+            has_failure = True
+
+    if has_failure:
         raise typer.Exit(code=1)
 
 

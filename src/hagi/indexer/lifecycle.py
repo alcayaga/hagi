@@ -1,5 +1,6 @@
 """Database lifecycle orchestration: indexing, refreshing, and pruning media."""
 
+import glob
 import os
 import sys
 from typing import Optional
@@ -570,6 +571,97 @@ def refresh_media(
     return True
 
 
+def _is_reachable_without_symlinks(child: str, ancestor: str) -> bool:
+    """Check if child path is reachable from ancestor directory without traversing symlinks.
+
+    Args:
+        child (str): Absolute child file or directory path.
+        ancestor (str): Absolute ancestor directory path.
+
+    Returns:
+        bool: True if all intermediate directories are non-symlinks, False otherwise.
+    """
+    if os.path.islink(child):
+        return False
+    rel = os.path.relpath(child, ancestor)
+    curr = ancestor
+    parts = rel.split(os.sep)
+    for part in parts[:-1]:
+        curr = os.path.join(curr, part)
+        if os.path.islink(curr):
+            return False
+    return True
+
+
+def filter_covered_paths(paths: list[str]) -> list[str]:
+    """Filter out duplicate paths and paths already covered by an ancestor directory.
+
+    Args:
+        paths (list[str]): List of candidate file or directory paths.
+
+    Returns:
+        list[str]: Filtered list of deduplicated paths without descendant coverage.
+    """
+    dirs = {os.path.abspath(p) for p in paths if os.path.isdir(p)}
+    filtered = []
+    seen = set()
+    for p in paths:
+        abs_p = os.path.abspath(p)
+        if abs_p in seen:
+            continue
+        is_covered = any(
+            abs_p != d
+            and abs_p.startswith(d if d.endswith(os.sep) else f"{d}{os.sep}")
+            and _is_reachable_without_symlinks(abs_p, d)
+            for d in dirs
+        )
+        if not is_covered:
+            seen.add(abs_p)
+            filtered.append(p)
+    return filtered
+
+
+def expand_glob_pattern(pattern: str) -> list[str]:
+    """Expand a potential glob pattern, escaping directory brackets for anime release names.
+
+    Literal-bracket matches take precedence: the raw glob fallback is used only
+    when the escaped-pattern search returns no matches, even if character-class
+    matches also exist.
+
+    Args:
+        pattern (str): File path or glob pattern to expand.
+
+    Returns:
+        list[str]: List of resolved file paths, or original pattern if not a glob or already existing.
+    """
+    if os.path.exists(pattern):
+        return [pattern]
+    if not any(c in pattern for c in ("*", "?", "[")):
+        return [pattern]
+    dir_name = os.path.dirname(pattern)
+    file_pattern = os.path.basename(pattern).replace("[", "[[]")
+    if dir_name and os.path.isdir(dir_name):
+        matches = sorted(
+            glob.glob(os.path.join(glob.escape(dir_name), file_pattern), recursive=True)
+        )
+        if matches:
+            return matches
+        raw_matches = sorted(
+            glob.glob(os.path.join(glob.escape(dir_name), os.path.basename(pattern)), recursive=True)
+        )
+        if raw_matches:
+            return raw_matches
+        return []
+    escaped_pattern = pattern.replace("[", "[[]")
+    matches = sorted(glob.glob(escaped_pattern, recursive=True))
+    if matches:
+        return matches
+    raw_matches = sorted(glob.glob(pattern, recursive=True))
+    if raw_matches:
+        return raw_matches
+    return []
+
+
 def refresh_file(
     file_path: str,
     old_path: Optional[str] = None,
@@ -598,11 +690,36 @@ def refresh_file(
         extract_timeout, probe_timeout
     )
 
+    if any(c in file_path for c in ("*", "?", "[")) and not os.path.exists(abs_path):
+        if old_path or media_id is not None:
+            print("Cannot specify --old or --media-id when refreshing a glob pattern.")
+            return False
+        matches = expand_glob_pattern(abs_path)
+        matches = filter_covered_paths(matches)
+        if not matches:
+            print(f"No files matched pattern: {file_path}")
+            return False
+        all_ok = True
+        for match in matches:
+            try:
+                if not idx.refresh_file(
+                    match,
+                    extract_timeout=extract_timeout,
+                    probe_timeout=probe_timeout,
+                ):
+                    all_ok = False
+            except Exception as ref_err:
+                print(f"Error refreshing {match}: {ref_err}")
+                conn.rollback()
+                all_ok = False
+        return all_ok
+
     if os.path.isdir(abs_path):
         if old_path or media_id is not None:
             print("Cannot specify --old or --media-id when refreshing a directory.")
             return False
         refreshed_any = False
+        had_failure = False
         all_missing = []
         for r in conn.execute(
             "SELECT id, path, type, show_title, season, episode, episode_title FROM media"
@@ -632,9 +749,12 @@ def refresh_file(
                             probe_timeout=probe_timeout,
                         ):
                             refreshed_any = True
+                        else:
+                            had_failure = True
                     except Exception as ref_err:
                         print(f"Error refreshing existing media {abs_sub}: {ref_err}")
                         conn.rollback()
+                        had_failure = True
                     continue
 
                 mtype = "mkv_embedded" if sub_path.lower().endswith(".mkv") else "subtitle"
@@ -651,10 +771,13 @@ def refresh_file(
                         ):
                             refreshed_any = True
                             missing_by_type[mtype] = [c for c in cands if c["id"] != matched_id]
+                        else:
+                            had_failure = True
                     except Exception as ref_err:
                         print(f"Error refreshing {abs_sub} into media {matched_id}: {ref_err}")
                         conn.rollback()
-        return refreshed_any
+                        had_failure = True
+        return refreshed_any and not had_failure
 
     target_id = media_id
     if target_id is None and old_path:

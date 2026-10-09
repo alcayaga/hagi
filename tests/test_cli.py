@@ -430,3 +430,314 @@ def test_index_cli_halts_on_plex_error(tmp_path, monkeypatch):
     assert result.exit_code == 1
     assert "Error building Plex cache: (401) unauthorized" in result.stdout
     assert "Indexing complete!" not in result.stdout
+
+
+def test_cli_refresh_quoted_glob(tmp_path, monkeypatch):
+    """Test that refresh expands a quoted glob pattern and refreshes matching files."""
+    from hagi import db, indexer
+
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+    f1.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n\n")
+    f2.write_text("1\n00:00:01,000 --> 00:00:02,000\nWorld\n\n")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    glob_pattern = f"{tmp_path}/*.srt"
+    result = runner.invoke(app, ["refresh", glob_pattern])
+
+    assert result.exit_code == 0
+    assert str(f1) in refreshed_files
+    assert str(f2) in refreshed_files
+    assert len(refreshed_files) == 2
+
+
+def test_cli_refresh_multiple_files(tmp_path, monkeypatch):
+    """Test that refresh accepts multiple file paths as arguments and refreshes all."""
+    from hagi import db, indexer
+
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+    f1.write_text("content 1")
+    f2.write_text("content 2")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    result = runner.invoke(app, ["refresh", str(f1), str(f2)])
+
+    assert result.exit_code == 0
+    assert refreshed_files == [str(f1), str(f2)]
+
+
+def test_cli_refresh_multiple_files_rejects_old_or_media_id(tmp_path, monkeypatch):
+    """Test that refresh rejects --old or --media-id when multiple files are provided."""
+    from hagi import db, indexer
+
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+    f1.write_text("content 1")
+    f2.write_text("content 2")
+
+    monkeypatch.setattr(indexer, "refresh_file", lambda *args, **kwargs: True)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    res_old = runner.invoke(app, ["refresh", str(f1), str(f2), "--old", "/old/ep.srt"])
+    assert res_old.exit_code == 1
+    assert "Cannot specify --old or --media-id when refreshing multiple files" in res_old.stdout
+
+    res_mid = runner.invoke(app, ["refresh", str(f1), str(f2), "--media-id", "99"])
+    assert res_mid.exit_code == 1
+    assert "Cannot specify --old or --media-id when refreshing multiple files" in res_mid.stdout
+
+
+def test_cli_refresh_glob_rejects_old_or_media_id(tmp_path, monkeypatch):
+    """Test that refresh rejects --old or --media-id when glob patterns are provided."""
+    from hagi import db, indexer
+
+    monkeypatch.setattr(indexer, "refresh_file", lambda *args, **kwargs: True)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    pattern = f"{tmp_path}/*.srt"
+    err_msg = "Cannot specify --old or --media-id when refreshing multiple files or glob patterns"
+
+    res_old = runner.invoke(app, ["refresh", pattern, "--old", "/old/ep.srt"])
+    assert res_old.exit_code == 1
+    assert err_msg in " ".join(res_old.stdout.split())
+
+    res_mid = runner.invoke(app, ["refresh", pattern, "--media-id", "99"])
+    assert res_mid.exit_code == 1
+    assert err_msg in " ".join(res_mid.stdout.split())
+
+
+def test_cli_refresh_literal_wildcard_file_allows_media_id(tmp_path, monkeypatch):
+    """Test that an existing single file with wildcard characters in its name allows --media-id."""
+    from hagi import db, indexer
+
+    wildcard_file = tmp_path / "ep?01.srt"
+    wildcard_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append((path, media_id))
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    result = runner.invoke(app, ["refresh", str(wildcard_file), "--media-id", "42"])
+    assert result.exit_code == 0
+    assert refreshed_files == [(str(wildcard_file), 42)]
+
+
+def test_cli_refresh_glob_escapes_bracketed_directories(tmp_path, monkeypatch):
+    """Test that glob expansion escapes square brackets in directory names."""
+    from hagi import db, indexer
+
+    bracket_dir = tmp_path / "[Underwater] Panty [Batch]"
+    bracket_dir.mkdir()
+    sub_file = bracket_dir / "ep01.srt"
+    sub_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    pattern = f"{bracket_dir}/*.srt"
+    result = runner.invoke(app, ["refresh", pattern])
+
+    assert result.exit_code == 0
+    assert refreshed_files == [str(sub_file)]
+    assert "[Underwater] Panty [Batch]" in " ".join(result.stdout.split())
+
+
+def test_cli_refresh_glob_escapes_bracketed_basenames(tmp_path, monkeypatch):
+    """Test that glob expansion escapes square brackets in file basenames."""
+    from hagi import db, indexer
+
+    sub_file = tmp_path / "[Underwater] Panty [32949214].srt"
+    sub_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    pattern = f"{tmp_path}/*[32949214]*.srt"
+    result = runner.invoke(app, ["refresh", pattern])
+
+    assert result.exit_code == 0
+    assert refreshed_files == [str(sub_file)]
+
+
+def test_cli_refresh_glob_escapes_adjacent_bracket_filenames(tmp_path, monkeypatch):
+    """Test that glob expansion escapes adjacent square brackets like [[Group]]."""
+    from hagi import db, indexer
+
+    sub_file = tmp_path / "[[Group]] episode 01.srt"
+    sub_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    pattern = f"{tmp_path}/[[Group]]*.srt"
+    result = runner.invoke(app, ["refresh", pattern])
+
+    assert result.exit_code == 0
+    assert refreshed_files == [str(sub_file)]
+
+
+def test_cli_refresh_glob_no_matches_exits_code_1(tmp_path, monkeypatch):
+    """Test that refresh exits with code 1 if a glob pattern yields no matches."""
+    from hagi import db, indexer
+
+    monkeypatch.setattr(indexer, "refresh_file", lambda *args, **kwargs: True)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    pattern = f"{tmp_path}/*.nonexistent"
+    result = runner.invoke(app, ["refresh", pattern])
+
+    assert result.exit_code == 1
+    assert "No files matched pattern" in result.stdout
+    assert "No valid files or directories found to refresh" in result.stdout
+
+
+def test_cli_refresh_unmatched_glob_with_valid_file_exits_code_1(tmp_path, monkeypatch):
+    """Test that refresh exits with code 1 when an unmatched glob is present alongside a valid file."""
+    from hagi import db, indexer
+
+    valid_file = tmp_path / "valid.srt"
+    valid_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    unmatched_pattern = f"{tmp_path}/*.missing"
+    result = runner.invoke(app, ["refresh", str(valid_file), unmatched_pattern])
+
+    assert result.exit_code == 1
+    assert refreshed_files == [str(valid_file)]
+    assert "No files matched pattern" in result.stdout
+
+
+def test_cli_refresh_partial_failure_exits_code_1(tmp_path, monkeypatch):
+    """Test that refresh processes all files but exits with code 1 if any target fails."""
+    from hagi import db, indexer
+
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+    f1.write_text("content 1")
+    f2.write_text("content 2")
+
+    attempted = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file failing on ep01 and succeeding on ep02."""
+        attempted.append(path)
+        return path == str(f2)
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    result = runner.invoke(app, ["refresh", str(f1), str(f2)])
+
+    assert result.exit_code == 1
+    assert attempted == [str(f1), str(f2)]
+
+
+def test_cli_refresh_filters_covered_paths(tmp_path, monkeypatch):
+    """Test that refresh removes files covered by an ancestor directory in the list."""
+    from hagi import db, indexer
+
+    sub_dir = tmp_path / "Season 1"
+    sub_dir.mkdir()
+    sub_file = sub_dir / "ep01.srt"
+    sub_file.write_text("content")
+
+    refreshed_files = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file recording invocations."""
+        refreshed_files.append(path)
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    # Pass both the parent directory and the child file
+    result = runner.invoke(app, ["refresh", str(sub_dir), str(sub_file)])
+
+    assert result.exit_code == 0
+    assert refreshed_files == [str(sub_dir)]
+
+
+def test_cli_refresh_handles_exception_per_path(tmp_path, monkeypatch):
+    """Test that an exception on one path does not abort processing subsequent paths."""
+    from hagi import db, indexer
+
+    f1 = tmp_path / "ep01.srt"
+    f2 = tmp_path / "ep02.srt"
+    f1.write_text("content 1")
+    f2.write_text("content 2")
+
+    attempted = []
+
+    def mock_refresh_file(path, old_path=None, media_id=None, **kwargs):
+        """Mock refresh_file raising error on ep01 and succeeding on ep02."""
+        attempted.append(path)
+        if path == str(f1):
+            raise RuntimeError("Disk read error")
+        return True
+
+    monkeypatch.setattr(indexer, "refresh_file", mock_refresh_file)
+    monkeypatch.setattr(db, "init_db", lambda: None)
+
+    result = runner.invoke(app, ["refresh", str(f1), str(f2)])
+
+    assert result.exit_code == 1
+    assert "Error refreshing" in result.stdout
+    assert "Disk read error" in " ".join(result.stdout.split())
+    assert attempted == [str(f1), str(f2)]
+
