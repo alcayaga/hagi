@@ -23,11 +23,13 @@ def test_db():
 
 
 def test_read_main():
-    """Test function."""
+    """Verify landing page and search route responses including container layout classes."""
     response = client.get("/")
     assert response.status_code == 200
     assert "text/html" in response.headers["content-type"]
     assert "Hagi Search" in response.text
+    assert 'id="resultsList" class="flex flex-col gap-5 max-w-6xl mx-auto"' in response.text
+    assert 'id="nadeshikoResultsWrapper" class="hidden flex flex-col gap-3 max-w-6xl mx-auto' in response.text
 
     response = client.get("/search/web")
     assert response.status_code == 200
