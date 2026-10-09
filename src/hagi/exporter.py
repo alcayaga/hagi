@@ -548,7 +548,7 @@ def extract_image(
     pad_start: float = DEFAULT_PAD_START,
     pad_end: float = DEFAULT_PAD_END,
 ) -> tuple[bool, str, str | None, bool]:
-    """Extract only the thumbnail image frame for a sentence, independent of audio.
+    """Extract the canonical thumbnail image frame for a sentence, independent of audio padding.
 
     Args:
         sentence_id (int): ID of the sentence to extract image for.
@@ -566,11 +566,13 @@ def extract_image(
         return False, err, None, False
 
     os.makedirs(out_dir, exist_ok=True)
-    image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
-    img_tag_file = os.path.join(out_dir, f".hagi_cache_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
-    legacy_tag_file = os.path.join(out_dir, f".hagi_cache_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+    canonical_midpoint = target["start_time"] + max(0.0, target["end_time"] - target["start_time"]) / 2.0
+    canonical_tag = f"{os.path.abspath(mkv_path)}|{mkv_id}|{target['start_time']:.3f}|{target['end_time']:.3f}"
 
-    if _is_file_cache_valid(image_out, [img_tag_file, legacy_tag_file], expected_tag):
+    image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
+    img_tag_file = os.path.join(out_dir, f".hagi_cache_img_{sentence_id}.src")
+
+    if _is_file_cache_valid(image_out, [img_tag_file], canonical_tag):
         return True, "Media returned from cache", image_out, True
 
     _tmp_id = uuid.uuid4().hex
@@ -580,7 +582,7 @@ def extract_image(
         _stream_idx, is_hdr, x264_build = get_media_stream_info(mkv_path)
         ok = _extract_frame_ffmpeg(
             mkv_path,
-            midpoint,
+            canonical_midpoint,
             image_tmp,
             is_hdr,
             x264_build,
@@ -598,7 +600,7 @@ def extract_image(
         os.replace(image_tmp, image_out)
         try:
             with open(img_tag_file, "w", encoding="utf-8") as f:
-                f.write(expected_tag)
+                f.write(canonical_tag)
         except Exception:
             pass
 
@@ -685,14 +687,28 @@ def extract_media(
         lang = target["language"]
         combined_text = clean_text(target["text"] if target["text"] else "", lang)
 
+    is_default_padding = (
+        round(pad_start, 3) == round(DEFAULT_PAD_START, 3)
+        and round(pad_end, 3) == round(DEFAULT_PAD_END, 3)
+    )
+
     audio_out = os.path.join(out_dir, f"hagi_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.mp3")
-    image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
     audio_tag_file = os.path.join(out_dir, f".hagi_cache_audio_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
-    img_tag_file = os.path.join(out_dir, f".hagi_cache_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
     legacy_tag_file = os.path.join(out_dir, f".hagi_cache_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
 
+    if is_default_padding:
+        image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}.jpg")
+        img_tag_file = os.path.join(out_dir, f".hagi_cache_img_{sentence_id}.src")
+        image_expected_tag = f"{os.path.abspath(mkv_path)}|{mkv_id}|{target['start_time']:.3f}|{target['end_time']:.3f}"
+        image_seek_time = target["start_time"] + max(0.0, target["end_time"] - target["start_time"]) / 2.0
+    else:
+        image_out = os.path.join(out_dir, f"hagi_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.jpg")
+        img_tag_file = os.path.join(out_dir, f".hagi_cache_img_{sentence_id}_{pad_start:.3f}_{pad_end:.3f}.src")
+        image_expected_tag = expected_tag
+        image_seek_time = midpoint
+
     audio_cached = _is_file_cache_valid(audio_out, [audio_tag_file, legacy_tag_file], expected_tag)
-    image_cached = _is_file_cache_valid(image_out, [img_tag_file, legacy_tag_file], expected_tag)
+    image_cached = _is_file_cache_valid(image_out, [img_tag_file, legacy_tag_file], image_expected_tag)
 
     if audio_cached and image_cached:
         return True, "Media returned from cache", audio_out, image_out, combined_text, True
@@ -728,7 +744,7 @@ def extract_media(
             )
 
         if not image_cached:
-            ok = _extract_frame_ffmpeg(mkv_path, midpoint, image_tmp, is_hdr, x264_build)
+            ok = _extract_frame_ffmpeg(mkv_path, image_seek_time, image_tmp, is_hdr, x264_build)
             if not ok:
                 for tmp_path in (audio_tmp, image_tmp):
                     if os.path.exists(tmp_path):
@@ -750,7 +766,7 @@ def extract_media(
             os.replace(image_tmp, image_out)
             try:
                 with open(img_tag_file, "w", encoding="utf-8") as f:
-                    f.write(expected_tag)
+                    f.write(image_expected_tag)
             except Exception:
                 pass
 

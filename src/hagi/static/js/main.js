@@ -328,21 +328,6 @@ class ThumbnailManager {
    * Triggers the thumbnail load for a single container.
    * @param {HTMLElement} container - Container element with data-sentence-id.
    */
-  /**
-   * Resolves default padding values from window.HAGI_DEFAULTS or standard fallbacks.
-   * @returns {{ padStart: number, padEnd: number }}
-   */
-  getDefaultPadding() {
-    if (typeof getSystemDefaultPadding === "function") {
-      return getSystemDefaultPadding();
-    }
-    const defaults = typeof window !== "undefined" ? window.HAGI_DEFAULTS : null;
-    return {
-      padStart: defaults?.padStart ?? 0.1,
-      padEnd: defaults?.padEnd ?? 0.0,
-    };
-  }
-
   loadThumbnail(container) {
     const sentenceId = container.dataset.sentenceId;
     const img = container.querySelector(".thumb-img");
@@ -358,13 +343,7 @@ class ThumbnailManager {
     this.activeCount++;
     this.inFlightImages.add(img);
 
-    const sStart = parseFloat(document.getElementById("padStart")?.value);
-    const sEnd = parseFloat(document.getElementById("padEnd")?.value);
-    const defPad = this.getDefaultPadding();
-    const padStart = isNaN(sStart) ? defPad.padStart : sStart;
-    const padEnd = isNaN(sEnd) ? defPad.padEnd : sEnd;
-
-    const url = `/api/thumbnail/${encodeURIComponent(sentenceId)}?pad_start=${padStart}&pad_end=${padEnd}`;
+    const url = `/api/thumbnail/${encodeURIComponent(sentenceId)}`;
 
     const cleanup = () => {
       this.inFlightImages.delete(img);
