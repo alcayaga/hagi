@@ -216,15 +216,15 @@ test("ThumbnailManager limits concurrent thumbnail extraction requests to maxCon
   // Active count should be capped at maxConcurrent (2)
   assert.equal(manager.activeCount, 2);
   assert.equal(manager.queue.length, 1);
-  assert.equal(c1.img.src, "/api/thumbnail/1?pad_start=0.1&pad_end=0");
-  assert.equal(c2.img.src, "/api/thumbnail/2?pad_start=0.1&pad_end=0");
+  assert.equal(c1.img.src, "/api/thumbnail/1");
+  assert.equal(c2.img.src, "/api/thumbnail/2");
   assert.equal(c3.img.src, "");
 
   // When c1 finishes loading, c3 should be dequeued and start loading
   c1.img.onload();
   assert.equal(manager.activeCount, 2);
   assert.equal(manager.queue.length, 0);
-  assert.equal(c3.img.src, "/api/thumbnail/3?pad_start=0.1&pad_end=0");
+  assert.equal(c3.img.src, "/api/thumbnail/3");
 
   // When c2 finishes loading, activeCount drops to 1
   c2.img.onload();
@@ -425,15 +425,13 @@ test("extractMedia returns early without starting duplicate extraction when card
   assert.equal(historyPushed, false);
 });
 
-test("ThumbnailManager respects window.HAGI_DEFAULTS when present", () => {
+test("ThumbnailManager requests canonical thumbnail URL without padding query params", () => {
   const thumbManagerStart = mainSource.indexOf("class ThumbnailManager {");
   const thumbManagerEnd = mainSource.indexOf("const thumbnailManager =", thumbManagerStart);
   const thumbManagerSource = mainSource.slice(thumbManagerStart, thumbManagerEnd);
 
   const context = {
-    window: {
-      HAGI_DEFAULTS: { padStart: 0.75, padEnd: 0.35 },
-    },
+    window: {},
     document: {
       getElementById: () => null,
     },
@@ -441,7 +439,12 @@ test("ThumbnailManager respects window.HAGI_DEFAULTS when present", () => {
 
   vm.runInNewContext(thumbManagerSource + "\nglobalThis.ThumbnailManager = ThumbnailManager;", context);
   const manager = new context.ThumbnailManager(2, "100px 0px");
-  const defPad = manager.getDefaultPadding();
-  assert.equal(defPad.padStart, 0.75);
-  assert.equal(defPad.padEnd, 0.35);
+  const fakeImg = {};
+  const fakeContainer = {
+    dataset: { sentenceId: "123" },
+    querySelector: (selector) => (selector === ".thumb-img" ? fakeImg : null),
+  };
+
+  manager.loadThumbnail(fakeContainer);
+  assert.equal(fakeImg.src, "/api/thumbnail/123");
 });

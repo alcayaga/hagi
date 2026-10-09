@@ -48,7 +48,7 @@ def test_extract_media(test_db):
         assert success is True
         assert is_cached is False
         assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}_0.100_0.000.mp3"
-        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.100_0.000.jpg"
+        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}.jpg"
 
         assert text == "This is a test sentence."
 
@@ -1303,7 +1303,7 @@ def test_extract_image_independent(test_db):
 
         assert success is True
         assert is_cached is False
-        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_0.100_0.000.jpg"
+        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}.jpg"
 
         # mock_subrun should only be called twice: ffprobe stream detection + ffmpeg image
         assert mock_subrun.call_count == 2
@@ -1313,6 +1313,45 @@ def test_extract_image_independent(test_db):
             cmd = call_args[0][0]
             assert "0:a:" not in " ".join(cmd)
             assert "audio" not in " ".join(cmd).lower()
+
+
+def test_extract_media_custom_padding_expanded_image(test_db):
+    """Test that extract_media with custom/expanded padding extracts image at expanded midpoint."""
+    with (
+        patch("hagi.exporter.db.get_db", return_value=test_db),
+        patch("os.makedirs"),
+        patch("hagi.exporter.os.path.exists", side_effect=lambda p: "hagi_audio" not in p and "hagi_img" not in p or "tmp" in p),
+        patch("hagi.exporter.os.path.getsize", return_value=1024),
+        patch("subprocess.run") as mock_subrun,
+        patch("os.replace"),
+    ):
+        sentence = test_db.execute(
+            "SELECT id, start_time, end_time FROM sentences WHERE text = 'This is a test sentence.'"
+        ).fetchone()
+        sid = sentence["id"]
+
+        mock_subrun.return_value.returncode = 0
+        mock_subrun.return_value.stderr = ""
+        mock_subrun.return_value.stdout = "{}"
+
+        # Request custom padding: pad_start=2.0, pad_end=1.0
+        success, _msg, audio_out, image_out, text, is_cached = exporter.extract_media(
+            sid, "/fake/out", pad_start=2.0, pad_end=1.0
+        )
+
+        assert success is True
+        assert is_cached is False
+        assert audio_out.replace("\\", "/") == f"/fake/out/hagi_audio_{sid}_2.000_1.000.mp3"
+        assert image_out.replace("\\", "/") == f"/fake/out/hagi_img_{sid}_2.000_1.000.jpg"
+
+        # Image extraction call is index 2 in mock_subrun
+        # Expected midpoint = (start - 2.0) + (duration / 2) = 8.0 + (8.0 / 2) = 12.0
+        expected_start = max(0.0, sentence["start_time"] - 2.0)
+        expected_end = sentence["end_time"] + 1.0
+        expected_midpoint = expected_start + (expected_end - expected_start) / 2.0
+
+        ffmpeg_img_cmd = mock_subrun.call_args_list[2][0][0]
+        assert str(expected_midpoint) in ffmpeg_img_cmd
 
 
 def test_extract_media_decoupled_reuses_cached_image(test_db):

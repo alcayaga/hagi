@@ -504,7 +504,7 @@ def test_api_extract_build_source_info_failure(test_db):
 
 def test_api_thumbnail_success(tmp_path):
     """Test that GET /api/thumbnail/{sentence_id} successfully returns a jpeg image."""
-    fake_img = tmp_path / "hagi_img_1_0.250_0.000.jpg"
+    fake_img = tmp_path / "hagi_img_1.jpg"
     fake_img.write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
 
     with patch("hagi.web.exporter.extract_image") as mock_extract_img:
@@ -519,7 +519,7 @@ def test_api_thumbnail_success(tmp_path):
 
 def test_api_thumbnail_default_padding(tmp_path):
     """Test that GET /api/thumbnail/{sentence_id} uses default padding 0.1 start and 0.0 end."""
-    fake_img = tmp_path / "hagi_img_1_0.100_0.000.jpg"
+    fake_img = tmp_path / "hagi_img_1.jpg"
     fake_img.write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
 
     with patch("hagi.web.exporter.extract_image") as mock_extract_img:
