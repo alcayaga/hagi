@@ -398,7 +398,7 @@ def test_get_anki_config_success(monkeypatch):
     assert data["wordField"] == "Expression"
     assert data["tags"] == ["anime", "vocab"]
     assert data["ankiConnectUrl"] == "http://127.0.0.1:8765"
-    assert data["padStart"] == 0.25
+    assert data["padStart"] == 0.1
     assert data["padEnd"] == 0.0
 
 
@@ -412,7 +412,7 @@ def test_get_anki_config_missing_file(monkeypatch):
     assert data["ankiConnectUrl"] == "http://127.0.0.1:8765"
     assert data["deck"] == ""
     assert data["tags"] == []
-    assert data["padStart"] == 0.25
+    assert data["padStart"] == 0.1
     assert data["padEnd"] == 0.0
 
 
@@ -441,7 +441,7 @@ def test_get_anki_config_boolean_padding(monkeypatch):
     response = client.get("/api/anki/config")
     assert response.status_code == 200
     data = response.json()
-    assert data["padStart"] == 0.25
+    assert data["padStart"] == 0.1
     assert data["padEnd"] == 0.0
 
 
@@ -512,6 +512,20 @@ def test_api_thumbnail_success(tmp_path):
         assert "image/jpeg" in response.headers["content-type"]
         assert "no-cache" in response.headers.get("cache-control", "")
         assert response.content == b"\xff\xd8\xff\xe0fakejpeg"
+
+
+def test_api_thumbnail_default_padding(tmp_path):
+    """Test that GET /api/thumbnail/{sentence_id} uses default padding 0.1 start and 0.0 end."""
+    fake_img = tmp_path / "hagi_img_1_0.100_0.000.jpg"
+    fake_img.write_bytes(b"\xff\xd8\xff\xe0fakejpeg")
+
+    with patch("hagi.web.exporter.extract_image") as mock_extract_img:
+        mock_extract_img.return_value = (True, "Image extracted", str(fake_img), False)
+
+        response = client.get("/api/thumbnail/1")
+        assert response.status_code == 200
+        assert "image/jpeg" in response.headers["content-type"]
+        mock_extract_img.assert_called_once_with(1, "./media", 0.1, 0.0)
 
 
 def test_api_thumbnail_not_found():

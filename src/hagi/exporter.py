@@ -181,7 +181,7 @@ def anki_request(anki_url, action, timeout=10.0, **params):
 
 def _resolve_target_media(
     sentence_id: int,
-    pad_start: float = 0.25,
+    pad_start: float = 0.1,
     pad_end: float = 0.0,
     conn=None,
 ) -> tuple[dict | None, str | None, float, float, float, float, str, str, str | None]:
@@ -189,7 +189,7 @@ def _resolve_target_media(
 
     Args:
         sentence_id (int): Sentence ID to resolve.
-        pad_start (float, optional): Seconds to pad before start time.
+        pad_start (float, optional): Seconds to pad before start time. Defaults to 0.1.
         pad_end (float, optional): Seconds to pad after end time.
         conn (sqlite3.Connection, optional): Optional active database connection.
 
@@ -544,7 +544,7 @@ def _extract_frame_ffmpeg(
 def extract_image(
     sentence_id: int,
     out_dir: str,
-    pad_start: float = 0.25,
+    pad_start: float = 0.1,
     pad_end: float = 0.0,
 ) -> tuple[bool, str, str | None, bool]:
     """Extract only the thumbnail image frame for a sentence, independent of audio.
@@ -552,7 +552,7 @@ def extract_image(
     Args:
         sentence_id (int): ID of the sentence to extract image for.
         out_dir (str): Output directory for the extracted media.
-        pad_start (float, optional): Seconds to pad before start time. Defaults to 0.25.
+        pad_start (float, optional): Seconds to pad before start time. Defaults to 0.1.
         pad_end (float, optional): Seconds to pad after end time. Defaults to 0.0.
 
     Returns:
@@ -612,13 +612,13 @@ def extract_image(
         return False, "An internal error occurred during extraction.", None, False
 
 
-def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
+def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.1, pad_end: float = 0.0):
     """Extract audio and image for a given sentence.
 
     Args:
         sentence_id (int): ID of the sentence to extract.
         out_dir (str): Output directory for the extracted media.
-        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.25.
+        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.1.
         pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.0.
 
     Returns:
@@ -777,13 +777,13 @@ def extract_media(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_e
         return False, "An internal error occurred during extraction.", None, None, None, False
 
 
-def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.25, pad_end: float = 0.0):
+def export_anki(sentence_id: int, out_dir: str, pad_start: float = 0.1, pad_end: float = 0.0):
     """Export a sentence and its media for Anki.
 
     Args:
         sentence_id (int): ID of the sentence to export.
         out_dir (str): Output directory for the exported media and CSV.
-        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.25.
+        pad_start (float, optional): Seconds to pad before the start time. Defaults to 0.1.
         pad_end (float, optional): Seconds to pad after the end time. Defaults to 0.0.
 
     Returns:
@@ -886,7 +886,7 @@ def export_ankiconnect(
     sentence_id: int,
     config: dict,
     out_dir: str,
-    pad_start: float = 0.25,
+    pad_start: float = 0.1,
     pad_end: float = 0.0,
     target_note_id: int | None = None,
     base_url: str | None = None,
@@ -898,7 +898,7 @@ def export_ankiconnect(
         sentence_id (int): ID of the sentence.
         config (dict): AnkiConnect configuration dictionary.
         out_dir (str): Output directory for temporary media.
-        pad_start (float, optional): Seconds to pad before start.
+        pad_start (float, optional): Seconds to pad before start. Defaults to 0.1.
         pad_end (float, optional): Seconds to pad after end.
         target_note_id (int, optional): Specific Note ID to update.
         base_url (str, optional): Base URL of the web UI to serve media from.

@@ -281,7 +281,7 @@ def get_context(sentence_id: int):
 class ExtractConfig(BaseModel):
     """Configuration for media extraction."""
 
-    pad_start: float = 0.25
+    pad_start: float = 0.1
     pad_end: float = 0.0
     target_note_id: int | None = Field(default=None, gt=0)
     search_query: str | None = None
@@ -297,7 +297,7 @@ _thumbnail_executor = ThreadPoolExecutor(
 async def get_thumbnail(
     sentence_id: int,
     background_tasks: BackgroundTasks,
-    pad_start: float = 0.25,
+    pad_start: float = 0.1,
     pad_end: float = 0.0,
 ):
     """Serve a scene thumbnail image for a sentence, generating it on the fly if needed."""
@@ -404,7 +404,7 @@ def get_anki_config():
 
     pad_start = app_config.get("padStart")
     if isinstance(pad_start, bool) or not isinstance(pad_start, (int, float)) or pad_start < 0:
-        pad_start = 0.25
+        pad_start = 0.1
 
     pad_end = app_config.get("padEnd")
     if isinstance(pad_end, bool) or not isinstance(pad_end, (int, float)) or pad_end < 0:

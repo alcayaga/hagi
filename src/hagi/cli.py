@@ -274,7 +274,7 @@ def context(sentence_id: int):
 def extract(
     sentence_id: int,
     out_dir: str = "./media",
-    pad_start: float = typer.Option(0.25, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_start: float = typer.Option(0.1, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
     pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Extract raw audio and image for a sentence without Anki formatting."""
@@ -293,7 +293,7 @@ def extract(
 def export(
     sentence_id: int,
     out_dir: str = "./anki_deck",
-    pad_start: float = typer.Option(0.25, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_start: float = typer.Option(0.1, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
     pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Export sentence context (audio, image, text) for Anki."""
@@ -312,7 +312,7 @@ def anki(
     note_id: Optional[int] = typer.Option(
         None, "--note-id", "-n", help="Target specific Anki Note ID. Defaults to last created note."
     ),
-    pad_start: float = typer.Option(0.25, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
+    pad_start: float = typer.Option(0.1, "--pad-start", "-ps", help="Seconds to pad before the sentence"),
     pad_end: float = typer.Option(0.0, "--pad-end", "-pe", help="Seconds to pad after the sentence"),
 ):
     """Export sentence directly to Anki via AnkiConnect."""

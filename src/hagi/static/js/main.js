@@ -332,7 +332,7 @@ class ThumbnailManager {
 
     const sStart = parseFloat(document.getElementById("padStart")?.value);
     const sEnd = parseFloat(document.getElementById("padEnd")?.value);
-    const padStart = isNaN(sStart) ? 0.25 : sStart;
+    const padStart = isNaN(sStart) ? 0.1 : sStart;
     const padEnd = isNaN(sEnd) ? 0.0 : sEnd;
 
     const url = `/api/thumbnail/${encodeURIComponent(sentenceId)}?pad_start=${padStart}&pad_end=${padEnd}`;
@@ -797,7 +797,7 @@ function highlightSearchTerms(text, queryToUse = null, escapeFunc = null) {
   return parts.join("");
 }
 
-let currentExtraction = { id: null, padStart: 0.25, padEnd: 0.0 };
+let currentExtraction = { id: null, padStart: 0.1, padEnd: 0.0 };
 if (typeof window !== "undefined") {
   window.currentExtraction = currentExtraction;
 }
@@ -868,7 +868,7 @@ async function extractMedia(id, triggerElement) {
 
   const sStart = parseFloat(document.getElementById("padStart").value);
   const sEnd = parseFloat(document.getElementById("padEnd").value);
-  const padStart = isNaN(sStart) ? 0.25 : sStart;
+  const padStart = isNaN(sStart) ? 0.1 : sStart;
   const padEnd = isNaN(sEnd) ? 0.0 : sEnd;
 
   currentExtraction.id = id;

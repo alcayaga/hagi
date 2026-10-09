@@ -27,7 +27,7 @@ const DEFAULT_ANKI_CONFIG = {
   imageField: "",
   sourceField: "",
   tags: [],
-  padStart: 0.25,
+  padStart: 0.1,
   padEnd: 0.0,
 };
 
@@ -854,7 +854,7 @@ function openAnkiSettingsModal() {
   setVal("cfgImageField", config.imageField);
   setVal("cfgSourceField", config.sourceField);
   setVal("cfgTags", Array.isArray(config.tags) ? config.tags.join(", ") : "");
-  setVal("cfgPadStart", config.padStart ?? 0.25);
+  setVal("cfgPadStart", config.padStart ?? 0.1);
   setVal("cfgPadEnd", config.padEnd ?? 0.0);
 
   modal.classList.remove("hidden");
@@ -1011,7 +1011,7 @@ function resetAnkiSettingsInModal() {
   const padStartEl = document.getElementById("padStart");
   const padEndEl = document.getElementById("padEnd");
   if (padStartEl && !urlParams.has("padStart")) {
-    padStartEl.value = activeAnkiConfig.padStart ?? 0.25;
+    padStartEl.value = activeAnkiConfig.padStart ?? 0.1;
   }
   if (padEndEl && !urlParams.has("padEnd")) {
     padEndEl.value = activeAnkiConfig.padEnd ?? 0.0;
